@@ -138,6 +138,47 @@ xcode-select --install
 
 ## Deployment Guide / 部署教程
 
+### 0. One-click deployment / 一键部署
+
+Run the deployment helper from the project root:
+
+在项目根目录运行部署助手：
+
+```bash
+zsh scripts/deploy.command
+```
+
+The script checks the local environment, prepares runtime folders, creates `data/settings.json`, generates the launchd plist, installs the `ncc` shortcut, and then opens the quick configuration menu.
+
+脚本会检测本机环境、准备运行目录、创建 `data/settings.json`、生成 launchd plist、安装 `ncc` 快捷命令，并自动打开快捷配置菜单。
+
+After installation, use:
+
+安装后可以使用：
+
+```bash
+ncc
+```
+
+`ncc` provides shortcuts for Codex login, QQ/OneBot setup, owner QQ ID, QQ group allowlist, assistant display name, status checks, Hub startup, and opening the WebUI.
+
+`ncc` 可以快捷配置 Codex 登录、QQ/OneBot、主人 QQ 号、QQ群白名单、助手显示名、状态检查、启动 Hub 和打开 WebUI。
+
+The quick menu includes:
+
+快捷菜单包含：
+
+```text
+1) Codex login / auth test
+2) QQ / OneBot setup
+3) Set owner QQ id
+4) Set allowed QQ groups
+5) Assistant name and mentions
+6) Start Hub
+7) Status check
+8) Open WebUI
+```
+
 ### 1. Place the project / 放置项目
 
 Put the source folder somewhere stable. Avoid Downloads for long-running deployments.
