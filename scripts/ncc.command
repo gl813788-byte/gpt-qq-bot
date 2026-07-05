@@ -230,13 +230,14 @@ start_hub() {
   fi
 }
 
-open_webui() {
+open_hub_api() {
+  local url="$HUB_URL/api/state"
   if command -v open >/dev/null 2>&1; then
-    open "$HUB_URL"
+    open "$url"
   elif command -v xdg-open >/dev/null 2>&1; then
-    xdg-open "$HUB_URL"
+    xdg-open "$url"
   else
-    log "请打开这个地址：$HUB_URL"
+    log "Hub API 状态地址：$url"
   fi
 }
 
@@ -254,7 +255,7 @@ GPT QQ Bot 快捷配置（ncc）
 5) 设置助手名称和 @ 别名
 6) 启动 Hub
 7) 状态检查
-8) 打开 WebUI
+8) 打开 Hub API 状态
 0) 退出
 MENU
     printf '\n请选择：'
@@ -267,7 +268,7 @@ MENU
       5) branding_menu ;;
       6) start_hub; pause ;;
       7) show_status; pause ;;
-      8) open_webui; pause ;;
+      8) open_hub_api; pause ;;
       0|q|quit|exit) break ;;
       *) log "未知选项。"; pause ;;
     esac
@@ -283,7 +284,7 @@ case "${1:-setup}" in
   groups) groups_menu ;;
   branding) branding_menu ;;
   start) start_hub ;;
-  open) open_webui ;;
+  open) open_hub_api ;;
   *)
     cat <<EOF
 用法：ncc [setup|status|codex-login|qq|owner|groups|branding|start|open]

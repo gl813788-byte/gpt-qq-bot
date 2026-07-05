@@ -2,13 +2,12 @@ import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import { access, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
-import { basename, extname, isAbsolute, join, normalize, resolve } from "node:path";
+import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { brotliDecompressSync } from "node:zlib";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const projectDir = join(__dirname, "..");
-const publicDir = join(projectDir, "modules", "web-console", "public");
 const codexWorkspaceDir = join(projectDir, "workspaces", "codex-cli");
 const codexTmpDir = join(projectDir, "runtime", "replies");
 const imessageScreenshotsDir = join(projectDir, "runtime", "imessage-screenshots");
@@ -398,13 +397,6 @@ const qqBotCommandMarkerStripPattern = /\[\[(?:qq_command|qq_menu):[^\]\n]+\]\]/
 const qqBotMenuActionLimit = 3;
 const qqBotToolLoopLimit = 5;
 const qqBotDoneMarkerPattern = /\[\[qq_done\]\]/g;
-
-const mimeTypes = {
-  ".html": "text/html; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
-  ".js": "text/javascript; charset=utf-8",
-  ".json": "application/json; charset=utf-8"
-};
 
 function sendJson(res, code, body) {
   res.writeHead(code, {
@@ -5164,7 +5156,7 @@ async function executeIMessageCommand(text, event = null) {
   if (/(关闭|关掉|切断|停止).*(imessage|信息|短信)/.test(normalized) || /(imessage|信息|短信).*(关闭|关掉|切断|停止)/.test(normalized)) {
     state.channels.imessage = false;
     updateIMessagePoller();
-    return { ok: true, summary: "iMessage channel disabled", reply: "iMessage 已关闭。再次开启需要在 WebUI 打开，或重启 Hub 后使用默认开启状态。" };
+    return { ok: true, summary: "iMessage channel disabled", reply: "iMessage 已关闭。再次开启请使用 ncc 或重启 Hub 后使用默认开启状态。" };
   }
   if (/^(状态|status|查看状态)$/.test(normalized)) {
     const reply = [
@@ -6665,7 +6657,7 @@ async function buildRecentCodexContextForIMessage(event, query, unifiedPrompt, r
   if (["mobile_context", "unified"].includes(recallRoute.source)) return "";
   const text = String(event.text || "");
   const shouldRecallDesktop = recallRoute.source?.startsWith?.("desktop")
-    || /(电脑上|电脑这边|这边|cli|codex|client|webui|通讯中枢|客户端|更新|同步|刚刚|刚才|前两天|上次|之前|还记得|记不记得|接着|继续|做到哪|进度)/i.test(text);
+    || /(电脑上|电脑这边|这边|cli|codex|client|通讯中枢|客户端|更新|同步|刚刚|刚才|前两天|上次|之前|还记得|记不记得|接着|继续|做到哪|进度)/i.test(text);
   const unifiedLooksThin = !unifiedPrompt || unifiedPrompt.length < 260;
   if (!shouldRecallDesktop && !unifiedLooksThin) return "";
   try {
@@ -6774,7 +6766,7 @@ function routeUnifiedMemoryRecallByRules(text, decision = {}, event = null) {
   const previousNormalized = previousUserText.replace(/\s+/g, "").toLowerCase();
   const asksAboutPreviousQuestion = /(上面|上一条|刚才那个|刚刚那个|这个问题|那个问题|我发的|我问的|自己想出来|我自己想|谁想的|谁提的|谁建议的)/i.test(normalized);
   const previousLooksDesktopRecall = /(电脑上|电脑这边|桌面上|cli|codex|本机|这边|刚刚|刚才|统一记忆|复读|清理|修复|测试)/i.test(previousNormalized);
-  const hasConcreteClientTopic = /(client|webui|通讯中枢|客户端|bundle|resources?|资源|启动器|localhost:3789)/i.test(normalized);
+  const hasConcreteClientTopic = /(client|通讯中枢|客户端|bundle|resources?|资源|启动器)/i.test(normalized);
   const hasDesktop = /(电脑上|电脑这边|桌面上|cli|codex|本机|这边)/i.test(normalized);
   const hasRecent = /(刚刚|刚才|刚才那会|刚那会|刚在|刚问|刚说|刚发|刚做|刚弄|刚改|刚更新|刚修)/i.test(normalized);
   const hasGenericWorkRecall = /(做了什么|做过什么|干了什么|弄了什么|搞了什么|改了什么|更新了什么|处理了什么|修了什么|做到哪|做完没|弄好没|搞好没)/i.test(normalized);
@@ -6793,7 +6785,7 @@ function routeUnifiedMemoryRecallByRules(text, decision = {}, event = null) {
     return {
       needsRecall: true,
       source: "desktop_topic",
-      query: "通讯 Client WebUI client.html client.js client.css bundle Resources 同步 更新",
+      query: "通讯 Client client.html client.js client.css bundle Resources 同步 更新",
       confidence: 0.9,
       reason: "client_topic"
     };
@@ -6860,7 +6852,7 @@ function shouldRunRecallRouteModel(text, ruleRoute, decision = {}) {
   const normalized = String(text || "").replace(/\s+/g, "");
   if (normalized.length < 5) return false;
   if (ruleRoute.confidence >= 0.9) return false;
-  if (/(那个|这个|这边|那边|刚刚|刚才|之前|上次|前两天|更新|同步|做到哪|进度|还记得|接着|继续|client|webui|通讯)/i.test(normalized)) return true;
+  if (/(那个|这个|这边|那边|刚刚|刚才|之前|上次|前两天|更新|同步|做到哪|进度|还记得|接着|继续|client|通讯)/i.test(normalized)) return true;
   return ["read", "both"].includes(decision.action) && ruleRoute.confidence < 0.82;
 }
 
@@ -6874,12 +6866,12 @@ async function runUnifiedMemoryRecallRouteModel(text) {
     "source 只能是：desktop_recent、desktop_topic、mobile_context、unified、none。",
     "规则：",
     "- 问“刚刚/刚才 + 电脑/这边”且没有明确主题，通常是 desktop_recent。",
-    "- 有明确主题词如 client、WebUI、通讯中枢、GPT QQ Bot、小火箭，通常是 desktop_topic，并生成对应检索词。",
+    "- 有明确主题词如 client、通讯中枢、GPT QQ Bot、小火箭，通常是 desktop_topic，并生成对应检索词。",
     "- 问手机上/iMessage 里刚说的，选 mobile_context。",
     "- 只是普通闲聊，不需要回看，选 none。",
     "- query 要短，包含检索关键词，不要写完整回复。",
     "输出格式：",
-    "{\"needsRecall\":true,\"source\":\"desktop_topic\",\"query\":\"client WebUI bundle 资源同步\",\"confidence\":0.8}",
+    "{\"needsRecall\":true,\"source\":\"desktop_topic\",\"query\":\"client bundle 资源同步\",\"confidence\":0.8}",
     "",
     "用户消息：",
     text
@@ -8061,21 +8053,6 @@ async function handleApi(req, res) {
   return false;
 }
 
-async function serveStatic(req, res) {
-  const rawPath = req.url === "/" ? "/client.html" : req.url.split("?")[0];
-  const safePath = normalize(decodeURIComponent(rawPath)).replace(/^(\.\.[/\\])+/, "");
-  const filePath = join(publicDir, safePath);
-
-  try {
-    const body = await readFile(filePath);
-    res.writeHead(200, { "content-type": mimeTypes[extname(filePath)] || "application/octet-stream", ...corsHeaders() });
-    res.end(body);
-  } catch {
-    res.writeHead(404, { "content-type": "text/plain; charset=utf-8", ...corsHeaders() });
-    res.end("Not found");
-  }
-}
-
 await loadSettings();
 await mkdir(qqStickerDir, { recursive: true });
 await loadQqMemory();
@@ -8091,7 +8068,7 @@ const server = createServer(async (req, res) => {
       const handled = await handleApi(req, res);
       if (handled !== false) return;
     }
-    await serveStatic(req, res);
+    sendJson(res, 404, { error: "Not found" });
   } catch (error) {
     sendJson(res, 500, { error: error.message });
   }

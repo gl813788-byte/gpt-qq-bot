@@ -181,7 +181,7 @@ print_summary() {
 项目目录：$PROJECT_DIR
 配置文件：$PROJECT_DIR/data/settings.json
 本地环境：$PROJECT_DIR/config/local.env
-WebUI: http://127.0.0.1:3789
+Hub API: http://127.0.0.1:3789/api/state
 
 ncc 快捷命令会打开快速配置菜单。
 EOF

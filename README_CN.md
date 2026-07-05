@@ -1,0 +1,391 @@
+<div align="center">
+
+# GPT QQ Bot
+
+### QQ 群聊里的本地 GPT 助手
+
+**一个保存到 `gl813788-byte/GPT` 仓库里的 QQ/OneBot + Codex CLI 本地助手中枢。**
+
+简体中文 | [English](README.md)
+
+![Node.js](https://img.shields.io/badge/Node.js-20+-339933)
+![macOS](https://img.shields.io/badge/macOS-14%2B-blue)
+![Memory](https://img.shields.io/badge/free%20memory-3GB%2B-orange)
+![Optional Packages](https://img.shields.io/badge/optional%20packages-supported-purple)
+
+</div>
+
+---
+
+## 介绍
+
+GPT QQ Bot 运行在本机，把 QQ/OneBot、Codex CLI、本机自动化脚本、代理节点控制和由 `ncc` 控制的 HTTP API 接到同一个服务里。
+
+主程序可以独立启动。需要更强的 QQ 群聊能力或跨端记忆时，再把 `qq-enhancer`、`unified-memory` 等可选升级包放到旁边即可。
+
+项目不再提供自己的浏览器 WebUI。日常控制统一通过 `ncc` 脚本完成。
+
+## 功能亮点
+
+| 模块 | 说明 |
+| :--- | :--- |
+| iMessage 控制台 | 接收可信联系人发来的 `/状态`、`/维护`、`/开启QQ`、`/关闭QQ`、`/节点检查`、`/切换节点`、`/远程执行` 等指令。 |
+| iMessage 私聊回复 | 调用 Codex CLI 生成回复，保存独立滚动上下文，在数据库权限故障后自动恢复轮询游标，并支持单条消息临时切换模型。 |
+| QQ/OneBot 通道 | 接收 QQ 群聊和私聊，忽略尚未转写的语音消息，识别明确 @ 附图，在需要时继续向前翻上下文，并保存轻量群友画像。 |
+| 远程执行模式 | 通过 iMessage 开启完整 Codex CLI 本机任务通道。 |
+| 代理与系统控制 | 支持 Shadowrocket 节点状态、测速、切换确认，以及防休眠、显示器休眠、内置屏背光控制脚本。 |
+| 可选升级包 | 存在时加载 `qq-enhancer` 与 `unified-memory`；不存在时自动降级。 |
+
+## 项目结构
+
+```text
+codexremotecontact/
+  src/server.js                         # Hub 主进程
+  modules/
+    imessage/                           # iMessage 模块说明
+    qq-llbot/                           # QQ/LLBot 模块说明
+    shadowrocket/                       # 节点控制脚本
+    system-control/                     # 系统控制脚本
+    mac-client/                         # macOS 客户端源码
+    macos-launcher/                     # 启动器源码
+  config/
+    settings.example.json               # 配置示例
+    local.codexremotecontact.chat-hub.plist.example
+  data/                                 # 配置与记忆文件
+  runtime/                              # 日志与运行时文件
+  workspaces/codex-cli/                 # Codex CLI 临时工作区
+```
+
+## 安装要求
+
+| 要求 | 说明 |
+| :--- | :--- |
+| macOS 14 Sonoma 或更高版本 | 已在 macOS 15.7 上验证，低一个大版本预计可用。 |
+| Node.js 20+ | 用于运行 Hub。 |
+| 3GB+ 可用内存 | 建议同时运行 Codex CLI、QQ 桥接器和 Hub 时保留。 |
+| OpenAI Codex CLI 或 Codex.app 内置 CLI | 用于生成回复和远程执行。 |
+| NapCat、LLBot Desktop 或其他 OneBot 兼容桥接器 | QQ 通道需要。 |
+| 已登录“信息”App | iMessage 通道需要。 |
+| Shadowrocket | 代理指令需要。 |
+
+安装基础依赖：
+
+```bash
+brew install node
+```
+
+可选依赖：
+
+```bash
+brew install brightness
+xcode-select --install
+```
+
+## 部署教程
+
+### 0. 下载方式
+
+#### 通过 Codex Skill 下载
+
+如果已经安装 `claude-to-im` Codex skill，可以直接让 Codex 下载并配置本项目：
+
+```text
+使用 claude-to-im skill 下载并配置 GPT QQ Bot。
+把后端放到 /root/Codex-Remote-Contact，并使用 ncc 作为统一控制入口。
+```
+
+skill 会克隆或更新后端、安装 Node 依赖、保留已有本地改动，并用 `ncc status` 验证状态。
+
+#### 手动 Git 下载
+
+```bash
+git clone https://github.com/gl813788-byte/GPT.git /root/Codex-Remote-Contact
+cd /root/Codex-Remote-Contact
+npm install --omit=dev
+```
+
+### 1. 放置项目
+
+把源码放在长期稳定的位置。准备常驻运行时，不建议放在 Downloads。
+
+```bash
+PROJECT_DIR="$HOME/codexremotecontact"
+cd "$PROJECT_DIR"
+```
+
+如果 macOS 隔离了下载的 zip 包：
+
+```bash
+xattr -dr com.apple.quarantine "$PROJECT_DIR"
+```
+
+### 2. 配置设置
+
+编辑：
+
+```bash
+open -e "$PROJECT_DIR/data/settings.json"
+```
+
+最小配置示例：
+
+```json
+{
+  "version": 1,
+  "updatedAt": null,
+  "qq": {
+    "allowedGroups": ["QQ group id"],
+    "ownerUserIds": ["administrator QQ id"],
+    "bannedUserIds": [],
+    "enhancer": {
+      "enabled": false
+    },
+    "proactive": {
+      "enabled": false,
+      "minIntervalMs": 180000
+    }
+  },
+  "imessage": {
+    "trustedHandles": ["trusted phone number or email"],
+    "replyHandle": "iMessage account used for replies"
+  },
+  "remoteExecution": {
+    "model": "gpt-5.4",
+    "reasoningEffort": "medium",
+    "skill": ""
+  },
+  "branding": {
+    "assistantName": "assistant",
+    "ownerLabel": "owner",
+    "assistantMentions": ["@assistant"]
+  }
+}
+```
+
+可以把自己的助手语气写进外部 profile 文件：
+
+```bash
+export CODEX_REMOTE_CONTACT_ASSISTANT_PROFILE_PATH="/absolute/path/to/assistant-profile.md"
+```
+
+### 3. 授予 macOS 权限
+
+权限需要给到实际运行 Hub 的进程。终端运行时通常是 `Terminal`、`iTerm` 或 `node`；App 运行时则是编译后的客户端或启动器。
+
+| 权限 | 用途 |
+| :--- | :--- |
+| 完全磁盘访问 | 读取 iMessage 数据库和 Shadowrocket 配置。 |
+| 自动化 | 通过 AppleScript 控制“信息”、System Events、Shadowrocket 等 App。 |
+| 辅助功能 | 远程执行模式操作 GUI。 |
+| 屏幕录制 | 远程执行模式截图或看屏幕。 |
+
+### 4. 准备 iMessage
+
+在 Mac 的“信息”App 登录账号，并确认 `replyHandle` 能向 `trustedHandles` 发送 iMessage。
+
+普通 iMessage 私聊可以在正文前或正文后追加一次性模型或思考强度指令：
+
+```text
+/5.5 /high
+Analyze this problem
+```
+
+常用别名包括 `/5.5`、`/5.4`、`/mini`、`/low`、`/medium`、`/high` 和 `/xhigh`，只影响当前这一条回复。
+
+### 5. 准备 QQ / OneBot
+
+当前本机 NapCat + OneBot 方案统一通过 `ncc` 脚本控制。默认 OneBot API 地址：
+
+```text
+http://127.0.0.1:3000
+```
+
+如需覆盖：
+
+```bash
+export ONEBOT_API_BASE="http://127.0.0.1:3000"
+```
+
+### 6. 使用 ncc 控制
+
+日常使用统一通过一个本机控制脚本：
+
+```bash
+ncc all
+ncc status
+ncc connect
+ncc stop-hub
+```
+
+等价完整路径：
+
+```bash
+/root/napcat-codex-control.sh all
+```
+
+### 7. 后端 API
+
+HTTP 服务只保留给 `ncc`、NapCat OneBot 回调和诊断使用。
+
+开发模式：
+
+```bash
+cd "$PROJECT_DIR"
+npm start
+```
+
+健康检查：
+
+```bash
+curl http://localhost:3789/api/state
+```
+
+### 8. 日志
+
+`ncc` 会在名为 `codex-contact` 的 `screen` 会话里启动后端。
+
+```bash
+ncc status
+screen -r codex-contact
+```
+
+## 可选升级包
+
+推荐目录结构：
+
+```text
+Projects/
+  codexremotecontact/
+  qq-enhancer/
+  unified-memory/
+```
+
+主程序会按以下顺序尝试加载可选升级包：
+
+| 顺序 | 来源 |
+| :--- | :--- |
+| 1 | 环境变量指定的模块路径，例如 `CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE` 和 `CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE`。 |
+| 2 | 主程序内部 `src/` 或 `modules/` 下的本地开发目录。 |
+| 3 | 同级目录中的 `../qq-enhancer/` 和 `../unified-memory/`。 |
+| 4 | 内置空实现降级。 |
+
+### QQ Enhancer
+
+在 `data/settings.json` 中启用：
+
+```json
+{
+  "qq": {
+    "enhancer": {
+      "enabled": true
+    },
+    "proactive": {
+      "enabled": true,
+      "minIntervalMs": 180000
+    }
+  }
+}
+```
+
+手动指定模块：
+
+```bash
+export CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE="/absolute/path/to/qq-enhancer/src/qq-enhancer/index.js"
+```
+
+### Unified Memory
+
+自定义数据路径：
+
+```bash
+export UNIFIED_MEMORY_PATH="/absolute/path/to/unified-memory.json"
+export UNIFIED_MEMORY_SETTINGS_PATH="/absolute/path/to/settings.json"
+```
+
+手动指定模块：
+
+```bash
+export CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE="/absolute/path/to/unified-memory/src/unified-memory/index.js"
+```
+
+## 常用指令
+
+```text
+/状态
+/维护
+/开启QQ
+/关闭QQ
+/开启iMessage
+/关闭iMessage
+/清空QQ记忆
+/清除记忆
+/白名单
+/加群 群号
+/删群 群号
+/联网开
+/联网关
+/代理状态
+/代理开
+/代理关
+/当前节点
+/节点列表
+/入口测速 关键词
+/节点检查
+/切换节点 目标
+/关闭背光
+/恢复背光
+/远程执行
+/确认
+/取消
+/帮助
+```
+
+`/切换节点` 和 `/远程执行` 需要使用 `/确认` 或 `/取消` 二次确认。
+
+## 环境变量
+
+```bash
+ONEBOT_API_BASE=http://127.0.0.1:3000
+CODEX_CLI_PATH=/Applications/Codex.app/Contents/Resources/codex
+
+CODEX_REMOTE_CONTACT_CODEX_MODEL=gpt-5.4-mini
+CODEX_REMOTE_CONTACT_REASONING_EFFORT=low
+
+CODEX_REMOTE_CONTACT_IMESSAGE_CODEX_MODEL=gpt-5.4
+CODEX_REMOTE_CONTACT_IMESSAGE_REASONING_EFFORT=medium
+CODEX_REMOTE_CONTACT_IMESSAGE_MEMORY_LIMIT=120
+
+CODEX_REMOTE_CONTACT_QQ_MEMORY_LIMIT=10
+CODEX_REMOTE_CONTACT_QQ_GROUP_MEMORY_LIMIT=200
+CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP=1
+CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS=12000
+CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER=auto
+
+CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MODEL=gpt-5.4
+CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_REASONING_EFFORT=medium
+CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MEMORY_LIMIT=160
+CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_IDLE_TTL_MS=900000
+CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_SKILL=
+
+CODEX_REMOTE_CONTACT_SKILL_PATHS=custom-name=/absolute/path/to/SKILL.md
+CODEX_REMOTE_CONTACT_ASSISTANT_PROFILE_PATH=/absolute/path/to/assistant-profile.md
+CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE=/absolute/path/to/qq-enhancer/src/qq-enhancer/index.js
+CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE=/absolute/path/to/unified-memory/src/unified-memory/index.js
+```
+
+## 故障排查
+
+| 问题 | 排查 |
+| :--- | :--- |
+| 端口占用 | `lsof -nP -iTCP:3789 -sTCP:LISTEN` |
+| 无法读取 iMessage | 授予完全磁盘访问权限并重启 Hub。 |
+| 无法发送信息回复 | 授予“信息”自动化权限。 |
+| QQ 不响应 | 检查 NapCat/LLBot、`ONEBOT_API_BASE`、白名单群、QQ 总开关和 ban 列表。 |
+| 远程执行 GUI 操作失败 | 给运行进程和 Codex 授予辅助功能、屏幕录制权限。 |
+| Shadowrocket 指令失败 | 确认已安装 Shadowrocket，并给 Hub 完全磁盘访问权限。 |
+
+## 注意事项
+
+部署前应在 `data/settings.json`、环境变量和外部 profile 文件中填写自己的配置。
+
+本项目是本机自动化工具。启用 iMessage、QQ、远程执行、代理控制或 GUI 控制前，请确认你理解对应权限和本机安全影响。

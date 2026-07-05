@@ -26,9 +26,6 @@ cp "$ROOT/Resources/Info.plist" "$CONTENTS/Info.plist"
 cp "$ROOT/Resources/client.html" "$RESOURCES/client.html"
 cp "$ROOT/Resources/client.css" "$RESOURCES/client.css"
 cp "$ROOT/Resources/client.js" "$RESOURCES/client.js"
-cp "$ROOT/Resources/client.html" "$PROJECT_DIR/modules/web-console/public/client.html"
-cp "$ROOT/Resources/client.css" "$PROJECT_DIR/modules/web-console/public/client.css"
-cp "$ROOT/Resources/client.js" "$PROJECT_DIR/modules/web-console/public/client.js"
 
 chmod +x "$BINARY"
 

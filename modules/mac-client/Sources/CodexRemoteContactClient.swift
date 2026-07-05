@@ -14,7 +14,7 @@ final class DragRegionView: NSView {
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
-    private let hubBaseURL = "http://127.0.0.1:3789"
+    private let hubBaseURL = "http://127.0.0.1:3789/api/state"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -113,7 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let viewMenuItem = NSMenuItem()
         let viewMenu = NSMenu(title: "视图")
         viewMenu.addItem(NSMenuItem(title: "刷新", action: #selector(reloadClient), keyEquivalent: "r"))
-        viewMenu.addItem(NSMenuItem(title: "打开 WebUI", action: #selector(openHub), keyEquivalent: "o"))
+        viewMenu.addItem(NSMenuItem(title: "打开 Hub API", action: #selector(openHub), keyEquivalent: "o"))
         viewMenuItem.submenu = viewMenu
 
         mainMenu.addItem(appMenuItem)

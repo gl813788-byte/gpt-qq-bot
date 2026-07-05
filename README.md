@@ -2,10 +2,11 @@
 
 # GPT QQ Bot
 
-### QQ 群聊里的本地 GPT 助手
+### A local GPT assistant for QQ group chats
 
-**A local QQ/OneBot assistant hub powered by Codex CLI, with a bilingual WebUI and private runtime memory.**  
-**一个由 Codex CLI 驱动的 QQ/OneBot 本地助手中枢，带中英文 WebUI 和本地私有运行记忆。**
+**A local QQ/OneBot and Codex CLI assistant hub for the `gl813788-byte/GPT` project.**
+
+[简体中文](README_CN.md) | English
 
 ![Node.js](https://img.shields.io/badge/Node.js-20+-339933)
 ![macOS](https://img.shields.io/badge/macOS-14%2B-blue)
@@ -16,110 +17,58 @@
 
 ---
 
-## Introduction / 介绍
+## Introduction
 
-GPT QQ Bot is a local assistant project for running a GPT-style bot inside QQ groups and private chats. It connects a QQ/OneBot bridge to Codex CLI, keeps lightweight conversation memory on the machine, and provides a WebUI for channel switches, allowlists, maintenance status, memory viewing, and local test messages.
-
-GPT QQ Bot 是一个把 GPT 风格助手接入 QQ 群聊和私聊的本地项目。它把 QQ/OneBot 桥接到 Codex CLI，在本机保存轻量上下文记忆，并提供 WebUI 用来管理通道开关、群白名单、维护状态、记忆查看和本地测试消息。
-
-The project is designed for personal deployment: private QQ memory, persona notes, runtime settings, generated images, and temporary files stay outside the GitHub commit by default. The repository keeps source code, example config, UI assets, and empty memory templates only.
-
-这个项目面向个人部署：真实 QQ 记忆、群友画像、运行配置、生成图片和临时文件默认不进入 GitHub 提交。仓库里只保存源码、示例配置、界面资源和空的记忆模板。
+GPT QQ Bot runs locally and connects QQ/OneBot, Codex CLI, local automation scripts, proxy node control, and an HTTP API controlled by `ncc` into one service.
 
 The main program is intentionally usable by itself. Optional update packages such as `qq-enhancer` and `unified-memory` can be placed next to it when you need enhanced QQ group-chat behavior or cross-device memory.
 
-主程序可以独立启动。需要更强的 QQ 群聊能力或跨端记忆时，再把 `qq-enhancer`、`unified-memory` 等可选升级包放到旁边即可。
+The project no longer serves its own browser WebUI. Normal operation is controlled through the single `ncc` script.
 
-## Highlights / 功能亮点
+## Highlights
 
-| Module / 模块 | Description / 说明 |
+| Module | Description |
 | :--- | :--- |
-| iMessage console / iMessage 控制台 | Receive trusted commands such as `/状态`, `/维护`, `/开启QQ`, `/关闭QQ`, `/节点检查`, `/切换节点`, and `/远程执行`.<br>接收可信联系人发来的 `/状态`、`/维护`、`/开启QQ`、`/关闭QQ`、`/节点检查`、`/切换节点`、`/远程执行` 等指令。 |
-| iMessage private replies / iMessage 私聊回复 | Generate replies through Codex CLI, keep an independent rolling context, recover the polling cursor after database permission failures, and support one-message model overrides.<br>调用 Codex CLI 生成回复，保存独立滚动上下文，在数据库权限故障后自动恢复轮询游标，并支持单条消息临时切换模型。 |
-| QQ/OneBot channel / QQ 通道 | Receive QQ group and private messages, ignore untranscribed voice messages, inspect explicitly mentioned images, expand recent context when needed, and keep lightweight member personas.<br>接收 QQ 群聊和私聊，忽略尚未转写的语音消息，识别明确 @ 附图，在需要时继续向前翻上下文，并保存轻量群友画像。 |
-| Remote execution / 远程执行模式 | Start a full Codex CLI local task channel from iMessage.<br>通过 iMessage 开启完整 Codex CLI 本机任务通道。 |
-| Proxy and system control / 代理与系统控制 | Control Shadowrocket node status/check/switching, keep-awake, display sleep, and built-in-display backlight helper scripts.<br>支持 Shadowrocket 节点状态、测速、切换确认，以及防休眠、显示器休眠、内置屏背光控制脚本。 |
-| Optional packages / 可选升级包 | Load `qq-enhancer` and `unified-memory` when present; fall back cleanly when absent.<br>存在时加载 `qq-enhancer` 与 `unified-memory`；不存在时自动降级。 |
+| iMessage console | Receive trusted commands such as `/状态`, `/维护`, `/开启QQ`, `/关闭QQ`, `/节点检查`, `/切换节点`, and `/远程执行`. |
+| iMessage private replies | Generate replies through Codex CLI, keep independent rolling context, recover the polling cursor after database permission failures, and support one-message model overrides. |
+| QQ/OneBot channel | Receive QQ group and private messages, ignore untranscribed voice messages, inspect explicitly mentioned images, expand recent context when needed, and keep lightweight member personas. |
+| Remote execution | Start a full Codex CLI local task channel from iMessage. |
+| Proxy and system control | Control Shadowrocket node status/check/switching, keep-awake, display sleep, and built-in-display backlight helper scripts. |
+| Optional packages | Load `qq-enhancer` and `unified-memory` when present; fall back cleanly when absent. |
 
-## Quick Navigation / 快速导航
-
-- [Project Structure / 项目结构](#project-structure--项目结构)
-- [Optional Package Layout / 可选升级包结构](#optional-package-layout--可选升级包结构)
-- [Requirements / 安装要求](#requirements--安装要求)
-- [Deployment Guide / 部署教程](#deployment-guide--部署教程)
-- [Common Commands / 常用指令](#common-commands--常用指令)
-- [Environment Variables / 环境变量](#environment-variables--环境变量)
-- [Troubleshooting / 故障排查](#troubleshooting--故障排查)
-- [Notice / 注意事项](#notice--注意事项)
-
----
-
-## Project Structure / 项目结构
+## Project Structure
 
 ```text
-gpt-qq-bot/
-  src/server.js                         # Hub main process / Hub 主进程
+codexremotecontact/
+  src/server.js                         # Hub main process
   modules/
-    imessage/                           # iMessage notes / iMessage 模块说明
-    qq-llbot/                           # QQ/LLBot notes / QQ/LLBot 模块说明
-    shadowrocket/                       # Shadowrocket scripts / 节点控制脚本
-    system-control/                     # Keep-awake and backlight scripts / 系统控制脚本
-    web-console/public/                 # Web console / 网页控制台
-    mac-client/                         # macOS WebKit client source / macOS 客户端源码
-    macos-launcher/                     # Launcher source / 启动器源码
+    imessage/                           # iMessage notes
+    qq-llbot/                           # QQ/LLBot notes
+    shadowrocket/                       # Shadowrocket scripts
+    system-control/                     # Keep-awake and backlight scripts
+    mac-client/                         # macOS WebKit client source
+    macos-launcher/                     # Launcher source
   config/
-    settings.example.json               # Example settings / 配置示例
-    local.gpt-qq-bot.chat-hub.plist.example
-  data/                                 # Empty settings and memory files / 空配置与记忆文件
-  runtime/                              # Runtime logs and generated files / 运行时文件
-  workspaces/codex-cli/                 # Codex CLI temporary workspace / 临时工作区
+    settings.example.json               # Example settings
+    local.codexremotecontact.chat-hub.plist.example
+  data/                                 # Settings and memory files
+  runtime/                              # Runtime logs and generated files
+  workspaces/codex-cli/                 # Codex CLI temporary workspace
 ```
 
-## Optional Package Layout / 可选升级包结构
+## Requirements
 
-Recommended layout:
-
-推荐目录结构：
-
-```text
-Projects/
-  gpt-qq-bot/
-  qq-enhancer/
-  unified-memory/
-```
-
-The hub tries to load optional packages in this order:
-
-主程序会按以下顺序尝试加载可选升级包：
-
-| Order / 顺序 | Source / 来源 |
+| Requirement | Notes |
 | :--- | :--- |
-| 1 | Environment module paths, such as `CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE` and `CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE`.<br>环境变量指定的模块路径。 |
-| 2 | Local development folders under `src/` or `modules/`.<br>主程序内部 `src/` 或 `modules/` 下的本地开发目录。 |
-| 3 | Sibling packages such as `../qq-enhancer/` and `../unified-memory/`.<br>同级目录中的 `../qq-enhancer/` 和 `../unified-memory/`。 |
-| 4 | Built-in no-op fallbacks.<br>内置空实现降级。 |
-
-This means a clean download of `gpt-qq-bot` can start without QQ Enhancer or Unified Memory.
-
-这意味着只下载 `gpt-qq-bot` 也可以启动，不需要强制安装 QQ 增强或统一记忆。
-
----
-
-## Requirements / 安装要求
-
-| Requirement / 要求 | Notes / 说明 |
-| :--- | :--- |
-| macOS 14 Sonoma or later | Tested on macOS 15.7. macOS 14 is expected to work.<br>建议 macOS 14 Sonoma 或更高版本；已在 macOS 15.7 上验证，低一个大版本预计可用。 |
-| Node.js 20+ | Used to run the hub. / 用于运行 Hub。 |
-| 3GB+ free memory | Recommended when Codex CLI, browser views, QQ bridge, and the hub run together.<br>建议至少 3GB 可用内存，尤其是同时运行 Codex CLI、网页控制台、QQ 桥接器和 Hub 时。 |
-| OpenAI Codex CLI or Codex.app bundled CLI | Used for reply generation and remote execution. / 用于生成回复和远程执行。 |
-| LLBot Desktop or OneBot-compatible bridge | Required only for QQ. / 仅 QQ 通道需要。 |
-| Messages app signed in | Required only for iMessage. / 仅 iMessage 通道需要。 |
-| Shadowrocket | Required for proxy connects. / 代理连接至OpenAI服务器需要。 |
+| macOS 14 Sonoma or later | Tested on macOS 15.7. macOS 14 is expected to work. |
+| Node.js 20+ | Used to run the hub. |
+| 3GB+ free memory | Recommended when Codex CLI, QQ bridge, and the hub run together. |
+| OpenAI Codex CLI or Codex.app bundled CLI | Used for reply generation and remote execution. |
+| NapCat, LLBot Desktop, or another OneBot-compatible bridge | Required for QQ. |
+| Messages app signed in | Required for iMessage. |
+| Shadowrocket | Required for proxy commands. |
 
 Install the basic dependency:
-
-安装基础依赖：
 
 ```bash
 brew install node
@@ -127,95 +76,58 @@ brew install node
 
 Optional dependencies:
 
-可选依赖：
-
 ```bash
 brew install brightness
 xcode-select --install
 ```
 
----
+## Deployment
 
-## Deployment Guide / 部署教程
+### 0. Download Options
 
-### 0. One-click deployment / 一键部署
+#### Codex Skill Assisted Download
 
-Run the deployment helper from the project root:
-
-在项目根目录运行部署助手：
-
-```bash
-zsh scripts/deploy.command
-```
-
-The script checks the local environment, prepares runtime folders, creates `data/settings.json`, generates the launchd plist, installs the `ncc` shortcut, and then opens the Chinese quick configuration menu.
-
-脚本会检测本机环境、准备运行目录、创建 `data/settings.json`、生成 launchd plist、安装 `ncc` 快捷命令，并自动打开快捷配置菜单。
-
-After installation, use:
-
-安装后可以使用：
-
-```bash
-ncc
-```
-
-`ncc` provides Chinese shortcuts for Codex login, QQ/OneBot setup, owner QQ ID, QQ group allowlist, assistant display name, status checks, Hub startup, and opening the WebUI.
-
-`ncc` 可以快捷配置 Codex 登录、QQ/OneBot、主人 QQ 号、QQ群白名单、助手显示名、状态检查、启动 Hub 和打开 WebUI。
-
-The quick menu is in Chinese:
-
-快捷菜单包含：
+If the `claude-to-im` Codex skill is installed, you can ask Codex to download and set up this project for you:
 
 ```text
-1) Codex 登录 / 鉴权测试
-2) QQ / OneBot 配置
-3) 设置主人 QQ 号
-4) 设置 QQ 群白名单
-5) 设置助手名称和 @ 别名
-6) 启动 Hub
-7) 状态检查
-8) 打开 WebUI
-0) 退出
+Use the claude-to-im skill to download and set up GPT QQ Bot.
+Put the backend at /root/Codex-Remote-Contact and use ncc as the control entry.
 ```
 
-The WebUI stays Chinese by default. The language selector only switches the project introduction between Chinese and English.
+The skill will clone or update the backend, install Node dependencies, preserve existing local changes, and verify the setup with `ncc status`.
 
-WebUI 默认保持中文。语言选择器只用于切换“项目简介”的中文/英文。
+#### Manual Git Download
 
-### 1. Place the project / 放置项目
+```bash
+git clone https://github.com/gl813788-byte/GPT.git /root/Codex-Remote-Contact
+cd /root/Codex-Remote-Contact
+npm install --omit=dev
+```
+
+### 1. Place The Project
 
 Put the source folder somewhere stable. Avoid Downloads for long-running deployments.
 
-把源码放在长期稳定的位置。准备常驻运行时，不建议放在 Downloads。
-
 ```bash
-PROJECT_DIR="$HOME/gpt-qq-bot"
+PROJECT_DIR="$HOME/codexremotecontact"
 cd "$PROJECT_DIR"
 ```
 
 If macOS quarantines the downloaded zip package:
 
-如果 macOS 隔离了下载的 zip 包：
-
 ```bash
 xattr -dr com.apple.quarantine "$PROJECT_DIR"
 ```
 
-### 2. Configure settings / 配置设置
+### 2. Configure Settings
 
 Edit:
-
-编辑：
 
 ```bash
 open -e "$PROJECT_DIR/data/settings.json"
 ```
 
 Minimal example:
-
-最小配置示例：
 
 ```json
 {
@@ -250,36 +162,28 @@ Minimal example:
 }
 ```
 
-Put deployment-specific assistant voice in an external profile file:
-
-可以把自己的助手语气写进外部 profile 文件：
+Deployment-specific assistant style can live in an external profile file:
 
 ```bash
 export CODEX_REMOTE_CONTACT_ASSISTANT_PROFILE_PATH="/absolute/path/to/assistant-profile.md"
 ```
 
-### 3. Grant macOS permissions / 授予 macOS 权限
+### 3. Grant macOS Permissions
 
 Grant permissions to the process that actually runs the hub. For Terminal deployment this is usually `Terminal`, `iTerm`, or `node`; for app deployment it is the compiled client or launcher.
 
-权限需要给到实际运行 Hub 的进程。终端运行时通常是 `Terminal`、`iTerm` 或 `node`；App 运行时则是编译后的客户端或启动器。
-
-| Permission / 权限 | Required for / 用途 |
+| Permission | Required For |
 | :--- | :--- |
-| Full Disk Access / 完全磁盘访问 | iMessage database and Shadowrocket configuration. / 读取 iMessage 数据库和 Shadowrocket 配置。 |
-| Automation / 自动化 | AppleScript control of Messages, System Events, Shadowrocket, and other apps. / 通过 AppleScript 控制“信息”、System Events、Shadowrocket 等 App。 |
-| Accessibility / 辅助功能 | GUI operations in remote execution mode. / 远程执行模式操作 GUI。 |
-| Screen Recording / 屏幕录制 | Screenshots or screen inspection in remote execution mode. / 远程执行模式截图或看屏幕。 |
+| Full Disk Access | iMessage database and Shadowrocket configuration. |
+| Automation | AppleScript control of Messages, System Events, Shadowrocket, and other apps. |
+| Accessibility | GUI operations in remote execution mode. |
+| Screen Recording | Screenshots or screen inspection in remote execution mode. |
 
-### 4. Prepare iMessage / 准备 iMessage
+### 4. Prepare iMessage
 
 Sign in to Messages on the Mac and make sure `replyHandle` can send iMessages to the configured `trustedHandles`.
 
-在 Mac 的“信息”App 登录账号，并确认 `replyHandle` 能向 `trustedHandles` 发送 iMessage。
-
 For a one-message model or reasoning override, add a directive line before or after the message body:
-
-普通 iMessage 私聊可以在正文前或正文后追加一次性模型或思考强度指令：
 
 ```text
 /5.5 /high
@@ -288,13 +192,9 @@ Analyze this problem
 
 Common aliases include `/5.5`, `/5.4`, `/mini`, `/low`, `/medium`, `/high`, and `/xhigh`. These overrides affect only the current reply.
 
-常用别名包括 `/5.5`、`/5.4`、`/mini`、`/low`、`/medium`、`/high` 和 `/xhigh`，只影响当前这一条回复。
+### 5. Prepare QQ / OneBot
 
-### 5. Prepare QQ / OneBot / 准备 QQ 与 OneBot
-
-Install and launch LLBot Desktop or another OneBot-compatible bridge separately. The default API base is:
-
-单独安装并启动 LLBot Desktop 或其他 OneBot 兼容桥接器。默认 API 地址：
+Use the local `ncc` script for the current NapCat + OneBot setup. The default OneBot API base is:
 
 ```text
 http://127.0.0.1:3000
@@ -302,94 +202,76 @@ http://127.0.0.1:3000
 
 Override if needed:
 
-如需覆盖：
-
 ```bash
 export ONEBOT_API_BASE="http://127.0.0.1:3000"
 ```
 
-### 6. Start the hub / 启动 Hub
+### 6. Control With ncc
+
+Normal operation goes through one local control script:
+
+```bash
+ncc all
+ncc status
+ncc connect
+ncc stop-hub
+```
+
+Equivalent full path:
+
+```bash
+/root/napcat-codex-control.sh all
+```
+
+### 7. Backend API
+
+The HTTP service is kept for `ncc`, NapCat OneBot callbacks, and diagnostics.
 
 Development mode:
-
-开发模式：
 
 ```bash
 cd "$PROJECT_DIR"
 npm start
 ```
 
-Open the web console:
-
-打开 Web 控制台：
-
-```text
-http://localhost:3789
-```
-
 Health check:
-
-健康检查：
 
 ```bash
 curl http://localhost:3789/api/state
 ```
 
-### 7. Run with launchd / 使用 launchd 常驻运行
+### 8. Logs
+
+`ncc` starts the hub in a `screen` session named `codex-contact`.
 
 ```bash
-"$PROJECT_DIR/modules/install-launchd-plist.command"
-"$PROJECT_DIR/modules/chat-hub-start.command"
+ncc status
+screen -r codex-contact
 ```
 
-Stop:
+## Optional Packages
 
-停止：
-
-```bash
-"$PROJECT_DIR/modules/stop-chat-hub.command"
-```
-
-Logs:
-
-日志：
-
-```text
-$PROJECT_DIR/runtime/logs/chat-hub.log
-$PROJECT_DIR/runtime/logs/chat-hub.err.log
-```
-
-### 8. Optional client and launcher / 可选客户端与启动器
-
-Build them locally if you want to use the macOS client or launcher.
-
-如果需要 macOS 客户端或启动器，请在本机自行构建。
-
-```bash
-"$PROJECT_DIR/modules/mac-client/script/build_and_run.sh" --build-only
-"$PROJECT_DIR/modules/macos-launcher/build-launcher.command"
-"$PROJECT_DIR/modules/start-all.command"
-```
-
-`start-all.command` starts the hub and opens the compiled client if available. It does not start LLBot.
-
-`start-all.command` 会启动 Hub 并打开已构建的客户端，但不会自动启动 LLBot。
-
----
-
-## Optional Packages / 可选升级包
-
-### QQ Enhancer
+Recommended layout:
 
 ```text
 Projects/
-  gpt-qq-bot/
+  codexremotecontact/
   qq-enhancer/
+  unified-memory/
 ```
 
-Enable in `data/settings.json`:
+The hub tries to load optional packages in this order:
 
-在 `data/settings.json` 中启用：
+| Order | Source |
+| :--- | :--- |
+| 1 | Environment module paths, such as `CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE` and `CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE`. |
+| 2 | Local development folders under `src/` or `modules/`. |
+| 3 | Sibling packages such as `../qq-enhancer/` and `../unified-memory/`. |
+| 4 | Built-in no-op fallbacks. |
+
+### QQ Enhancer
+
+Enable in `data/settings.json`:
 
 ```json
 {
@@ -407,23 +289,13 @@ Enable in `data/settings.json`:
 
 Manual module path:
 
-手动指定模块：
-
 ```bash
 export CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE="/absolute/path/to/qq-enhancer/src/qq-enhancer/index.js"
 ```
 
 ### Unified Memory
 
-```text
-Projects/
-  gpt-qq-bot/
-  unified-memory/
-```
-
 Custom data paths:
-
-自定义数据路径：
 
 ```bash
 export UNIFIED_MEMORY_PATH="/absolute/path/to/unified-memory.json"
@@ -432,15 +304,11 @@ export UNIFIED_MEMORY_SETTINGS_PATH="/absolute/path/to/settings.json"
 
 Manual module path:
 
-手动指定模块：
-
 ```bash
 export CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE="/absolute/path/to/unified-memory/src/unified-memory/index.js"
 ```
 
----
-
-## Common Commands / 常用指令
+## Common Commands
 
 ```text
 /状态
@@ -474,11 +342,7 @@ export CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE="/absolute/path/to/unified-mem
 
 `/切换节点` and `/远程执行` require confirmation with `/确认` or `/取消`.
 
-`/切换节点` 和 `/远程执行` 需要使用 `/确认` 或 `/取消` 二次确认。
-
----
-
-## Environment Variables / 环境变量
+## Environment Variables
 
 ```bash
 ONEBOT_API_BASE=http://127.0.0.1:3000
@@ -509,27 +373,19 @@ CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE=/absolute/path/to/qq-enhancer/src/qq-enh
 CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE=/absolute/path/to/unified-memory/src/unified-memory/index.js
 ```
 
----
+## Troubleshooting
 
-## Troubleshooting / 故障排查
-
-| Problem / 问题 | Check / 排查 |
+| Problem | Check |
 | :--- | :--- |
-| Port already in use / 端口占用 | `lsof -nP -iTCP:3789 -sTCP:LISTEN` |
-| iMessage cannot be read / 无法读取 iMessage | Grant Full Disk Access and restart the hub.<br>授予完全磁盘访问权限并重启 Hub。 |
-| Messages cannot send replies / 无法发送信息回复 | Grant Automation permission for Messages.<br>授予“信息”自动化权限。 |
-| QQ does not respond / QQ 不响应 | Check LLBot, `ONEBOT_API_BASE`, allowed groups, QQ switch, and ban list.<br>检查 LLBot、`ONEBOT_API_BASE`、白名单群、QQ 总开关和 ban 列表。 |
-| Remote execution GUI operations fail / 远程执行 GUI 操作失败 | Grant Accessibility and Screen Recording to the running process and Codex.<br>给运行进程和 Codex 授予辅助功能、屏幕录制权限。 |
-| Shadowrocket commands fail / Shadowrocket 指令失败 | Verify Shadowrocket is installed and grant Full Disk Access to the hub.<br>确认已安装 Shadowrocket，并给 Hub 完全磁盘访问权限。 |
+| Port already in use | `lsof -nP -iTCP:3789 -sTCP:LISTEN` |
+| iMessage cannot be read | Grant Full Disk Access and restart the hub. |
+| Messages cannot send replies | Grant Automation permission for Messages. |
+| QQ does not respond | Check NapCat/LLBot, `ONEBOT_API_BASE`, allowed groups, QQ switch, and ban list. |
+| Remote execution GUI operations fail | Grant Accessibility and Screen Recording to the running process and Codex. |
+| Shadowrocket commands fail | Verify Shadowrocket is installed and grant Full Disk Access to the hub. |
 
----
-
-## Notice / 注意事项
+## Notice
 
 Add your own configuration through `data/settings.json`, environment variables, and external profile files.
 
-部署前应在 `data/settings.json`、环境变量和外部 profile 文件中填写自己的配置。
-
 This is a local automation tool. Before enabling iMessage, QQ, remote execution, proxy control, or GUI control, make sure you understand the related permissions and local security impact.
-
-本项目是本机自动化工具。启用 iMessage、QQ、远程执行、代理控制或 GUI 控制前，请确认你理解对应权限和本机安全影响。

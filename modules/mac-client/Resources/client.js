@@ -33,7 +33,7 @@ const i18n = {
     appTitle: "通讯中枢",
     language: "语言",
     connecting: "连接中",
-    openWebUI: "打开 WebUI",
+    openHubApi: "打开 Hub API",
     refresh: "刷新",
     hubOnline: "Hub 在线",
     hubOffline: "Hub 离线",
@@ -135,7 +135,7 @@ const i18n = {
     appTitle: "Communication Hub",
     language: "Language",
     connecting: "Connecting",
-    openWebUI: "Open WebUI",
+    openHubApi: "Open Hub API",
     refresh: "Refresh",
     hubOnline: "Hub online",
     hubOffline: "Hub offline",
@@ -238,11 +238,11 @@ const i18n = {
 const introI18n = {
   zh: {
     introTitle: "项目简介",
-    introBody: "GPT QQ Bot 是一个把 GPT 风格助手接入 QQ 群聊和私聊的本地项目。它通过 QQ/OneBot 连接 Codex CLI，在本机保存轻量上下文，并提供 WebUI 管理通道开关、群白名单、维护状态和本地测试。"
+    introBody: "GPT QQ Bot 是一个把 GPT 风格助手接入 QQ 群聊和私聊的本地项目。它通过 QQ/OneBot 连接 Codex CLI，在本机保存轻量上下文，并通过 ncc 与 Hub API 管理运行状态。"
   },
   en: {
     introTitle: "Project Introduction",
-    introBody: "GPT QQ Bot is a local project for running a GPT-style assistant in QQ groups and private chats. It connects QQ/OneBot to Codex CLI, keeps lightweight context on the machine, and provides a WebUI for channel switches, group allowlists, maintenance status, and local testing."
+    introBody: "GPT QQ Bot is a local project for running a GPT-style assistant in QQ groups and private chats. It connects QQ/OneBot to Codex CLI, keeps lightweight context on the machine, and uses ncc plus the Hub API for runtime control."
   }
 };
 
