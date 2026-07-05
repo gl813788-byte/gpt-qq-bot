@@ -6,9 +6,9 @@
   <string>local.gpt-qq-bot.chat-hub</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/env</string>
-    <string>npm</string>
-    <string>start</string>
+    <string>/bin/zsh</string>
+    <string>-lc</string>
+    <string>cd "__PROJECT_DIR__" || exit 1; [ -f "config/local.env" ] &amp;&amp; source "config/local.env"; npm start</string>
   </array>
   <key>WorkingDirectory</key>
   <string>__PROJECT_DIR__</string>
