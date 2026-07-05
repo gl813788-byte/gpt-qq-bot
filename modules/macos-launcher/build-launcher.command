@@ -4,7 +4,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 LAUNCHER_DIR="$PROJECT_DIR/modules/macos-launcher"
 BUILD_DIR="$LAUNCHER_DIR/build"
-APP_NAME="CodexRemoteContact Launcher.app"
+APP_NAME="GPT QQ Bot Launcher.app"
 APP_DIR="$PROJECT_DIR/build/$APP_NAME"
 USER_APPS_DIR="$HOME/Applications"
 USER_APP_DIR="$USER_APPS_DIR/$APP_NAME"

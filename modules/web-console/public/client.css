@@ -113,6 +113,26 @@ p {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.language-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.language-picker select {
+  min-width: 104px;
+  min-height: 30px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 8px;
+  background: var(--panel-strong);
+  color: var(--text);
 }
 
 .status-pill {
@@ -618,5 +638,9 @@ input {
   .split,
   .switch-row {
     grid-template-columns: 1fr;
+  }
+
+  .top-actions {
+    justify-content: flex-start;
   }
 }

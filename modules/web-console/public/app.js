@@ -1,4 +1,5 @@
 const els = {
+  languageSelect: document.querySelector("#languageSelect"),
   overallStatus: document.querySelector("#overallStatus"),
   qqToggle: document.querySelector("#qqToggle"),
   imessageToggle: document.querySelector("#imessageToggle"),
@@ -27,6 +28,238 @@ const els = {
   events: document.querySelector("#events")
 };
 
+const i18n = {
+  zh: {
+    appTitle: "通讯中枢",
+    language: "语言",
+    online: "在线",
+    offline: "离线",
+    imessageIntro: "控制台、私聊和远程执行模式入口。",
+    qqIntro: "白名单群里被 @ 或被回复时出现。",
+    maintenanceTitle: "维护状态",
+    maintenanceSubtitle: "本机组件实时状态。",
+    refresh: "刷新",
+    qqRulesTitle: "QQ 群聊规则",
+    qqRulesSubtitle: "白名单、记忆和触发规则。",
+    mentionOnly: "仅 @ 出现",
+    allowlistCurrent: "当前白名单",
+    newGroupId: "新增群 ID",
+    groupPlaceholder: "例如 100000001",
+    add: "添加",
+    lightMemory: "轻量记忆",
+    clearMemory: "清空记忆",
+    imessageConsoleTitle: "iMessage 控制台",
+    imessageConsoleSubtitle: "可信联系人与回复账号。",
+    notStarted: "未启动",
+    trustedContacts: "可信联系人",
+    newIMessageAccount: "新增 iMessage 账号",
+    imessagePlaceholder: "手机号或 Apple ID 邮箱",
+    replyAccount: "默认回复账号",
+    replyAccountPlaceholder: "固定回复到这个手机号或邮箱",
+    save: "保存",
+    recentCommands: "最近命令",
+    qqTestTitle: "模拟 QQ @ 测试",
+    qqTestSubtitle: "本地流程测试。",
+    groupId: "群 ID",
+    senderName: "群友昵称",
+    senderDefault: "难绷群友A",
+    message: "消息",
+    messageDefault: "@assistant 来看一下这个操作",
+    sendMention: "发送 @ 事件",
+    sendNormal: "发送普通群消息",
+    eventLogTitle: "事件记录",
+    eventLogSubtitle: "最近 QQ 事件。",
+    noEvents: "还没有事件。先打开 QQ 开关，再发一个模拟 @。",
+    apiOnline: "在线",
+    apiOffline: "离线",
+    account: "账号",
+    error: "错误",
+    path: "路径",
+    exists: "存在",
+    missing: "缺失",
+    lastRun: "上次运行",
+    noRun: "还没有运行",
+    duration: "耗时",
+    switchLabel: "开关",
+    enabled: "开启",
+    disabled: "关闭",
+    status: "状态",
+    trusted: "可信联系人",
+    remoteExecution: "远程执行模式",
+    model: "模型",
+    intelligence: "智能",
+    memory: "记忆",
+    running: "Codex 运行中",
+    allowlist: "白名单",
+    events: "事件",
+    webLookup: "联网查询",
+    lastQuery: "上次查询",
+    noQuery: "还没有查询",
+    normal: "正常",
+    attention: "注意",
+    fiveHours: "5 小时",
+    sevenDays: "7 天",
+    used: "已使用",
+    total: "共",
+    recorded: "记录",
+    remaining: "剩余",
+    reset: "重置",
+    groupCount: (count) => `${count} 个群`,
+    itemCount: (count) => `${count} 个`,
+    itemCountBare: (count) => `${count} 条`,
+    noAllowlist: "还没有白名单群。",
+    removeGroup: (id) => `移除群 ${id}`,
+    noMemory: "暂无参与记忆",
+    noTrustedContacts: "还没有可信联系人。",
+    remove: (value) => `移除 ${value}`,
+    noIMessageCommands: "还没有 iMessage 命令。",
+    reply: "回复",
+    sendOk: "发送成功",
+    sendFail: "发送失败",
+    attachment: "附件",
+    notDownloaded: "（未下载）",
+    unauthorized: "未授权",
+    unknown: "未知",
+    ignored: "忽略",
+    matched: "matched",
+    unknownSender: "未知群友",
+    ownerAccount: " · 你的账号",
+    replyAssistant: "回复 assistant",
+    quote: "引用",
+    quoteReadFailed: "引用读取失败"
+  },
+  en: {
+    appTitle: "Communication Hub",
+    language: "Language",
+    online: "Online",
+    offline: "Offline",
+    imessageIntro: "Console, private replies, and remote execution entry points.",
+    qqIntro: "Appears in allowlisted groups when mentioned or replied to.",
+    maintenanceTitle: "Maintenance",
+    maintenanceSubtitle: "Live status for local components.",
+    refresh: "Refresh",
+    qqRulesTitle: "QQ Group Rules",
+    qqRulesSubtitle: "Allowlist, memory, and trigger rules.",
+    mentionOnly: "Mention only",
+    allowlistCurrent: "Current allowlist",
+    newGroupId: "New group ID",
+    groupPlaceholder: "For example 100000001",
+    add: "Add",
+    lightMemory: "Lightweight memory",
+    clearMemory: "Clear memory",
+    imessageConsoleTitle: "iMessage Console",
+    imessageConsoleSubtitle: "Trusted contacts and reply account.",
+    notStarted: "Not started",
+    trustedContacts: "Trusted contacts",
+    newIMessageAccount: "New iMessage account",
+    imessagePlaceholder: "Phone number or Apple ID email",
+    replyAccount: "Default reply account",
+    replyAccountPlaceholder: "Always reply from this phone or email",
+    save: "Save",
+    recentCommands: "Recent commands",
+    qqTestTitle: "Simulated QQ @ Test",
+    qqTestSubtitle: "Local flow test.",
+    groupId: "Group ID",
+    senderName: "Sender nickname",
+    senderDefault: "Group member A",
+    message: "Message",
+    messageDefault: "@assistant please check this flow",
+    sendMention: "Send @ event",
+    sendNormal: "Send normal group message",
+    eventLogTitle: "Event Log",
+    eventLogSubtitle: "Recent QQ events.",
+    noEvents: "No events yet. Turn on QQ, then send a simulated @.",
+    apiOnline: "online",
+    apiOffline: "offline",
+    account: "Account",
+    error: "Error",
+    path: "Path",
+    exists: "exists",
+    missing: "missing",
+    lastRun: "Last run",
+    noRun: "Not run yet",
+    duration: "Duration",
+    switchLabel: "Switch",
+    enabled: "enabled",
+    disabled: "disabled",
+    status: "Status",
+    trusted: "Trusted contacts",
+    remoteExecution: "Remote execution",
+    model: "Model",
+    intelligence: "Reasoning",
+    memory: "Memory",
+    running: "Codex is running",
+    allowlist: "Allowlist",
+    events: "Events",
+    webLookup: "Web lookup",
+    lastQuery: "Last query",
+    noQuery: "No query yet",
+    normal: "OK",
+    attention: "Check",
+    fiveHours: "5 hours",
+    sevenDays: "7 days",
+    used: "Used",
+    total: "Total",
+    recorded: "Recorded",
+    remaining: "Remaining",
+    reset: "Reset",
+    groupCount: (count) => `${count} groups`,
+    itemCount: (count) => `${count}`,
+    itemCountBare: (count) => `${count} items`,
+    noAllowlist: "No allowlisted groups yet.",
+    removeGroup: (id) => `Remove group ${id}`,
+    noMemory: "No participation memory",
+    noTrustedContacts: "No trusted contacts yet.",
+    remove: (value) => `Remove ${value}`,
+    noIMessageCommands: "No iMessage commands yet.",
+    reply: "Reply",
+    sendOk: "sent",
+    sendFail: "send failed",
+    attachment: "Attachment",
+    notDownloaded: "(not downloaded)",
+    unauthorized: "Unauthorized",
+    unknown: "Unknown",
+    ignored: "Ignored",
+    matched: "matched",
+    unknownSender: "Unknown sender",
+    ownerAccount: " · owner account",
+    replyAssistant: "reply to assistant",
+    quote: "quote",
+    quoteReadFailed: "Quote read failed"
+  }
+};
+
+let currentLanguage = localStorage.getItem("gptQqBotLanguage") || "zh";
+const defaultInputValues = {
+  senderName: { zh: i18n.zh.senderDefault, en: i18n.en.senderDefault },
+  messageText: { zh: i18n.zh.messageDefault, en: i18n.en.messageDefault }
+};
+
+function t(key, ...args) {
+  const value = i18n[currentLanguage]?.[key] ?? i18n.zh[key] ?? key;
+  return typeof value === "function" ? value(...args) : value;
+}
+
+function applyLanguage() {
+  document.documentElement.lang = currentLanguage === "zh" ? "zh-CN" : "en";
+  document.title = "GPT QQ Bot Hub";
+  if (els.languageSelect) els.languageSelect.value = currentLanguage;
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+    node.placeholder = t(node.dataset.i18nPlaceholder);
+  });
+  for (const [id, values] of Object.entries(defaultInputValues)) {
+    const node = document.querySelector(`#${id}`);
+    if (!node) continue;
+    const otherLanguage = currentLanguage === "zh" ? "en" : "zh";
+    if (!node.value || node.value === values[otherLanguage]) {
+      node.value = values[currentLanguage];
+    }
+  }
+}
+
 async function api(path, options = {}) {
   const response = await fetch(path, {
     headers: { "content-type": "application/json" },
@@ -44,12 +277,12 @@ function render(state) {
   renderIMessage(state.imessage);
 
   const online = state.channels.qq || state.channels.imessage;
-  els.overallStatus.textContent = online ? "在线" : "离线";
+  els.overallStatus.textContent = online ? t("online") : t("offline");
   els.overallStatus.classList.toggle("online", online);
 
   els.events.innerHTML = state.qq.events.length
     ? state.qq.events.map(renderEvent).join("")
-    : '<p class="empty">还没有事件。先打开 QQ 开关，再发一个模拟 @。</p>';
+    : `<p class="empty">${escapeHtml(t("noEvents"))}</p>`;
 }
 
 function renderMaintenance(health) {
@@ -59,20 +292,20 @@ function renderMaintenance(health) {
       title: "LLBot / OneBot",
       ok: health.oneBot?.ok,
       lines: [
-        `API: ${health.oneBot?.ok ? "在线" : "离线"}`,
-        health.oneBot?.nickname ? `账号: ${health.oneBot.nickname}` : null,
+        `API: ${health.oneBot?.ok ? t("apiOnline") : t("apiOffline")}`,
+        health.oneBot?.nickname ? `${t("account")}: ${health.oneBot.nickname}` : null,
         health.oneBot?.selfId ? `QQ: ${health.oneBot.selfId}` : null,
-        health.oneBot?.lastError ? `错误: ${health.oneBot.lastError}` : null
+        health.oneBot?.lastError ? `${t("error")}: ${health.oneBot.lastError}` : null
       ]
     },
     {
       title: "Codex CLI",
       ok: health.codex?.pathExists && health.codex?.lastOk !== false,
       lines: [
-        `路径: ${health.codex?.pathExists ? "存在" : "缺失"}`,
-        health.codex?.lastRunAt ? `上次运行: ${formatTime(health.codex.lastRunAt)}` : "还没有运行",
-        health.codex?.lastDurationMs != null ? `耗时: ${health.codex.lastDurationMs} ms` : null,
-        health.codex?.lastError ? `错误: ${health.codex.lastError}` : null
+        `${t("path")}: ${health.codex?.pathExists ? t("exists") : t("missing")}`,
+        health.codex?.lastRunAt ? `${t("lastRun")}: ${formatTime(health.codex.lastRunAt)}` : t("noRun"),
+        health.codex?.lastDurationMs != null ? `${t("duration")}: ${health.codex.lastDurationMs} ms` : null,
+        health.codex?.lastError ? `${t("error")}: ${health.codex.lastError}` : null
       ],
       detailHtml: renderCodexQuotaBlock(health.codex?.quota)
     },
@@ -80,41 +313,41 @@ function renderMaintenance(health) {
       title: "iMessage",
       ok: health.channels?.imessage && health.imessage?.status !== "error",
       lines: [
-        `开关: ${health.channels?.imessage ? "开启" : "关闭"}`,
-        `状态: ${health.imessage?.status || "idle"}`,
-        `可信联系人: ${health.imessage?.trustedHandles ?? 0} 个`,
-        health.imessage?.lastError ? `错误: ${health.imessage.lastError}` : null
+        `${t("switchLabel")}: ${health.channels?.imessage ? t("enabled") : t("disabled")}`,
+        `${t("status")}: ${health.imessage?.status || "idle"}`,
+        `${t("trusted")}: ${t("itemCount", health.imessage?.trustedHandles ?? 0)}`,
+        health.imessage?.lastError ? `${t("error")}: ${health.imessage.lastError}` : null
       ]
     },
     {
-      title: "远程执行模式",
+      title: t("remoteExecution"),
       ok: Boolean(health.remoteExecution?.enabled),
       lines: [
-        `状态: ${health.remoteExecution?.enabled ? "开启" : "关闭"}`,
-        `模型: ${health.remoteExecution?.model || "未知"}`,
-        `智能: ${health.remoteExecution?.reasoningEffort || "未知"}`,
-        `记忆: ${health.remoteExecution?.memoryCount ?? 0} 条`,
-        health.remoteExecution?.busy ? "Codex 运行中" : null
+        `${t("status")}: ${health.remoteExecution?.enabled ? t("enabled") : t("disabled")}`,
+        `${t("model")}: ${health.remoteExecution?.model || t("unknown")}`,
+        `${t("intelligence")}: ${health.remoteExecution?.reasoningEffort || t("unknown")}`,
+        `${t("memory")}: ${t("itemCountBare", health.remoteExecution?.memoryCount ?? 0)}`,
+        health.remoteExecution?.busy ? t("running") : null
       ]
     },
     {
       title: "QQ",
       ok: health.channels?.qq,
       lines: [
-        `开关: ${health.channels?.qq ? "开启" : "关闭"}`,
-        `白名单: ${health.qq?.allowedGroups ?? 0} 个群`,
-        `记忆: ${health.qq?.memoryGroups ?? 0} 个群`,
-        `事件: ${health.qq?.recentEvents ?? 0} 条`
+        `${t("switchLabel")}: ${health.channels?.qq ? t("enabled") : t("disabled")}`,
+        `${t("allowlist")}: ${t("groupCount", health.qq?.allowedGroups ?? 0)}`,
+        `${t("memory")}: ${t("groupCount", health.qq?.memoryGroups ?? 0)}`,
+        `${t("events")}: ${t("itemCountBare", health.qq?.recentEvents ?? 0)}`
       ]
     },
     {
-      title: "联网查询",
+      title: t("webLookup"),
       ok: health.webLookup?.enabled && health.webLookup?.lastOk !== false,
       lines: [
-        `开关: ${health.webLookup?.enabled ? "开启" : "关闭"}`,
-        health.webLookup?.lastQuery ? `上次查询: ${health.webLookup.lastQuery}` : "还没有查询",
-        health.webLookup?.lastDurationMs != null ? `耗时: ${health.webLookup.lastDurationMs} ms` : null,
-        health.webLookup?.lastError ? `错误: ${health.webLookup.lastError}` : null
+        `${t("switchLabel")}: ${health.webLookup?.enabled ? t("enabled") : t("disabled")}`,
+        health.webLookup?.lastQuery ? `${t("lastQuery")}: ${health.webLookup.lastQuery}` : t("noQuery"),
+        health.webLookup?.lastDurationMs != null ? `${t("duration")}: ${health.webLookup.lastDurationMs} ms` : null,
+        health.webLookup?.lastError ? `${t("error")}: ${health.webLookup.lastError}` : null
       ]
     }
   ];
@@ -123,7 +356,7 @@ function renderMaintenance(health) {
     <article class="health-card ${card.ok ? "ok" : "warn"}">
       <div class="health-title">
         <strong>${escapeHtml(card.title)}</strong>
-        <span>${card.ok ? "正常" : "注意"}</span>
+        <span>${card.ok ? t("normal") : t("attention")}</span>
       </div>
       ${card.lines.filter(Boolean).map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
       ${card.detailHtml || ""}
@@ -134,14 +367,14 @@ function renderMaintenance(health) {
 function renderCodexQuotaBlock(quota) {
   if (!quota?.available) return "";
   const rows = [
-    renderQuotaRow("5 小时", quota.primary),
-    renderQuotaRow("7 天", quota.secondary)
+    renderQuotaRow(t("fiveHours"), quota.primary),
+    renderQuotaRow(t("sevenDays"), quota.secondary)
   ].filter(Boolean).join("");
   const summary = quota.totalTokens != null && quota.modelContextWindow != null
-    ? `<p class="quota-summary">已使用 ${escapeHtml(formatTokenNumber(quota.totalTokens))} / 共 ${escapeHtml(formatContextWindow(quota.modelContextWindow))}</p>`
+    ? `<p class="quota-summary">${escapeHtml(t("used"))} ${escapeHtml(formatTokenNumber(quota.totalTokens))} / ${escapeHtml(t("total"))} ${escapeHtml(formatContextWindow(quota.modelContextWindow))}</p>`
     : "";
   const updated = quota.updatedAt
-    ? `<p class="quota-updated">记录 ${escapeHtml(formatTime(quota.updatedAt))}</p>`
+    ? `<p class="quota-updated">${escapeHtml(t("recorded"))} ${escapeHtml(formatTime(quota.updatedAt))}</p>`
     : "";
   return rows || summary ? `<div class="quota-block">${summary}${rows}${updated}</div>` : "";
 }
@@ -152,7 +385,7 @@ function renderQuotaRow(label, window) {
     <div class="quota-row">
       <div class="quota-meta">
         <strong>${escapeHtml(label)}</strong>
-        <span>剩余 ${escapeHtml(formatPercent(window.remainingPercent))} · 重置 ${escapeHtml(formatResetTime(window.resetsAt))}</span>
+        <span>${escapeHtml(t("remaining"))} ${escapeHtml(formatPercent(window.remainingPercent))} · ${escapeHtml(t("reset"))} ${escapeHtml(formatResetTime(window.resetsAt))}</span>
       </div>
       <div class="quota-track" aria-hidden="true">
         <span class="quota-fill" style="width: ${escapeHtml(formatPercent(window.remainingPercent))}"></span>
@@ -197,15 +430,15 @@ function formatContextWindow(value) {
 }
 
 function renderAllowedGroups(groups) {
-  els.groupCount.textContent = `${groups.length} 个群`;
+  els.groupCount.textContent = t("groupCount", groups.length);
   els.allowedGroupsList.innerHTML = groups.length
     ? groups.map((groupId) => `
       <div class="group-item">
         <code>${escapeHtml(groupId)}</code>
-        <button class="icon-button" data-remove-group="${escapeHtml(groupId)}" title="移除群 ${escapeHtml(groupId)}" aria-label="移除群 ${escapeHtml(groupId)}">&times;</button>
+        <button class="icon-button" data-remove-group="${escapeHtml(groupId)}" title="${escapeHtml(t("removeGroup", groupId))}" aria-label="${escapeHtml(t("removeGroup", groupId))}">&times;</button>
       </div>
     `).join("")
-    : '<p class="empty inline">还没有白名单群。</p>';
+    : `<p class="empty inline">${escapeHtml(t("noAllowlist"))}</p>`;
 }
 
 function renderMemoryStats(memory) {
@@ -218,7 +451,7 @@ function renderMemoryStats(memory) {
         ${escapeHtml(count)} / ${escapeHtml(memory.perGroupLimit || 10)}
       </span>
     `).join("")
-    : '<span class="memory-chip muted">暂无参与记忆</span>';
+    : `<span class="memory-chip muted">${escapeHtml(t("noMemory"))}</span>`;
 }
 
 function renderIMessage(imessage) {
@@ -226,32 +459,32 @@ function renderIMessage(imessage) {
   els.imessageStatus.textContent = imessage?.status || "idle";
   els.imessageError.textContent = imessage?.lastError || "";
   els.replyHandleInput.value = imessage?.replyHandle || "";
-  els.trustedHandleCount.textContent = `${trustedHandles.length} 个`;
+  els.trustedHandleCount.textContent = t("itemCount", trustedHandles.length);
   els.trustedHandlesList.innerHTML = trustedHandles.length
     ? trustedHandles.map((handle) => `
       <div class="group-item">
         <code>${escapeHtml(handle)}</code>
-        <button class="icon-button" data-remove-handle="${escapeHtml(handle)}" title="移除 ${escapeHtml(handle)}" aria-label="移除 ${escapeHtml(handle)}">&times;</button>
+        <button class="icon-button" data-remove-handle="${escapeHtml(handle)}" title="${escapeHtml(t("remove", handle))}" aria-label="${escapeHtml(t("remove", handle))}">&times;</button>
       </div>
     `).join("")
-    : '<p class="empty inline">还没有可信联系人。</p>';
+    : `<p class="empty inline">${escapeHtml(t("noTrustedContacts"))}</p>`;
   els.imessageEvents.innerHTML = imessage?.events?.length
     ? imessage.events.map(renderIMessageEvent).join("")
-    : '<p class="empty">还没有 iMessage 命令。</p>';
+    : `<p class="empty">${escapeHtml(t("noIMessageCommands"))}</p>`;
 }
 
 function renderIMessageEvent(record) {
   const className = record.result?.ok ? "ok" : "skip";
-  const trustedBadge = record.trusted ? "可信" : "未授权";
-  const reply = record.reply ? `<p><strong>回复：</strong>${escapeHtml(record.reply)}</p>` : "";
-  const send = record.send ? ` · 发送${record.send.ok ? "成功" : "失败"}` : "";
+  const trustedBadge = record.trusted ? t("trusted") : t("unauthorized");
+  const reply = record.reply ? `<p><strong>${escapeHtml(t("reply"))}：</strong>${escapeHtml(record.reply)}</p>` : "";
+  const send = record.send ? ` · ${record.send.ok ? t("sendOk") : t("sendFail")}` : "";
   const attachments = record.event?.attachments?.length
-    ? `<p><strong>附件：</strong>${record.event.attachments.map((item) => `${escapeHtml(item.transferName || item.filename || "附件")} ${item.exists ? "" : "（未下载）"}`).join("、")}</p>`
+    ? `<p><strong>${escapeHtml(t("attachment"))}：</strong>${record.event.attachments.map((item) => `${escapeHtml(item.transferName || item.filename || t("attachment"))} ${item.exists ? "" : t("notDownloaded")}`).join("、")}</p>`
     : "";
   return `
     <article class="event ${className}">
       <div class="meta">${new Date(record.receivedAt).toLocaleString()} · ${trustedBadge}${send} · ${escapeHtml(record.result?.summary || "")}</div>
-      <p><strong>${escapeHtml(record.event?.handle || "未知")}：</strong>${escapeHtml(record.event?.text || "")}</p>
+      <p><strong>${escapeHtml(record.event?.handle || t("unknown"))}：</strong>${escapeHtml(record.event?.text || "")}</p>
       ${attachments}
       ${reply}
     </article>
@@ -259,15 +492,15 @@ function renderIMessageEvent(record) {
 }
 
 function renderEvent(record) {
-  const status = record.decision.ok ? "回复" : "忽略";
+  const status = record.decision.ok ? t("reply") : t("ignored");
   const className = record.decision.ok ? "ok" : "skip";
-  const reply = record.reply ? `<p><strong>回复：</strong>${escapeHtml(record.reply)}</p>` : "";
-  const sender = record.event.senderLabel || record.event.senderName || "未知群友";
-  const ownerBadge = record.event.isOwner ? " · 你的账号" : "";
+  const reply = record.reply ? `<p><strong>${escapeHtml(t("reply"))}：</strong>${escapeHtml(record.reply)}</p>` : "";
+  const sender = record.event.senderLabel || record.event.senderName || t("unknownSender");
+  const ownerBadge = record.event.isOwner ? t("ownerAccount") : "";
   const quoted = renderQuotedContext(record.event);
   return `
     <article class="event ${className}">
-      <div class="meta">${new Date(record.receivedAt).toLocaleString()} · ${status} · ${escapeHtml(record.decision.reason || "matched")}</div>
+      <div class="meta">${new Date(record.receivedAt).toLocaleString()} · ${status} · ${escapeHtml(record.decision.reason || t("matched"))}</div>
       <p><strong>${escapeHtml(sender)}：</strong>${escapeHtml(record.event.text || "")}<span class="owner-badge">${ownerBadge}</span></p>
       ${quoted}
       ${reply}
@@ -278,11 +511,11 @@ function renderEvent(record) {
 function renderQuotedContext(event) {
   if (event.replyContext) {
     const context = event.replyContext;
-    const label = context.isSelf ? "回复 assistant" : `引用 ${context.senderName || context.senderId || "群友"}`;
+    const label = context.isSelf ? t("replyAssistant") : `${t("quote")} ${context.senderName || context.senderId || t("unknownSender")}`;
     return `<p class="quoted"><strong>${escapeHtml(label)}：</strong>${escapeHtml(context.text || "")}</p>`;
   }
   if (event.replyContextError) {
-    return `<p class="quoted warning"><strong>引用读取失败：</strong>${escapeHtml(event.replyContextError)}</p>`;
+    return `<p class="quoted warning"><strong>${escapeHtml(t("quoteReadFailed"))}：</strong>${escapeHtml(event.replyContextError)}</p>`;
   }
   return "";
 }
@@ -378,6 +611,12 @@ async function sendQqEvent(type) {
 els.qqToggle.addEventListener("change", () => setChannel("qq", els.qqToggle.checked));
 els.imessageToggle.addEventListener("change", () => setChannel("imessage", els.imessageToggle.checked));
 els.refreshMaintenance.addEventListener("click", refreshMaintenance);
+els.languageSelect?.addEventListener("change", () => {
+  currentLanguage = els.languageSelect.value === "en" ? "en" : "zh";
+  localStorage.setItem("gptQqBotLanguage", currentLanguage);
+  applyLanguage();
+  refresh();
+});
 
 els.addGroup.addEventListener("click", addAllowedGroup);
 els.allowedGroupInput.addEventListener("keydown", (event) => {
@@ -420,4 +659,5 @@ els.clearMemory.addEventListener("click", async () => {
 els.sendMention.addEventListener("click", () => sendQqEvent("group_at"));
 els.sendNormal.addEventListener("click", () => sendQqEvent("group_message"));
 
+applyLanguage();
 refresh();

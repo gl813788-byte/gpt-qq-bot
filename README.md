@@ -4,8 +4,8 @@
 
 ### QQ 群聊里的本地 GPT 助手
 
-**A local QQ/OneBot and Codex CLI assistant hub for the `gl813788-byte/GPT` project.**  
-**一个保存到 `gl813788-byte/GPT` 仓库里的 QQ/OneBot + Codex CLI 本地助手中枢。**
+**A local QQ/OneBot assistant hub powered by Codex CLI, with a bilingual WebUI and private runtime memory.**  
+**一个由 Codex CLI 驱动的 QQ/OneBot 本地助手中枢，带中英文 WebUI 和本地私有运行记忆。**
 
 ![Node.js](https://img.shields.io/badge/Node.js-20+-339933)
 ![macOS](https://img.shields.io/badge/macOS-14%2B-blue)
@@ -18,9 +18,13 @@
 
 ## Introduction / 介绍
 
-GPT QQ Bot runs locally and connects QQ/OneBot, Codex CLI, local automation scripts, proxy node control, and a web console into one service.
+GPT QQ Bot is a local assistant project for running a GPT-style bot inside QQ groups and private chats. It connects a QQ/OneBot bridge to Codex CLI, keeps lightweight conversation memory on the machine, and provides a WebUI for channel switches, allowlists, maintenance status, memory viewing, and local test messages.
 
-GPT QQ Bot 运行在本机，把 QQ/OneBot、Codex CLI、本机自动化脚本、代理节点控制和 Web 控制台接到同一个服务里。
+GPT QQ Bot 是一个把 GPT 风格助手接入 QQ 群聊和私聊的本地项目。它把 QQ/OneBot 桥接到 Codex CLI，在本机保存轻量上下文记忆，并提供 WebUI 用来管理通道开关、群白名单、维护状态、记忆查看和本地测试消息。
+
+The project is designed for personal deployment: private QQ memory, persona notes, runtime settings, generated images, and temporary files stay outside the GitHub commit by default. The repository keeps source code, example config, UI assets, and empty memory templates only.
+
+这个项目面向个人部署：真实 QQ 记忆、群友画像、运行配置、生成图片和临时文件默认不进入 GitHub 提交。仓库里只保存源码、示例配置、界面资源和空的记忆模板。
 
 The main program is intentionally usable by itself. Optional update packages such as `qq-enhancer` and `unified-memory` can be placed next to it when you need enhanced QQ group-chat behavior or cross-device memory.
 
@@ -53,7 +57,7 @@ The main program is intentionally usable by itself. Optional update packages suc
 ## Project Structure / 项目结构
 
 ```text
-codexremotecontact/
+gpt-qq-bot/
   src/server.js                         # Hub main process / Hub 主进程
   modules/
     imessage/                           # iMessage notes / iMessage 模块说明
@@ -65,7 +69,7 @@ codexremotecontact/
     macos-launcher/                     # Launcher source / 启动器源码
   config/
     settings.example.json               # Example settings / 配置示例
-    local.codexremotecontact.chat-hub.plist.example
+    local.gpt-qq-bot.chat-hub.plist.example
   data/                                 # Empty settings and memory files / 空配置与记忆文件
   runtime/                              # Runtime logs and generated files / 运行时文件
   workspaces/codex-cli/                 # Codex CLI temporary workspace / 临时工作区
@@ -79,7 +83,7 @@ Recommended layout:
 
 ```text
 Projects/
-  codexremotecontact/
+  gpt-qq-bot/
   qq-enhancer/
   unified-memory/
 ```
@@ -95,9 +99,9 @@ The hub tries to load optional packages in this order:
 | 3 | Sibling packages such as `../qq-enhancer/` and `../unified-memory/`.<br>同级目录中的 `../qq-enhancer/` 和 `../unified-memory/`。 |
 | 4 | Built-in no-op fallbacks.<br>内置空实现降级。 |
 
-This means a clean download of `codexremotecontact` can start without QQ Enhancer or Unified Memory.
+This means a clean download of `gpt-qq-bot` can start without QQ Enhancer or Unified Memory.
 
-这意味着只下载 `codexremotecontact` 也可以启动，不需要强制安装 QQ 增强或统一记忆。
+这意味着只下载 `gpt-qq-bot` 也可以启动，不需要强制安装 QQ 增强或统一记忆。
 
 ---
 
@@ -141,7 +145,7 @@ Put the source folder somewhere stable. Avoid Downloads for long-running deploym
 把源码放在长期稳定的位置。准备常驻运行时，不建议放在 Downloads。
 
 ```bash
-PROJECT_DIR="$HOME/codexremotecontact"
+PROJECT_DIR="$HOME/gpt-qq-bot"
 cd "$PROJECT_DIR"
 ```
 
@@ -333,7 +337,7 @@ Build them locally if you want to use the macOS client or launcher.
 
 ```text
 Projects/
-  codexremotecontact/
+  gpt-qq-bot/
   qq-enhancer/
 ```
 
@@ -367,7 +371,7 @@ export CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE="/absolute/path/to/qq-enhancer/sr
 
 ```text
 Projects/
-  codexremotecontact/
+  gpt-qq-bot/
   unified-memory/
 ```
 

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-PLIST="$PROJECT_DIR/config/local.codexremotecontact.chat-hub.plist"
+PLIST="$PROJECT_DIR/config/local.gpt-qq-bot.chat-hub.plist"
 PORT="3789"
 USER_DOMAIN="gui/$(id -u)"
 
@@ -13,7 +13,7 @@ if [ ! -f "$PLIST" ]; then
 fi
 
 if lsof -tiTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "codexremotecontact Chat Hub is already running:"
+  echo "gpt-qq-bot Chat Hub is already running:"
   echo "http://localhost:$PORT"
   exit 0
 fi
@@ -23,10 +23,10 @@ launchctl bootstrap "$USER_DOMAIN" "$PLIST"
 sleep 1
 
 if lsof -tiTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "codexremotecontact Chat Hub started:"
+  echo "gpt-qq-bot Chat Hub started:"
   echo "http://localhost:$PORT"
 else
-  echo "codexremotecontact Chat Hub did not start. Check:"
+  echo "gpt-qq-bot Chat Hub did not start. Check:"
     echo "$PROJECT_DIR/runtime/logs/chat-hub.err.log"
   exit 1
 fi

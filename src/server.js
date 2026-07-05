@@ -200,7 +200,7 @@ const imessageImageDelivery = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_IMAGE_DE
 // or via environment variables, to give the bot a public name and owner label.
 let assistantName = process.env.CODEX_REMOTE_CONTACT_ASSISTANT_NAME || "assistant";
 let ownerLabel = process.env.CODEX_REMOTE_CONTACT_OWNER_LABEL || "管理员";
-let userAgentName = process.env.CODEX_REMOTE_CONTACT_USER_AGENT || "codexremotecontact/0.1";
+let userAgentName = process.env.CODEX_REMOTE_CONTACT_USER_AGENT || "gpt-qq-bot/0.1";
 let assistantMentionAliases = (process.env.CODEX_REMOTE_CONTACT_ASSISTANT_MENTIONS || "@assistant")
   .split(",")
   .map((item) => item.trim())
@@ -6874,7 +6874,7 @@ async function runUnifiedMemoryRecallRouteModel(text) {
     "source 只能是：desktop_recent、desktop_topic、mobile_context、unified、none。",
     "规则：",
     "- 问“刚刚/刚才 + 电脑/这边”且没有明确主题，通常是 desktop_recent。",
-    "- 有明确主题词如 client、WebUI、通讯中枢、codexremotecontact、小火箭，通常是 desktop_topic，并生成对应检索词。",
+    "- 有明确主题词如 client、WebUI、通讯中枢、GPT QQ Bot、小火箭，通常是 desktop_topic，并生成对应检索词。",
     "- 问手机上/iMessage 里刚说的，选 mobile_context。",
     "- 只是普通闲聊，不需要回看，选 none。",
     "- query 要短，包含检索关键词，不要写完整回复。",
@@ -8098,5 +8098,5 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(3789, () => {
-  console.log("codexremotecontact chat hub: http://localhost:3789");
+  console.log("GPT QQ Bot hub: http://localhost:3789");
 });

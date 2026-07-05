@@ -2,6 +2,7 @@ const HUB = location.protocol.startsWith("http") ? "" : "http://127.0.0.1:3789";
 const pollMs = 2200;
 
 const els = {
+  languageSelect: document.querySelector("#languageSelect"),
   hubStatus: document.querySelector("#hubStatus"),
   refresh: document.querySelector("#refresh"),
   openHub: document.querySelector("#openHub"),
@@ -26,6 +27,238 @@ const els = {
   memoryView: document.querySelector("#memoryView"),
   memoryTabs: Array.from(document.querySelectorAll("[data-memory-tab]"))
 };
+
+const i18n = {
+  zh: {
+    appTitle: "通讯中枢",
+    language: "语言",
+    connecting: "连接中",
+    openWebUI: "打开 WebUI",
+    refresh: "刷新",
+    hubOnline: "Hub 在线",
+    hubOffline: "Hub 离线",
+    imessageIntro: "可信联系人控制台，私聊可直接回应，远程执行模式从这里进入。",
+    qqIntro: "群聊仅白名单 @assistant / 回复时出现，私聊按开关接收。",
+    maintenanceTitle: "维护状态",
+    waitingSync: "等待同步",
+    lastSync: (time) => `上次同步 ${time}`,
+    checkNow: "立即检查",
+    memoryTitle: "记忆管理",
+    memorySubtitle: "查看 iMessage、远程执行模式和 QQ 轻量记忆。",
+    refreshMemory: "刷新记忆",
+    memoryType: "记忆类型",
+    unifiedMemory: "统一记忆",
+    remoteExecution: "远程执行模式",
+    qqAllowlistTitle: "QQ群白名单",
+    qqAllowlistSubtitle: "列表会保存到 Hub 设置。",
+    groupId: "群 ID",
+    imessageContactsTitle: "iMessage 联系人",
+    imessageContactsSubtitle: "只响应这些号码或邮箱。",
+    phoneOrEmail: "手机号或邮箱",
+    replyAccountOptional: "默认回复账号，可留空",
+    add: "添加",
+    save: "保存",
+    qqRecentTitle: "QQ 最近事件",
+    qqRecentSubtitle: "显示最近是否回复。",
+    imessageRecentTitle: "iMessage 最近事件",
+    imessageRecentSubtitle: "命令、图片和私聊回应。",
+    apiOnline: "API 在线",
+    apiOffline: "API 离线",
+    account: "账号",
+    pathExists: "路径存在",
+    pathMissing: "路径缺失",
+    ranAt: "运行",
+    notRunYet: "还未运行",
+    switchOn: "开关开启",
+    switchOff: "开关关闭",
+    status: "状态",
+    trustedCount: (count) => `可信 ${count} 个`,
+    enabledNow: "当前开启",
+    disabledNow: "当前关闭",
+    model: "模型",
+    intelligence: "智能",
+    unknown: "未知",
+    memoryCount: (count) => `记忆 ${count} 条`,
+    codexRunning: "Codex 正在运行",
+    allowlistCount: (count) => `白名单 ${count} 个`,
+    groupMemoryCount: (count) => `记忆 ${count} 个群`,
+    eventCount: (count) => `事件 ${count} 条`,
+    query: "查询",
+    noQuery: "还未查询",
+    ok: "正常",
+    attention: "注意",
+    fiveHours: "5 小时",
+    sevenDays: "7 天",
+    used: "已使用",
+    total: "共",
+    recorded: "记录",
+    remaining: "剩余",
+    reset: "重置",
+    remoteMemoryTitle: (count) => `远程执行模式记忆 · ${count} 条`,
+    clear: "清空",
+    noRemoteMemory: "远程执行模式还没有记忆。",
+    noGroupMemory: "这个群还没有可显示的记忆。",
+    noQqMemory: "QQ 还没有记忆。",
+    noContactMemory: "这个联系人还没有可显示的记忆。",
+    noIMessageMemory: "iMessage 还没有记忆。",
+    unifiedReadable: (count) => `统一记忆 · ${count} 条可读摘要`,
+    updatedAt: (time) => `更新 ${time}`,
+    noUpdate: "暂无更新",
+    skillRecallWrite: "电脑端 skill 调用后写入",
+    imessageRecallWrite: "iMessage 跨端回看后写入",
+    handoffWrite: "允许 /交接 手动写入",
+    handoff: "交接",
+    idea: "点子",
+    project: "项目",
+    todo: "待办",
+    daily: "日常",
+    recentState: "近期状态",
+    latestHandoff: "最近交接",
+    noUnifiedMemory: "统一记忆还没有可显示条目。",
+    preference: "偏好",
+    message: "消息",
+    owner: "owner",
+    groupCount: (count) => `${count} 个`,
+    noAllowlist: "还没有群白名单。",
+    remove: "移除",
+    noTrustedContacts: "还没有可信联系人。",
+    reply: "回复",
+    ignored: "忽略",
+    groupMember: "群友",
+    trusted: "可信",
+    unauthorized: "未授权",
+    attachment: "附件",
+    noQqEvents: "暂无 QQ 事件。",
+    noIMessageEvents: "暂无 iMessage 事件。"
+  },
+  en: {
+    appTitle: "Communication Hub",
+    language: "Language",
+    connecting: "Connecting",
+    openWebUI: "Open WebUI",
+    refresh: "Refresh",
+    hubOnline: "Hub online",
+    hubOffline: "Hub offline",
+    imessageIntro: "Trusted-contact console, direct private replies, and remote execution entry.",
+    qqIntro: "Groups respond only when @assistant is mentioned or replied to; private chats follow the toggle.",
+    maintenanceTitle: "Maintenance",
+    waitingSync: "Waiting to sync",
+    lastSync: (time) => `Last sync ${time}`,
+    checkNow: "Check now",
+    memoryTitle: "Memory",
+    memorySubtitle: "View iMessage, remote execution, and QQ lightweight memory.",
+    refreshMemory: "Refresh memory",
+    memoryType: "Memory type",
+    unifiedMemory: "Unified memory",
+    remoteExecution: "Remote execution",
+    qqAllowlistTitle: "QQ Group Allowlist",
+    qqAllowlistSubtitle: "Saved into Hub settings.",
+    groupId: "Group ID",
+    imessageContactsTitle: "iMessage Contacts",
+    imessageContactsSubtitle: "Only these numbers or emails are answered.",
+    phoneOrEmail: "Phone number or email",
+    replyAccountOptional: "Default reply account, optional",
+    add: "Add",
+    save: "Save",
+    qqRecentTitle: "Recent QQ Events",
+    qqRecentSubtitle: "Shows recent reply decisions.",
+    imessageRecentTitle: "Recent iMessage Events",
+    imessageRecentSubtitle: "Commands, images, and private replies.",
+    apiOnline: "API online",
+    apiOffline: "API offline",
+    account: "Account",
+    pathExists: "Path exists",
+    pathMissing: "Path missing",
+    ranAt: "Ran",
+    notRunYet: "Not run yet",
+    switchOn: "Switch on",
+    switchOff: "Switch off",
+    status: "Status",
+    trustedCount: (count) => `Trusted ${count}`,
+    enabledNow: "Enabled",
+    disabledNow: "Disabled",
+    model: "Model",
+    intelligence: "Reasoning",
+    unknown: "unknown",
+    memoryCount: (count) => `Memory ${count}`,
+    codexRunning: "Codex is running",
+    allowlistCount: (count) => `Allowlist ${count}`,
+    groupMemoryCount: (count) => `Memory ${count} groups`,
+    eventCount: (count) => `Events ${count}`,
+    query: "Query",
+    noQuery: "No query yet",
+    ok: "OK",
+    attention: "Check",
+    fiveHours: "5 hours",
+    sevenDays: "7 days",
+    used: "Used",
+    total: "Total",
+    recorded: "Recorded",
+    remaining: "Remaining",
+    reset: "Reset",
+    remoteMemoryTitle: (count) => `Remote execution memory · ${count}`,
+    clear: "Clear",
+    noRemoteMemory: "Remote execution has no memory yet.",
+    noGroupMemory: "This group has no visible memory.",
+    noQqMemory: "QQ has no memory yet.",
+    noContactMemory: "This contact has no visible memory.",
+    noIMessageMemory: "iMessage has no memory yet.",
+    unifiedReadable: (count) => `Unified memory · ${count} readable summaries`,
+    updatedAt: (time) => `Updated ${time}`,
+    noUpdate: "No updates",
+    skillRecallWrite: "Write after desktop skill recall",
+    imessageRecallWrite: "Write after iMessage cross-device recall",
+    handoffWrite: "Allow manual /handoff writes",
+    handoff: "Handoff",
+    idea: "Ideas",
+    project: "Projects",
+    todo: "Todos",
+    daily: "Daily",
+    recentState: "Recent state",
+    latestHandoff: "Latest handoff",
+    noUnifiedMemory: "Unified memory has no visible entries.",
+    preference: "Preference",
+    message: "Message",
+    owner: "owner",
+    groupCount: (count) => `${count}`,
+    noAllowlist: "No allowlisted groups yet.",
+    remove: "Remove",
+    noTrustedContacts: "No trusted contacts yet.",
+    reply: "Reply",
+    ignored: "Ignored",
+    groupMember: "Group member",
+    trusted: "Trusted",
+    unauthorized: "Unauthorized",
+    attachment: "Attachment",
+    noQqEvents: "No QQ events yet.",
+    noIMessageEvents: "No iMessage events yet."
+  }
+};
+
+let currentLanguage = localStorage.getItem("gptQqBotLanguage") || "zh";
+
+function t(key, ...args) {
+  const value = i18n[currentLanguage]?.[key] ?? i18n.zh[key] ?? key;
+  return typeof value === "function" ? value(...args) : value;
+}
+
+function applyLanguage() {
+  document.documentElement.lang = currentLanguage === "zh" ? "zh-CN" : "en";
+  document.title = "GPT QQ Bot";
+  if (els.languageSelect) els.languageSelect.value = currentLanguage;
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+    node.placeholder = t(node.dataset.i18nPlaceholder);
+  });
+  document.querySelectorAll("[data-i18n-title]").forEach((node) => {
+    node.title = t(node.dataset.i18nTitle);
+  });
+  document.querySelectorAll("[data-i18n-aria-label]").forEach((node) => {
+    node.setAttribute("aria-label", t(node.dataset.i18nAriaLabel));
+  });
+}
 
 let lastState = null;
 let lastMemory = null;
@@ -69,7 +302,7 @@ async function refreshAll() {
 }
 
 function setHubStatus(ok, message = "") {
-  els.hubStatus.textContent = ok ? "Hub 在线" : "Hub 离线";
+  els.hubStatus.textContent = ok ? t("hubOnline") : t("hubOffline");
   els.hubStatus.title = message;
   els.hubStatus.classList.toggle("warn", !ok);
   els.hubStatus.classList.toggle("bad", !ok);
@@ -87,14 +320,14 @@ function renderState(state) {
 
 function renderMaintenance(health) {
   setHubStatus(true);
-  els.lastUpdated.textContent = `上次同步 ${new Date().toLocaleTimeString()}`;
+  els.lastUpdated.textContent = t("lastSync", new Date().toLocaleTimeString());
   const cards = [
     {
       title: "LLBot / OneBot",
       ok: health.oneBot?.ok,
       lines: [
-        health.oneBot?.ok ? "API 在线" : "API 离线",
-        health.oneBot?.nickname ? `账号 ${health.oneBot.nickname}` : null,
+        health.oneBot?.ok ? t("apiOnline") : t("apiOffline"),
+        health.oneBot?.nickname ? `${t("account")} ${health.oneBot.nickname}` : null,
         health.oneBot?.selfId ? `QQ ${health.oneBot.selfId}` : null,
         health.oneBot?.lastError
       ]
@@ -103,8 +336,8 @@ function renderMaintenance(health) {
       title: "Codex CLI",
       ok: health.codex?.pathExists && health.codex?.lastOk !== false,
       lines: [
-        health.codex?.pathExists ? "路径存在" : "路径缺失",
-        health.codex?.lastRunAt ? `运行 ${formatTime(health.codex.lastRunAt)}` : "还未运行",
+        health.codex?.pathExists ? t("pathExists") : t("pathMissing"),
+        health.codex?.lastRunAt ? `${t("ranAt")} ${formatTime(health.codex.lastRunAt)}` : t("notRunYet"),
         health.codex?.lastDurationMs != null ? `${health.codex.lastDurationMs} ms` : null,
         health.codex?.lastError
       ],
@@ -114,39 +347,39 @@ function renderMaintenance(health) {
       title: "iMessage",
       ok: health.channels?.imessage && health.imessage?.status !== "error",
       lines: [
-        health.channels?.imessage ? "开关开启" : "开关关闭",
-        `状态 ${health.imessage?.status || "idle"}`,
-        `可信 ${health.imessage?.trustedHandles ?? 0} 个`,
+        health.channels?.imessage ? t("switchOn") : t("switchOff"),
+        `${t("status")} ${health.imessage?.status || "idle"}`,
+        t("trustedCount", health.imessage?.trustedHandles ?? 0),
         health.imessage?.lastError
       ]
     },
     {
-      title: "远程执行模式",
+      title: t("remoteExecution"),
       ok: Boolean(health.remoteExecution?.enabled),
       lines: [
-        health.remoteExecution?.enabled ? "当前开启" : "当前关闭",
-        `模型 ${health.remoteExecution?.model || "未知"}`,
-        `智能 ${health.remoteExecution?.reasoningEffort || "未知"}`,
-        `记忆 ${health.remoteExecution?.memoryCount ?? 0} 条`,
-        health.remoteExecution?.busy ? "Codex 正在运行" : null
+        health.remoteExecution?.enabled ? t("enabledNow") : t("disabledNow"),
+        `${t("model")} ${health.remoteExecution?.model || t("unknown")}`,
+        `${t("intelligence")} ${health.remoteExecution?.reasoningEffort || t("unknown")}`,
+        t("memoryCount", health.remoteExecution?.memoryCount ?? 0),
+        health.remoteExecution?.busy ? t("codexRunning") : null
       ]
     },
     {
       title: "QQ",
       ok: health.channels?.qq,
       lines: [
-        health.channels?.qq ? "开关开启" : "开关关闭",
-        `白名单 ${health.qq?.allowedGroups ?? 0} 个`,
-        `记忆 ${health.qq?.memoryGroups ?? 0} 个群`,
-        `事件 ${health.qq?.recentEvents ?? 0} 条`
+        health.channels?.qq ? t("switchOn") : t("switchOff"),
+        t("allowlistCount", health.qq?.allowedGroups ?? 0),
+        t("groupMemoryCount", health.qq?.memoryGroups ?? 0),
+        t("eventCount", health.qq?.recentEvents ?? 0)
       ]
     },
     {
       title: "联网查询",
       ok: health.webLookup?.enabled && health.webLookup?.lastOk !== false,
       lines: [
-        health.webLookup?.enabled ? "开关开启" : "开关关闭",
-        health.webLookup?.lastQuery ? `查询 ${health.webLookup.lastQuery}` : "还未查询",
+        health.webLookup?.enabled ? t("switchOn") : t("switchOff"),
+        health.webLookup?.lastQuery ? `${t("query")} ${health.webLookup.lastQuery}` : t("noQuery"),
         health.webLookup?.lastDurationMs != null ? `${health.webLookup.lastDurationMs} ms` : null,
         health.webLookup?.lastError
       ]
@@ -157,7 +390,7 @@ function renderMaintenance(health) {
     <article class="health-card ${card.ok ? "ok" : "bad"}">
       <div class="title">
         <strong>${escapeHtml(card.title)}</strong>
-        <span>${card.ok ? "正常" : "注意"}</span>
+        <span>${card.ok ? t("ok") : t("attention")}</span>
       </div>
       ${card.lines.filter(Boolean).map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
       ${card.detailHtml || ""}
@@ -168,14 +401,14 @@ function renderMaintenance(health) {
 function renderCodexQuotaBlock(quota) {
   if (!quota?.available) return "";
   const rows = [
-    renderQuotaRow("5 小时", quota.primary),
-    renderQuotaRow("7 天", quota.secondary)
+    renderQuotaRow(t("fiveHours"), quota.primary),
+    renderQuotaRow(t("sevenDays"), quota.secondary)
   ].filter(Boolean).join("");
   const summary = quota.totalTokens != null && quota.modelContextWindow != null
-    ? `<p class="quota-summary">已使用 ${escapeHtml(formatTokenNumber(quota.totalTokens))} / 共 ${escapeHtml(formatContextWindow(quota.modelContextWindow))}</p>`
+    ? `<p class="quota-summary">${escapeHtml(t("used"))} ${escapeHtml(formatTokenNumber(quota.totalTokens))} / ${escapeHtml(t("total"))} ${escapeHtml(formatContextWindow(quota.modelContextWindow))}</p>`
     : "";
   const updated = quota.updatedAt
-    ? `<p class="quota-updated">记录 ${escapeHtml(formatTime(quota.updatedAt))}</p>`
+    ? `<p class="quota-updated">${escapeHtml(t("recorded"))} ${escapeHtml(formatTime(quota.updatedAt))}</p>`
     : "";
   return rows || summary ? `<div class="quota-block">${summary}${rows}${updated}</div>` : "";
 }
@@ -186,7 +419,7 @@ function renderQuotaRow(label, window) {
     <div class="quota-row">
       <div class="quota-meta">
         <strong>${escapeHtml(label)}</strong>
-        <span>剩余 ${escapeHtml(formatPercent(window.remainingPercent))} · 重置 ${escapeHtml(formatResetTime(window.resetsAt))}</span>
+        <span>${escapeHtml(t("remaining"))} ${escapeHtml(formatPercent(window.remainingPercent))} · ${escapeHtml(t("reset"))} ${escapeHtml(formatResetTime(window.resetsAt))}</span>
       </div>
       <div class="quota-track" aria-hidden="true">
         <span class="quota-fill" style="width: ${escapeHtml(formatPercent(window.remainingPercent))}"></span>
@@ -211,10 +444,10 @@ function renderMemory(memory) {
     const entries = memory?.remoteExecution?.entries || [];
     els.memoryView.innerHTML = `
       <div class="memory-toolbar">
-        <strong>远程执行模式记忆 · ${entries.length} 条</strong>
-        <button class="button danger" data-clear-memory="remoteExecution">清空</button>
+        <strong>${escapeHtml(t("remoteMemoryTitle", entries.length))}</strong>
+        <button class="button danger" data-clear-memory="remoteExecution">${escapeHtml(t("clear"))}</button>
       </div>
-      ${renderMemoryEntries(entries, "远程执行模式还没有记忆。")}
+      ${renderMemoryEntries(entries, t("noRemoteMemory"))}
     `;
     return;
   }
@@ -229,12 +462,12 @@ function renderMemory(memory) {
           <summary>
             <span>${escapeHtml(group.title)}</span>
             <em>${group.count} 条</em>
-            <button class="small-danger" data-clear-memory="qq" data-memory-id="${escapeHtml(group.id)}" type="button">清空</button>
+            <button class="small-danger" data-clear-memory="qq" data-memory-id="${escapeHtml(group.id)}" type="button">${escapeHtml(t("clear"))}</button>
           </summary>
-          ${renderMemoryEntries(group.entries, "这个群还没有可显示的记忆。")}
+          ${renderMemoryEntries(group.entries, t("noGroupMemory"))}
         </details>
       `).join("")
-      : `<p class="empty">QQ 还没有记忆。</p>`;
+      : `<p class="empty">${escapeHtml(t("noQqMemory"))}</p>`;
     return;
   }
 
@@ -245,12 +478,12 @@ function renderMemory(memory) {
         <summary>
           <span>${escapeHtml(handle.title)}</span>
           <em>${handle.count} 条</em>
-          <button class="small-danger" data-clear-memory="imessage" data-memory-id="${escapeHtml(handle.id)}" type="button">清空</button>
+          <button class="small-danger" data-clear-memory="imessage" data-memory-id="${escapeHtml(handle.id)}" type="button">${escapeHtml(t("clear"))}</button>
         </summary>
-        ${renderMemoryEntries(handle.entries, "这个联系人还没有可显示的记忆。")}
+        ${renderMemoryEntries(handle.entries, t("noContactMemory"))}
       </details>
     `).join("")
-    : `<p class="empty">iMessage 还没有记忆。</p>`;
+    : `<p class="empty">${escapeHtml(t("noIMessageMemory"))}</p>`;
 }
 
 function renderUnifiedMemory(unified) {
@@ -266,29 +499,29 @@ function renderUnifiedMemory(unified) {
   ].filter(Boolean);
   return `
     <div class="memory-toolbar">
-      <strong>统一记忆 · ${entries.length} 条可读摘要</strong>
-      <span class="muted-text">${escapeHtml(unified.updatedAt ? `更新 ${formatTime(unified.updatedAt)}` : "暂无更新")}</span>
+      <strong>${escapeHtml(t("unifiedReadable", entries.length))}</strong>
+      <span class="muted-text">${escapeHtml(unified.updatedAt ? t("updatedAt", formatTime(unified.updatedAt)) : t("noUpdate"))}</span>
     </div>
     <div class="unified-switches">
-      ${renderUnifiedSwitch("autoWriteOnSkillRecall", "电脑端 skill 调用后写入", settings.autoWriteOnSkillRecall)}
-      ${renderUnifiedSwitch("autoWriteOnIMessageRecall", "iMessage 跨端回看后写入", settings.autoWriteOnIMessageRecall)}
-      ${renderUnifiedSwitch("manualHandoffCommand", "允许 /交接 手动写入", settings.manualHandoffCommand !== false)}
+      ${renderUnifiedSwitch("autoWriteOnSkillRecall", t("skillRecallWrite"), settings.autoWriteOnSkillRecall)}
+      ${renderUnifiedSwitch("autoWriteOnIMessageRecall", t("imessageRecallWrite"), settings.autoWriteOnIMessageRecall)}
+      ${renderUnifiedSwitch("manualHandoffCommand", t("handoffWrite"), settings.manualHandoffCommand !== false)}
     </div>
     <div class="memory-summary-grid">
-      <span>交接 ${escapeHtml(counts.handoffHistory || 0)}</span>
-      <span>点子 ${escapeHtml(counts.ideas || 0)}</span>
-      <span>项目 ${escapeHtml(counts.projectNotes || 0)}</span>
-      <span>待办 ${escapeHtml(counts.openLoops || 0)}</span>
-      <span>日常 ${escapeHtml(counts.dailyTimeline || 0)}</span>
+      <span>${escapeHtml(t("handoff"))} ${escapeHtml(counts.handoffHistory || 0)}</span>
+      <span>${escapeHtml(t("idea"))} ${escapeHtml(counts.ideas || 0)}</span>
+      <span>${escapeHtml(t("project"))} ${escapeHtml(counts.projectNotes || 0)}</span>
+      <span>${escapeHtml(t("todo"))} ${escapeHtml(counts.openLoops || 0)}</span>
+      <span>${escapeHtml(t("daily"))} ${escapeHtml(counts.dailyTimeline || 0)}</span>
     </div>
-    ${stateParts.length ? `<p class="memory-state">近期状态：${escapeHtml(stateParts.join("；"))}</p>` : ""}
+    ${stateParts.length ? `<p class="memory-state">${escapeHtml(t("recentState"))}: ${escapeHtml(stateParts.join("；"))}</p>` : ""}
     ${unified.latestHandoff?.summary ? `
       <article class="memory-entry">
-        <div class="meta">最近交接</div>
+        <div class="meta">${escapeHtml(t("latestHandoff"))}</div>
         <p>${escapeHtml(unified.latestHandoff.summary)}</p>
       </article>
     ` : ""}
-    ${entries.length ? `<div class="memory-entries">${entries.map(renderUnifiedEntry).join("")}</div>` : `<p class="empty">统一记忆还没有可显示条目。</p>`}
+    ${entries.length ? `<div class="memory-entries">${entries.map(renderUnifiedEntry).join("")}</div>` : `<p class="empty">${escapeHtml(t("noUnifiedMemory"))}</p>`}
   `;
 }
 
@@ -314,12 +547,12 @@ function renderUnifiedEntry(entry) {
 
 function formatUnifiedType(type) {
   return {
-    handoff: "交接",
-    idea: "点子",
-    projectNote: "项目",
-    preference: "偏好",
-    openLoop: "待办",
-    dailyState: "日常"
+    handoff: t("handoff"),
+    idea: t("idea"),
+    projectNote: t("project"),
+    preference: t("preference"),
+    openLoop: t("todo"),
+    dailyState: t("daily")
   }[type] || type || "";
 }
 
@@ -346,49 +579,49 @@ function renderMemoryEntries(entries, emptyText) {
 function formatMemoryRole(role) {
   const value = String(role || "");
   if (value === "assistant") return "assistant";
-  if (value === "user") return "owner";
-  return value || "消息";
+  if (value === "user") return t("owner");
+  return value || t("message");
 }
 
 function renderGroups(groups) {
-  els.groupCount.textContent = `${groups.length} 个`;
+  els.groupCount.textContent = t("groupCount", groups.length);
   els.groupList.innerHTML = groups.length
     ? groups.map((groupId) => `
       <div class="list-item">
         <code>${escapeHtml(groupId)}</code>
-        <button class="remove" data-remove-group="${escapeHtml(groupId)}" title="移除">×</button>
+        <button class="remove" data-remove-group="${escapeHtml(groupId)}" title="${escapeHtml(t("remove"))}">×</button>
       </div>
     `).join("")
-    : `<p class="empty">还没有群白名单。</p>`;
+    : `<p class="empty">${escapeHtml(t("noAllowlist"))}</p>`;
 }
 
 function renderHandles(handles) {
-  els.handleCount.textContent = `${handles.length} 个`;
+  els.handleCount.textContent = t("groupCount", handles.length);
   els.handleList.innerHTML = handles.length
     ? handles.map((handle) => `
       <div class="list-item">
         <code>${escapeHtml(handle)}</code>
-        <button class="remove" data-remove-handle="${escapeHtml(handle)}" title="移除">×</button>
+        <button class="remove" data-remove-handle="${escapeHtml(handle)}" title="${escapeHtml(t("remove"))}">×</button>
       </div>
     `).join("")
-    : `<p class="empty">还没有可信联系人。</p>`;
+    : `<p class="empty">${escapeHtml(t("noTrustedContacts"))}</p>`;
 }
 
 function renderQqEvents(events) {
   els.qqEvents.innerHTML = events.length
     ? events.slice(0, 8).map((record) => {
       const ok = Boolean(record.decision?.ok);
-      const sender = record.event?.senderLabel || record.event?.senderName || "群友";
-      const reply = record.reply ? `<p>回复：${escapeHtml(record.reply)}</p>` : "";
+      const sender = record.event?.senderLabel || record.event?.senderName || t("groupMember");
+      const reply = record.reply ? `<p>${escapeHtml(t("reply"))}: ${escapeHtml(record.reply)}</p>` : "";
       return `
         <article class="event ${ok ? "ok" : "skip"}">
-          <div class="meta">${formatTime(record.receivedAt)} · ${ok ? "回复" : "忽略"} · ${escapeHtml(record.decision?.reason || "")}</div>
+          <div class="meta">${formatTime(record.receivedAt)} · ${ok ? t("reply") : t("ignored")} · ${escapeHtml(record.decision?.reason || "")}</div>
           <p>${escapeHtml(sender)}：${escapeHtml(record.event?.text || "")}</p>
           ${reply}
         </article>
       `;
     }).join("")
-    : `<p class="empty">暂无 QQ 事件。</p>`;
+    : `<p class="empty">${escapeHtml(t("noQqEvents"))}</p>`;
 }
 
 function renderIMessageEvents(events) {
@@ -396,19 +629,19 @@ function renderIMessageEvents(events) {
     ? events.slice(0, 8).map((record) => {
       const ok = record.result?.ok || record.send?.ok;
       const attachments = record.event?.attachments?.length
-        ? `<p>附件：${record.event.attachments.map((item) => escapeHtml(item.transferName || item.filename || "附件")).join("、")}</p>`
+        ? `<p>${escapeHtml(t("attachment"))}: ${record.event.attachments.map((item) => escapeHtml(item.transferName || item.filename || t("attachment"))).join("、")}</p>`
         : "";
-      const reply = record.reply ? `<p>回复：${escapeHtml(record.reply)}</p>` : "";
+      const reply = record.reply ? `<p>${escapeHtml(t("reply"))}: ${escapeHtml(record.reply)}</p>` : "";
       return `
         <article class="event ${ok ? "ok" : "skip"}">
-          <div class="meta">${formatTime(record.receivedAt)} · ${record.trusted ? "可信" : "未授权"} · ${escapeHtml(record.result?.summary || "")}</div>
-          <p>${escapeHtml(record.event?.handle || "未知")}：${escapeHtml(record.event?.text || "")}</p>
+          <div class="meta">${formatTime(record.receivedAt)} · ${record.trusted ? t("trusted") : t("unauthorized")} · ${escapeHtml(record.result?.summary || "")}</div>
+          <p>${escapeHtml(record.event?.handle || t("unknown"))}：${escapeHtml(record.event?.text || "")}</p>
           ${attachments}
           ${reply}
         </article>
       `;
     }).join("")
-    : `<p class="empty">暂无 iMessage 事件。</p>`;
+    : `<p class="empty">${escapeHtml(t("noIMessageEvents"))}</p>`;
 }
 
 async function setChannel(channel, enabled) {
@@ -574,5 +807,13 @@ els.memoryView.addEventListener("change", async (event) => {
   await saveUnifiedMemorySettings(settings);
 });
 
+els.languageSelect?.addEventListener("change", () => {
+  currentLanguage = els.languageSelect.value === "en" ? "en" : "zh";
+  localStorage.setItem("gptQqBotLanguage", currentLanguage);
+  applyLanguage();
+  refreshAll();
+});
+
+applyLanguage();
 refreshAll();
 setInterval(refreshAll, pollMs);

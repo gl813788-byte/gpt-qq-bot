@@ -105,9 +105,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        appMenu.addItem(NSMenuItem(title: "关于 codexremotecontact", action: #selector(showAbout), keyEquivalent: ""))
+        appMenu.addItem(NSMenuItem(title: "关于 GPT QQ Bot", action: #selector(showAbout), keyEquivalent: ""))
         appMenu.addItem(NSMenuItem.separator())
-        appMenu.addItem(NSMenuItem(title: "退出 codexremotecontact", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
+        appMenu.addItem(NSMenuItem(title: "退出 GPT QQ Bot", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
         appMenuItem.submenu = appMenu
 
         let viewMenuItem = NSMenuItem()
@@ -124,8 +124,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     @objc private func showAbout() {
         NSAlert(
             icon: NSImage(named: NSImage.applicationIconName),
-            title: "codexremotecontact",
-            message: "轻量远程联系中枢客户端。底层使用 macOS WebKit 运行本地 JS，不需要常驻浏览器。"
+            title: "GPT QQ Bot",
+            message: "QQ/OneBot 与 Codex CLI 本地助手客户端。底层使用 macOS WebKit 运行本地 JS，不需要常驻浏览器。"
         ).runModal()
     }
 
@@ -140,7 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private func presentFatalError(_ message: String) {
         let alert = NSAlert()
         alert.alertStyle = .critical
-        alert.messageText = "codexremotecontact 启动失败"
+        alert.messageText = "GPT QQ Bot 启动失败"
         alert.informativeText = message
         alert.runModal()
     }

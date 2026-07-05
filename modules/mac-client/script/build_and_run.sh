@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROJECT_DIR="$(cd "$ROOT/../.." && pwd)"
-APP_ROOT="$PROJECT_DIR/build/CodexRemoteContactClient.app"
+APP_ROOT="$PROJECT_DIR/build/GPT QQ Bot.app"
 CONTENTS="$APP_ROOT/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"

@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
   <key>Label</key>
-  <string>local.codexremotecontact.chat-hub</string>
+  <string>local.gpt-qq-bot.chat-hub</string>
   <key>ProgramArguments</key>
   <array>
     <string>/usr/bin/env</string>

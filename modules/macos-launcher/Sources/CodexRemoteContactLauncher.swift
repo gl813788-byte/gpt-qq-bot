@@ -12,8 +12,8 @@ private let projectDir: String = {
     return buildURL.deletingLastPathComponent().path
 }()
 private let hubPort = 3789
-private let plistPath = "\(projectDir)/config/local.codexremotecontact.chat-hub.plist"
-private let clientAppPath = "\(projectDir)/build/CodexRemoteContactClient.app"
+private let plistPath = "\(projectDir)/config/local.gpt-qq-bot.chat-hub.plist"
+private let clientAppPath = "\(projectDir)/build/GPT QQ Bot.app"
 private let llbotAppPath = "\(projectDir)/modules/qq-llbot/LLBot.app"
 private let keepAwakePidPath = "\(projectDir)/data/keep-awake.pid"
 private let brightnessStatePath = "\(projectDir)/data/previous-brightness.txt"
@@ -60,7 +60,7 @@ final class CodexRemoteContactLauncherApp: NSObject, NSApplicationDelegate {
         let appMenu = NSMenu()
         appMenuItem.submenu = appMenu
         appMenu.addItem(NSMenuItem(
-            title: "退出 CodexRemoteContact Launcher",
+            title: "退出 GPT QQ Bot Launcher",
             action: #selector(NSApplication.terminate(_:)),
             keyEquivalent: "q"
         ))
@@ -93,7 +93,7 @@ final class CodexRemoteContactLauncherApp: NSObject, NSApplicationDelegate {
             backing: .buffered,
             defer: false
         )
-        window.title = "CodexRemoteContact Launcher"
+        window.title = "GPT QQ Bot Launcher"
         window.center()
         window.isReleasedWhenClosed = false
 
@@ -104,10 +104,10 @@ final class CodexRemoteContactLauncherApp: NSObject, NSApplicationDelegate {
         root.edgeInsets = NSEdgeInsets(top: 22, left: 24, bottom: 22, right: 24)
         root.translatesAutoresizingMaskIntoConstraints = false
 
-        let title = NSTextField(labelWithString: "codexremotecontact")
+        let title = NSTextField(labelWithString: "GPT QQ Bot")
         title.font = .systemFont(ofSize: 28, weight: .bold)
 
-        let subtitle = NSTextField(labelWithString: "远程联系中枢")
+        let subtitle = NSTextField(labelWithString: "QQ/OneBot 本地助手")
         subtitle.font = .systemFont(ofSize: 13, weight: .regular)
         subtitle.textColor = .secondaryLabelColor
 
