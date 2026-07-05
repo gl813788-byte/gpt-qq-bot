@@ -1,45 +1,36 @@
-# OS files
+# macOS
 .DS_Store
-Thumbs.db
 
-# Editor files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Logs
-*.log
-logs/
-
-# Environment variables
+# Node / local environment
+node_modules/
 .env
 .env.*
-!.env.example
 
-# Python
-__pycache__/
-*.py[cod]
-.venv/
-venv/
-env/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
+# Build outputs and local downloads
 build/
-dist/
-*.egg-info/
+downloads/
+backups/
+apps/
+vendor/
 
-# Node.js
-node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-.next/
-dist/
-coverage/
-
-# Temporary files
+# Runtime output
+runtime/
+!runtime/
+runtime/*
+!runtime/logs/
+!runtime/replies/
+runtime/logs/*
+runtime/replies/*
+!runtime/logs/.gitkeep
+!runtime/replies/.gitkeep
 tmp/
-temp/
+
+# Logs and pid files
+*.log
+*.pid
+
+# Local state
+data/keep-awake.pid
+data/previous-brightness.txt
+modules/system-control/bin/
+config/local.codexremotecontact.chat-hub.plist
