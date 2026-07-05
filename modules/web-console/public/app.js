@@ -229,21 +229,32 @@ const i18n = {
   }
 };
 
-let currentLanguage = localStorage.getItem("gptQqBotLanguage") || "zh";
+const introI18n = {
+  zh: {
+    introTitle: "项目简介",
+    introBody: "GPT QQ Bot 是一个把 GPT 风格助手接入 QQ 群聊和私聊的本地项目。它通过 QQ/OneBot 连接 Codex CLI，在本机保存轻量上下文，并提供 WebUI 管理通道开关、群白名单、维护状态和本地测试。"
+  },
+  en: {
+    introTitle: "Project Introduction",
+    introBody: "GPT QQ Bot is a local project for running a GPT-style assistant in QQ groups and private chats. It connects QQ/OneBot to Codex CLI, keeps lightweight context on the machine, and provides a WebUI for channel switches, group allowlists, maintenance status, and local testing."
+  }
+};
+
+let introLanguage = localStorage.getItem("gptQqBotIntroLanguage") || "zh";
 const defaultInputValues = {
   senderName: { zh: i18n.zh.senderDefault, en: i18n.en.senderDefault },
   messageText: { zh: i18n.zh.messageDefault, en: i18n.en.messageDefault }
 };
 
 function t(key, ...args) {
-  const value = i18n[currentLanguage]?.[key] ?? i18n.zh[key] ?? key;
+  const value = i18n.zh[key] ?? key;
   return typeof value === "function" ? value(...args) : value;
 }
 
 function applyLanguage() {
-  document.documentElement.lang = currentLanguage === "zh" ? "zh-CN" : "en";
+  document.documentElement.lang = "zh-CN";
   document.title = "GPT QQ Bot Hub";
-  if (els.languageSelect) els.languageSelect.value = currentLanguage;
+  if (els.languageSelect) els.languageSelect.value = introLanguage;
   document.querySelectorAll("[data-i18n]").forEach((node) => {
     node.textContent = t(node.dataset.i18n);
   });
@@ -253,11 +264,13 @@ function applyLanguage() {
   for (const [id, values] of Object.entries(defaultInputValues)) {
     const node = document.querySelector(`#${id}`);
     if (!node) continue;
-    const otherLanguage = currentLanguage === "zh" ? "en" : "zh";
-    if (!node.value || node.value === values[otherLanguage]) {
-      node.value = values[currentLanguage];
+    if (!node.value) {
+      node.value = values.zh;
     }
   }
+  document.querySelectorAll("[data-intro-i18n]").forEach((node) => {
+    node.textContent = introI18n[introLanguage]?.[node.dataset.introI18n] || introI18n.zh[node.dataset.introI18n] || "";
+  });
 }
 
 async function api(path, options = {}) {
@@ -612,8 +625,8 @@ els.qqToggle.addEventListener("change", () => setChannel("qq", els.qqToggle.chec
 els.imessageToggle.addEventListener("change", () => setChannel("imessage", els.imessageToggle.checked));
 els.refreshMaintenance.addEventListener("click", refreshMaintenance);
 els.languageSelect?.addEventListener("change", () => {
-  currentLanguage = els.languageSelect.value === "en" ? "en" : "zh";
-  localStorage.setItem("gptQqBotLanguage", currentLanguage);
+  introLanguage = els.languageSelect.value === "en" ? "en" : "zh";
+  localStorage.setItem("gptQqBotIntroLanguage", introLanguage);
   applyLanguage();
   refresh();
 });

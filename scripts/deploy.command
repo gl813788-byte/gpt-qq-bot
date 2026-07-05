@@ -12,7 +12,7 @@ log() {
 }
 
 warn() {
-  printf '[deploy] Warning: %s\n' "$*" >&2
+  printf '[deploy] 警告：%s\n' "$*" >&2
 }
 
 ask_yes_no() {
@@ -65,27 +65,27 @@ ensure_node() {
     local major
     major="$(node -p 'Number(process.versions.node.split(".")[0])')"
     if [ "$major" -ge 20 ]; then
-      log "Node.js $(node --version) found."
+      log "已找到 Node.js $(node --version)。"
       return
     fi
-    warn "Node.js $(node --version) is older than required v20."
+    warn "当前 Node.js $(node --version) 低于要求的 v20。"
   fi
 
-  if ! ask_yes_no "Install or upgrade Node.js automatically?" "Y"; then
-    warn "Skipping Node.js install. The hub requires Node.js 20+."
+  if ! ask_yes_no "是否自动安装或升级 Node.js？" "Y"; then
+    warn "已跳过 Node.js 安装。Hub 需要 Node.js 20+。"
     return
   fi
 
   case "$(detect_os)" in
     macos)
-      install_with_brew node || warn "Homebrew is missing. Install Node.js 20+ manually."
+      install_with_brew node || warn "没有找到 Homebrew，请手动安装 Node.js 20+。"
       ;;
     linux)
-      install_with_apt nodejs || warn "Could not install nodejs with apt."
-      install_with_apt npm || warn "Could not install npm with apt."
+      install_with_apt nodejs || warn "无法通过 apt 安装 nodejs。"
+      install_with_apt npm || warn "无法通过 apt 安装 npm。"
       ;;
     *)
-      warn "Unsupported OS for automatic Node.js install."
+      warn "当前系统不支持自动安装 Node.js。"
       ;;
   esac
 }
@@ -93,13 +93,13 @@ ensure_node() {
 ensure_basic_tools() {
   for cmd in curl git; do
     if command -v "$cmd" >/dev/null 2>&1; then
-      log "$cmd found."
+      log "已找到 $cmd。"
       continue
     fi
-    if ask_yes_no "Install missing tool '$cmd' automatically?" "Y"; then
+    if ask_yes_no "是否自动安装缺失工具 '$cmd'？" "Y"; then
       case "$(detect_os)" in
-        macos) install_with_brew "$cmd" || warn "Could not install $cmd with brew." ;;
-        linux) install_with_apt "$cmd" || warn "Could not install $cmd with apt." ;;
+        macos) install_with_brew "$cmd" || warn "无法通过 brew 安装 $cmd。" ;;
+        linux) install_with_apt "$cmd" || warn "无法通过 apt 安装 $cmd。" ;;
       esac
     fi
   done
@@ -107,14 +107,14 @@ ensure_basic_tools() {
 
 ensure_codex() {
   if command -v codex >/dev/null 2>&1; then
-    log "Codex CLI found: $(command -v codex)"
+    log "已找到 Codex CLI：$(command -v codex)"
     return
   fi
-  warn "Codex CLI was not found."
-  if command -v npm >/dev/null 2>&1 && ask_yes_no "Try installing Codex CLI with npm globally?" "Y"; then
-    npm install -g @openai/codex || warn "Codex CLI install failed. You can still finish setup after installing it manually."
+  warn "没有找到 Codex CLI。"
+  if command -v npm >/dev/null 2>&1 && ask_yes_no "是否尝试用 npm 全局安装 Codex CLI？" "Y"; then
+    npm install -g @openai/codex || warn "Codex CLI 安装失败。你仍然可以稍后手动安装再继续配置。"
   else
-    warn "Install Codex CLI manually before enabling AI replies."
+    warn "启用 AI 回复前需要手动安装 Codex CLI。"
   fi
 }
 
@@ -123,7 +123,7 @@ ensure_project_files() {
   touch "$PROJECT_DIR/runtime/logs/.gitkeep" "$PROJECT_DIR/runtime/replies/.gitkeep"
   if [ ! -f "$PROJECT_DIR/data/settings.json" ]; then
     cp "$PROJECT_DIR/config/settings.example.json" "$PROJECT_DIR/data/settings.json"
-    log "Created data/settings.json from example."
+    log "已根据示例创建 data/settings.json。"
   fi
   for file in imessage-memory.json remote-execution-memory.json unified-memory.json; do
     if [ ! -f "$PROJECT_DIR/data/$file" ] && [ -f "$PROJECT_DIR/data/$file.example" ]; then
@@ -152,7 +152,7 @@ ensure_npm_ready() {
   if [ -f "$PROJECT_DIR/package-lock.json" ]; then
     (cd "$PROJECT_DIR" && npm install)
   else
-    log "No package-lock.json; skipping npm install. This project currently uses built-in Node modules."
+    log "没有 package-lock.json，跳过 npm install。当前项目只使用 Node 内置模块。"
   fi
 }
 
@@ -160,36 +160,36 @@ install_ncc_shortcut() {
   chmod +x "$NCC_SOURCE"
   if [ -w "$(dirname "$NCC_TARGET_SYSTEM")" ]; then
     ln -sf "$NCC_SOURCE" "$NCC_TARGET_SYSTEM"
-    log "Installed ncc shortcut: $NCC_TARGET_SYSTEM"
+    log "已安装 ncc 快捷命令：$NCC_TARGET_SYSTEM"
     return
   fi
 
   mkdir -p "$LOCAL_BIN"
   ln -sf "$NCC_SOURCE" "$NCC_TARGET_USER"
-  log "Installed ncc shortcut: $NCC_TARGET_USER"
+  log "已安装 ncc 快捷命令：$NCC_TARGET_USER"
   case ":$PATH:" in
     *":$LOCAL_BIN:"*) ;;
-    *) warn "$LOCAL_BIN is not on PATH. Add this to your shell profile: export PATH=\"$LOCAL_BIN:\$PATH\"" ;;
+    *) warn "$LOCAL_BIN 不在 PATH 中。请把这行加入 shell 配置：export PATH=\"$LOCAL_BIN:\$PATH\"" ;;
   esac
 }
 
 print_summary() {
   cat <<EOF
 
-Deployment files are ready.
+部署文件已准备完成。
 
-Project: $PROJECT_DIR
-Settings: $PROJECT_DIR/data/settings.json
-Local env: $PROJECT_DIR/config/local.env
+项目目录：$PROJECT_DIR
+配置文件：$PROJECT_DIR/data/settings.json
+本地环境：$PROJECT_DIR/config/local.env
 WebUI: http://127.0.0.1:3789
 
-The ncc shortcut will open the quick configuration menu.
+ncc 快捷命令会打开快速配置菜单。
 EOF
 }
 
 main() {
-  log "Starting GPT QQ Bot deployment."
-  log "Project directory: $PROJECT_DIR"
+  log "开始部署 GPT QQ Bot。"
+  log "项目目录：$PROJECT_DIR"
   ensure_basic_tools
   ensure_node
   ensure_codex
@@ -198,7 +198,7 @@ main() {
   ensure_npm_ready
   install_ncc_shortcut
   print_summary
-  if ask_yes_no "Open ncc quick configuration now?" "Y"; then
+  if ask_yes_no "现在打开 ncc 快捷配置吗？" "Y"; then
     "$NCC_SOURCE" setup
   fi
 }

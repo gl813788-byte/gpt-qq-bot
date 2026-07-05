@@ -24,24 +24,24 @@ log() {
 }
 
 die() {
-  log "Error: $*" >&2
+  log "错误：$*" >&2
   exit 1
 }
 
 pause() {
-  printf '\nPress Enter to continue...'
+  printf '\n按回车继续...'
   read -r _ || true
 }
 
 need_node() {
-  command -v node >/dev/null 2>&1 || die "Node.js is required. Run scripts/deploy.command first."
+  command -v node >/dev/null 2>&1 || die "需要 Node.js。请先运行 scripts/deploy.command。"
 }
 
 ensure_settings() {
   mkdir -p "$PROJECT_DIR/data" "$PROJECT_DIR/config" "$PROJECT_DIR/runtime/logs" "$PROJECT_DIR/runtime/replies"
   if [ ! -f "$SETTINGS_FILE" ]; then
     cp "$PROJECT_DIR/config/settings.example.json" "$SETTINGS_FILE"
-    log "Created $SETTINGS_FILE"
+    log "已创建 $SETTINGS_FILE"
   fi
   touch "$LOCAL_ENV_FILE"
 }
@@ -84,10 +84,10 @@ set_env_value() {
 
 show_status() {
   ensure_settings
-  printf '\nGPT QQ Bot status\n'
-  printf 'Project: %s\n' "$PROJECT_DIR"
-  printf 'Settings: %s\n' "$SETTINGS_FILE"
-  printf 'Local env: %s\n' "$LOCAL_ENV_FILE"
+  printf '\nGPT QQ Bot 状态\n'
+  printf '项目目录：%s\n' "$PROJECT_DIR"
+  printf '配置文件：%s\n' "$SETTINGS_FILE"
+  printf '本地环境：%s\n' "$LOCAL_ENV_FILE"
   printf 'Node: %s\n' "$(command -v node >/dev/null 2>&1 && node --version || echo missing)"
   printf 'npm: %s\n' "$(command -v npm >/dev/null 2>&1 && npm --version || echo missing)"
   printf 'Codex: %s\n' "$(command -v codex >/dev/null 2>&1 && command -v codex || echo missing)"
@@ -96,33 +96,33 @@ show_status() {
   onebot_base="$(grep '^export ONEBOT_API_BASE=' "$LOCAL_ENV_FILE" 2>/dev/null | tail -n 1 | sed 's/^export ONEBOT_API_BASE=//; s/^'\''//; s/'\''$//' || true)"
   [ -n "$onebot_base" ] || onebot_base="$ONEBOT_API_BASE_DEFAULT"
   if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 2 "${onebot_base%/}/get_login_info" >/dev/null 2>&1; then
-    printf 'online (%s)\n' "$onebot_base"
+    printf '可连接（%s）\n' "$onebot_base"
   else
-    printf 'not reachable (%s)\n' "$onebot_base"
+    printf '不可连接（%s）\n' "$onebot_base"
   fi
   printf 'Hub: '
   if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 2 "${HUB_URL%/}/api/state" >/dev/null 2>&1; then
-    printf 'online (%s)\n' "$HUB_URL"
+    printf '可连接（%s）\n' "$HUB_URL"
   else
-    printf 'not reachable (%s)\n' "$HUB_URL"
+    printf '不可连接（%s）\n' "$HUB_URL"
   fi
 }
 
 codex_menu() {
-  printf '\nCodex setup\n'
+  printf '\nCodex 登录与检测\n'
   if ! command -v codex >/dev/null 2>&1; then
-    log "Codex CLI is not installed or not on PATH."
-    log "Run scripts/deploy.command to try installing it, or install Codex CLI manually."
+    log "没有找到 Codex CLI，或它不在 PATH 里。"
+    log "请先运行 scripts/deploy.command 尝试安装，或手动安装 Codex CLI。"
     pause
     return
   fi
   codex --version || true
-  printf '\nRun Codex login now? [Y/n] '
+  printf '\n现在打开 Codex 登录吗？[Y/n] '
   read -r answer || true
   if [[ "${answer:-Y}" != [nN]* ]]; then
     codex login
   fi
-  printf '\nQuick auth test? [Y/n] '
+  printf '\n现在做一次 Codex 鉴权测试吗？[Y/n] '
   read -r test_answer || true
   if [[ "${test_answer:-Y}" != [nN]* ]]; then
     codex exec --ephemeral --skip-git-repo-check -C "$PROJECT_DIR" "Only output OK"
@@ -132,69 +132,69 @@ codex_menu() {
 
 qq_menu() {
   ensure_settings
-  printf '\nQQ / OneBot setup\n'
-  printf 'OneBot API base [%s]: ' "$ONEBOT_API_BASE_DEFAULT"
+  printf '\nQQ / OneBot 配置\n'
+  printf 'OneBot API 地址 [%s]: ' "$ONEBOT_API_BASE_DEFAULT"
   read -r onebot_base || true
   onebot_base="${onebot_base:-$ONEBOT_API_BASE_DEFAULT}"
   set_env_value "ONEBOT_API_BASE" "$onebot_base"
   if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 2 "${onebot_base%/}/get_login_info" >/tmp/gpt-qq-bot-onebot.json 2>/dev/null; then
-    log "OneBot is reachable:"
+    log "OneBot 可以连接："
     cat /tmp/gpt-qq-bot-onebot.json
     rm -f /tmp/gpt-qq-bot-onebot.json
   else
-    log "OneBot is not reachable yet. Start NapCat/LLBot and log into QQ, then run ncc again."
+    log "暂时连不上 OneBot。请先启动 NapCat/LLBot 并登录 QQ，然后再运行 ncc。"
   fi
-  printf '\nQQ owner user id(s), separated by comma/space: '
+  printf '\n主人 QQ 号，多个用空格或逗号分隔：'
   read -r owners || true
   if [ -n "${owners:-}" ]; then
     local owners_json
     owners_json="$(csv_to_json_array_js "$owners")"
     json_update "data.qq = data.qq || {}; data.qq.ownerUserIds = ${owners_json};"
   fi
-  printf 'Allowed QQ group id(s), separated by comma/space: '
+  printf 'QQ群白名单，多个用空格或逗号分隔：'
   read -r groups || true
   if [ -n "${groups:-}" ]; then
     local groups_json
     groups_json="$(csv_to_json_array_js "$groups")"
     json_update "data.qq = data.qq || {}; data.qq.allowedGroups = ${groups_json};"
   fi
-  log "QQ settings saved."
+  log "QQ 设置已保存。"
   pause
 }
 
 owner_menu() {
   ensure_settings
-  printf '\nSet owner QQ id(s), separated by comma/space: '
+  printf '\n设置主人 QQ 号，多个用空格或逗号分隔：'
   read -r owners || true
   [ -n "${owners:-}" ] || return
   local owners_json
   owners_json="$(csv_to_json_array_js "$owners")"
   json_update "data.qq = data.qq || {}; data.qq.ownerUserIds = ${owners_json};"
-  log "Owner QQ id(s) saved."
+  log "主人 QQ 号已保存。"
   pause
 }
 
 groups_menu() {
   ensure_settings
-  printf '\nSet allowed QQ group id(s), separated by comma/space: '
+  printf '\n设置 QQ 群白名单，多个用空格或逗号分隔：'
   read -r groups || true
   [ -n "${groups:-}" ] || return
   local groups_json
   groups_json="$(csv_to_json_array_js "$groups")"
   json_update "data.qq = data.qq || {}; data.qq.allowedGroups = ${groups_json};"
-  log "QQ group allowlist saved."
+  log "QQ群白名单已保存。"
   pause
 }
 
 branding_menu() {
   ensure_settings
-  printf '\nAssistant display name [assistant]: '
+  printf '\n助手显示名 [assistant]: '
   read -r assistant_name || true
   assistant_name="${assistant_name:-assistant}"
-  printf 'Owner label [owner]: '
+  printf '主人称呼 [owner]: '
   read -r owner_label || true
   owner_label="${owner_label:-owner}"
-  printf 'Mention aliases, separated by comma/space [@assistant]: '
+  printf '触发 @ 别名，多个用空格或逗号分隔 [@assistant]: '
   read -r mentions || true
   mentions="${mentions:-@assistant}"
   local mentions_json
@@ -210,7 +210,7 @@ data.branding.assistantMentions = JSON.parse(process.env.MENTIONS_JSON || '["@as
 data.updatedAt = new Date().toISOString();
 fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
 NODE
-  log "Branding saved."
+  log "助手名称设置已保存。"
   pause
 }
 
@@ -220,8 +220,8 @@ start_hub() {
   if [[ "$(uname -s)" == "Darwin" ]] && command -v launchctl >/dev/null 2>&1; then
     "$PROJECT_DIR/modules/start-all.command"
   else
-    log "launchctl is not available. Starting foreground server with npm start."
-    log "Press Ctrl+C to stop."
+    log "当前系统没有 launchctl，将用 npm start 前台启动。"
+    log "按 Ctrl+C 停止。"
     cd "$PROJECT_DIR"
     set -a
     [ -f "$LOCAL_ENV_FILE" ] && source "$LOCAL_ENV_FILE"
@@ -236,7 +236,7 @@ open_webui() {
   elif command -v xdg-open >/dev/null 2>&1; then
     xdg-open "$HUB_URL"
   else
-    log "Open this URL: $HUB_URL"
+    log "请打开这个地址：$HUB_URL"
   fi
 }
 
@@ -245,19 +245,19 @@ setup_wizard() {
   while true; do
     clear 2>/dev/null || true
     cat <<'MENU'
-GPT QQ Bot quick config (ncc)
+GPT QQ Bot 快捷配置（ncc）
 
-1) Codex login / auth test
-2) QQ / OneBot setup
-3) Set owner QQ id
-4) Set allowed QQ groups
-5) Assistant name and mentions
-6) Start Hub
-7) Status check
-8) Open WebUI
-0) Exit
+1) Codex 登录 / 鉴权测试
+2) QQ / OneBot 配置
+3) 设置主人 QQ 号
+4) 设置 QQ 群白名单
+5) 设置助手名称和 @ 别名
+6) 启动 Hub
+7) 状态检查
+8) 打开 WebUI
+0) 退出
 MENU
-    printf '\nChoose: '
+    printf '\n请选择：'
     read -r choice || true
     case "${choice:-}" in
       1) codex_menu ;;
@@ -269,7 +269,7 @@ MENU
       7) show_status; pause ;;
       8) open_webui; pause ;;
       0|q|quit|exit) break ;;
-      *) log "Unknown choice."; pause ;;
+      *) log "未知选项。"; pause ;;
     esac
   done
 }
@@ -286,8 +286,8 @@ case "${1:-setup}" in
   open) open_webui ;;
   *)
     cat <<EOF
-Usage: ncc [setup|status|codex-login|qq|owner|groups|branding|start|open]
-Project: $PROJECT_DIR
+用法：ncc [setup|status|codex-login|qq|owner|groups|branding|start|open]
+项目目录：$PROJECT_DIR
 EOF
     ;;
 esac

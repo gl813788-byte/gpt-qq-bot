@@ -148,7 +148,7 @@ Run the deployment helper from the project root:
 zsh scripts/deploy.command
 ```
 
-The script checks the local environment, prepares runtime folders, creates `data/settings.json`, generates the launchd plist, installs the `ncc` shortcut, and then opens the quick configuration menu.
+The script checks the local environment, prepares runtime folders, creates `data/settings.json`, generates the launchd plist, installs the `ncc` shortcut, and then opens the Chinese quick configuration menu.
 
 脚本会检测本机环境、准备运行目录、创建 `data/settings.json`、生成 launchd plist、安装 `ncc` 快捷命令，并自动打开快捷配置菜单。
 
@@ -160,24 +160,29 @@ After installation, use:
 ncc
 ```
 
-`ncc` provides shortcuts for Codex login, QQ/OneBot setup, owner QQ ID, QQ group allowlist, assistant display name, status checks, Hub startup, and opening the WebUI.
+`ncc` provides Chinese shortcuts for Codex login, QQ/OneBot setup, owner QQ ID, QQ group allowlist, assistant display name, status checks, Hub startup, and opening the WebUI.
 
 `ncc` 可以快捷配置 Codex 登录、QQ/OneBot、主人 QQ 号、QQ群白名单、助手显示名、状态检查、启动 Hub 和打开 WebUI。
 
-The quick menu includes:
+The quick menu is in Chinese:
 
 快捷菜单包含：
 
 ```text
-1) Codex login / auth test
-2) QQ / OneBot setup
-3) Set owner QQ id
-4) Set allowed QQ groups
-5) Assistant name and mentions
-6) Start Hub
-7) Status check
-8) Open WebUI
+1) Codex 登录 / 鉴权测试
+2) QQ / OneBot 配置
+3) 设置主人 QQ 号
+4) 设置 QQ 群白名单
+5) 设置助手名称和 @ 别名
+6) 启动 Hub
+7) 状态检查
+8) 打开 WebUI
+0) 退出
 ```
+
+The WebUI stays Chinese by default. The language selector only switches the project introduction between Chinese and English.
+
+WebUI 默认保持中文。语言选择器只用于切换“项目简介”的中文/英文。
 
 ### 1. Place the project / 放置项目
 
