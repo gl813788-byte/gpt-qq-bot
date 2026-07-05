@@ -96,6 +96,13 @@ xcode-select --install
 
 skill 会克隆或更新后端、安装 Node 依赖、保留已有本地改动，并用 `ncc status` 验证状态。
 
+本仓库也内置了 skill 源文件：`skills/claude-to-im/SKILL.md`。本机安装到 Codex：
+
+```bash
+mkdir -p ~/.codex/skills/claude-to-im
+cp skills/claude-to-im/SKILL.md ~/.codex/skills/claude-to-im/SKILL.md
+```
+
 #### 手动 Git 下载
 
 ```bash

@@ -96,6 +96,13 @@ Put the backend at /root/Codex-Remote-Contact and use ncc as the control entry.
 
 The skill will clone or update the backend, install Node dependencies, preserve existing local changes, and verify the setup with `ncc status`.
 
+This repository also includes the skill source at `skills/claude-to-im/SKILL.md`. To install it locally for Codex:
+
+```bash
+mkdir -p ~/.codex/skills/claude-to-im
+cp skills/claude-to-im/SKILL.md ~/.codex/skills/claude-to-im/SKILL.md
+```
+
 #### Manual Git Download
 
 ```bash
