@@ -13,6 +13,7 @@ const codexTmpDir = join(projectDir, "runtime", "replies");
 const imessageScreenshotsDir = join(projectDir, "runtime", "imessage-screenshots");
 const qqStickerDir = process.env.CODEX_REMOTE_CONTACT_QQ_STICKER_DIR || join(projectDir, "data", "qq-stickers");
 const qqOutputImagesDir = process.env.CODEX_REMOTE_CONTACT_QQ_OUTPUT_IMAGE_DIR || join(projectDir, "runtime", "qq-output-images");
+const qqSendableImageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 const dataDir = join(projectDir, "data");
 const codexHomeDir = join(process.env.HOME || "", ".codex");
 const codexSessionsDir = join(codexHomeDir, "sessions");
@@ -3315,6 +3316,7 @@ async function buildQqOwnerFileImageReply(event) {
   const isImageGeneration = isQqImageOutputRequest(text);
   const id = crypto.randomUUID();
   const outputPath = join(codexTmpDir, `${id}.qq-owner-file-image.txt`);
+  const taskStartedAt = Date.now();
   const quotedContext = formatQuotedContext(event);
   const qqModelImages = getQqModelImageInputs(event, text);
   const imagePaths = qqModelImages.length > 0
@@ -3387,12 +3389,123 @@ async function buildQqOwnerFileImageReply(event) {
       },
       qqEvent: event
     });
-    const reply = cleanCodexReply(await readFile(outputPath, "utf8"));
-    return (reply || "执行完了，但没有生成可读回复。").slice(0, 1800);
+    let reply = cleanCodexReply(await readFile(outputPath, "utf8"));
+    if (await shouldRetryQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt })) {
+      const retryStartedAt = Date.now();
+      const retryOutputPath = join(codexTmpDir, `${id}.qq-owner-file-image-retry.txt`);
+      const retryArgs = withCodexOutputPath(args, retryOutputPath);
+      const retryPrompt = buildQqImageGenerationRetryPrompt({
+        isOwnerTask,
+        text,
+        previousReply: reply,
+        outputDir: qqOutputImagesDir
+      });
+      await runCodexCli(retryArgs, retryPrompt, {
+        cwd: projectDir,
+        timeout: 5 * 60 * 1000,
+        env: {
+          ...process.env,
+          CODEX_REMOTE_CONTACT_QQ_OWNER_FILE_IMAGE_MODE: "1",
+          CODEX_REMOTE_CONTACT_QQ_OUTPUT_IMAGE_DIR: qqOutputImagesDir
+        },
+        qqEvent: event
+      });
+      reply = cleanCodexReply(await readFile(retryOutputPath, "utf8"));
+      const retryNormalizedReply = await normalizeQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt: retryStartedAt });
+      return (retryNormalizedReply || "执行完了，但没有生成可读回复。").slice(0, 1800);
+    }
+    const normalizedReply = await normalizeQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt });
+    return (normalizedReply || "执行完了，但没有生成可读回复。").slice(0, 1800);
   } finally {
     await cleanupQqTempImages(imagePaths);
     event.imagePaths = [];
   }
+}
+
+async function shouldRetryQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt } = {}) {
+  if (!isImageGeneration) return false;
+  if ((await getExistingQqImageMarkerPaths(reply)).length > 0) return false;
+  if ((await findRecentQqOutputImages(taskStartedAt)).length > 0) return false;
+  return true;
+}
+
+function withCodexOutputPath(args, outputPath) {
+  const outputIndex = args.indexOf("-o");
+  if (outputIndex < 0) return args;
+  const nextArgs = [...args];
+  nextArgs[outputIndex + 1] = outputPath;
+  return nextArgs;
+}
+
+function buildQqImageGenerationRetryPrompt({ isOwnerTask, text, previousReply, outputDir }) {
+  return [
+    isOwnerTask
+      ? `你正在通过 QQ 为已验证的${ownerLabel}继续处理图片生成/补发任务。`
+      : "你正在通过 QQ 继续处理公开群聊里的图片生成/补发任务。",
+    "上一轮结果没有可发送图片：没有找到真实存在的 png/jpg/webp/gif 文件，或回复里的 [[qq_image:/path]] 指向了不存在的文件。",
+    "你可以继续尝试补救一次：如果能生成或找到本次任务对应的真实图片，请保存到下面的输出目录，并在最终回复单独写一行 [[qq_image:/absolute/path/to/image.png]]。",
+    "如果图片接口、工具或策略限制导致无法生成，就直接说明失败原因；不要说“已生成”，也不要输出指向不存在文件的 marker。",
+    `QQ 图片输出目录：${outputDir}`,
+    "",
+    "原始 QQ 请求：",
+    text,
+    "",
+    "上一轮回复：",
+    previousReply || "（空）"
+  ].join("\n");
+}
+
+async function normalizeQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt } = {}) {
+  const text = String(reply || "").trim();
+  if (!isImageGeneration) return text;
+
+  const existingMarkerPaths = await getExistingQqImageMarkerPaths(text);
+  if (existingMarkerPaths.length > 0) return text;
+
+  const recentImages = await findRecentQqOutputImages(taskStartedAt);
+  if (recentImages.length > 0) {
+    const cleanText = stripLocalQqMediaMarkers(text) || "已生成。";
+    const markers = recentImages.map((filePath) => `[[qq_image:${filePath}]]`);
+    return [cleanText, ...markers].join("\n\n").trim();
+  }
+
+  if (extractQqImageMarkers(text).length > 0) {
+    return "图片生成失败：生成器返回了图片标记，但对应文件没有写入成功，QQ 端无法发送。";
+  }
+
+  if (/已生成|生成好了|画好了|做好了|补发|重发/i.test(text)) {
+    return "图片生成失败：没有找到可发送的图片文件，所以没有发送图片。请换个描述再试一次。";
+  }
+
+  return text || "图片生成失败：没有找到可发送的图片文件。";
+}
+
+async function getExistingQqImageMarkerPaths(reply) {
+  const paths = extractQqImageMarkers(reply)
+    .map((filePath) => resolveLocalQqMediaPath(filePath))
+    .filter((filePath) => filePath && isSendableQqImagePath(filePath));
+  const existing = [];
+  for (const filePath of [...new Set(paths)]) {
+    if (await fileExists(filePath)) existing.push(filePath);
+  }
+  return existing;
+}
+
+async function findRecentQqOutputImages(sinceMs) {
+  const threshold = Number.isFinite(sinceMs) ? sinceMs - 2000 : Date.now() - 5 * 60 * 1000;
+  const entries = await readdir(qqOutputImagesDir, { withFileTypes: true }).catch(() => []);
+  const candidates = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    const filePath = join(qqOutputImagesDir, entry.name);
+    if (!isSendableQqImagePath(filePath)) continue;
+    const stats = await stat(filePath).catch(() => null);
+    if (!stats?.isFile() || stats.mtimeMs < threshold) continue;
+    candidates.push({ filePath, mtimeMs: stats.mtimeMs });
+  }
+  return candidates
+    .sort((a, b) => a.mtimeMs - b.mtimeMs)
+    .map((candidate) => candidate.filePath);
 }
 
 function shouldRequestExpandedQqContext(reply) {
@@ -7476,6 +7589,7 @@ async function buildOneBotPrivateReplyMessage(reply, resolvedImagePaths = null) 
   const message = [];
   const imagePaths = resolvedImagePaths || await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir });
   const text = stripQqImageAttachmentMarkers(reply);
+  const hasMissingImageMarker = extractQqImageMarkers(reply).length > 0 && imagePaths.length === 0;
   if (text) {
     message.push({
       type: "text",
@@ -7484,6 +7598,12 @@ async function buildOneBotPrivateReplyMessage(reply, resolvedImagePaths = null) 
   }
   for (const imagePath of imagePaths) {
     message.push(buildQqImageSegment(imagePath));
+  }
+  if (hasMissingImageMarker) {
+    message.push({
+      type: "text",
+      data: { text: "图片文件没有生成成功或已经不可读，QQ 端无法发送。" }
+    });
   }
   if (message.length === 0 && extractQqFileMarkers(reply).length === 0) {
     message.push({
@@ -7505,6 +7625,7 @@ async function buildOneBotReplyMessage(event, reply, options = {}, resolvedImage
   }
   const imagePaths = resolvedImagePaths || await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir });
   const text = stripQqImageAttachmentMarkers(reply);
+  const hasMissingImageMarker = extractQqImageMarkers(reply).length > 0 && imagePaths.length === 0;
   if (text) {
     message.push({
       type: "text",
@@ -7513,6 +7634,12 @@ async function buildOneBotReplyMessage(event, reply, options = {}, resolvedImage
   }
   for (const imagePath of imagePaths) {
     message.push(buildQqImageSegment(imagePath));
+  }
+  if (hasMissingImageMarker) {
+    message.push({
+      type: "text",
+      data: { text: "图片文件没有生成成功或已经不可读，QQ 端无法发送。" }
+    });
   }
   if (!hasSendableOneBotMessage(message) && extractQqFileMarkers(reply).length === 0) {
     message.push({
@@ -7669,6 +7796,10 @@ function resolveLocalQqMediaPath(filePath) {
   const normalized = String(filePath).trim().replace(/^file:\/\//, "");
   const resolvedPath = isAbsolute(normalized) ? normalized : resolve(projectDir, normalized);
   return resolvedPath;
+}
+
+function isSendableQqImagePath(filePath) {
+  return qqSendableImageExtensions.has(extname(String(filePath || "")).toLowerCase());
 }
 
 function resolveQqStickerMediaPath(name, { stickerDir } = {}) {
