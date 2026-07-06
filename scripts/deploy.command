@@ -188,7 +188,7 @@ EOF
 }
 
 main() {
-  log "开始部署 GPT QQ Bot。"
+  log "开始部署 Codex QQ Bot。"
   log "项目目录：$PROJECT_DIR"
   ensure_basic_tools
   ensure_node

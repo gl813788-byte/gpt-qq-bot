@@ -1,10 +1,10 @@
 <div align="center">
 
-# GPT QQ Bot
+# Codex QQ Bot
 
-### A local GPT assistant for QQ group chats
+### A local Codex assistant for QQ group chats
 
-**A local QQ/OneBot and Codex CLI assistant hub for the `gl813788-byte/GPT` project.**
+**A local QQ/OneBot and Codex CLI assistant hub for the `gl813788-byte/codex-qq-bot` project.**
 
 [简体中文](README_CN.md) | English
 
@@ -21,7 +21,7 @@
 
 ## Introduction
 
-GPT QQ Bot runs locally and connects QQ/OneBot, Codex CLI, local automation scripts, proxy node control, and an HTTP API controlled by `ncc` into one service.
+Codex QQ Bot runs locally and connects QQ/OneBot, Codex CLI, local automation scripts, proxy node control, and an HTTP API controlled by `ncc` into one service.
 
 The main program is intentionally usable by itself. Optional update packages such as `qq-enhancer` and `unified-memory` can be placed next to it when you need enhanced QQ group-chat behavior or cross-device memory.
 
@@ -100,7 +100,7 @@ xcode-select --install
 If the `claude-to-im` Codex skill is installed, you can ask Codex to download and set up this project for you:
 
 ```text
-Use the claude-to-im skill to download and set up GPT QQ Bot.
+Use the claude-to-im skill to download and set up Codex QQ Bot.
 Put the backend at /root/Codex-Remote-Contact and use ncc as the control entry.
 ```
 
@@ -116,7 +116,7 @@ cp skills/claude-to-im/SKILL.md ~/.codex/skills/claude-to-im/SKILL.md
 #### Manual Git Download
 
 ```bash
-git clone https://github.com/gl813788-byte/GPT.git /root/Codex-Remote-Contact
+git clone https://github.com/gl813788-byte/codex-qq-bot.git /root/Codex-Remote-Contact
 cd /root/Codex-Remote-Contact
 npm install --omit=dev
 ```

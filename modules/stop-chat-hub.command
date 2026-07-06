@@ -9,9 +9,9 @@ launchctl bootout "$USER_DOMAIN" "$PLIST" >/dev/null 2>&1 || true
 pid=$(lsof -tiTCP:$PORT -sTCP:LISTEN)
 
 if [ -z "$pid" ]; then
-  echo "gpt-qq-bot Chat Hub is not running."
+  echo "Codex QQ Bot Chat Hub is not running."
   exit 0
 fi
 
 kill -TERM $pid
-echo "Stopped gpt-qq-bot Chat Hub on port $PORT."
+echo "Stopped Codex QQ Bot Chat Hub on port $PORT."

@@ -84,7 +84,7 @@ set_env_value() {
 
 show_status() {
   ensure_settings
-  printf '\nGPT QQ Bot 状态\n'
+  printf '\nCodex QQ Bot 状态\n'
   printf '项目目录：%s\n' "$PROJECT_DIR"
   printf '配置文件：%s\n' "$SETTINGS_FILE"
   printf '本地环境：%s\n' "$LOCAL_ENV_FILE"
@@ -246,7 +246,7 @@ setup_wizard() {
   while true; do
     clear 2>/dev/null || true
     cat <<'MENU'
-GPT QQ Bot 快捷配置（ncc）
+Codex QQ Bot 快捷配置（ncc）
 
 1) Codex 登录 / 鉴权测试
 2) QQ / OneBot 配置

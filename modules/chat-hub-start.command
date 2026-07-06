@@ -13,7 +13,7 @@ if [ ! -f "$PLIST" ]; then
 fi
 
 if lsof -tiTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "gpt-qq-bot Chat Hub is already running:"
+  echo "Codex QQ Bot Chat Hub is already running:"
   echo "http://localhost:$PORT"
   exit 0
 fi
@@ -23,10 +23,10 @@ launchctl bootstrap "$USER_DOMAIN" "$PLIST"
 sleep 1
 
 if lsof -tiTCP:$PORT -sTCP:LISTEN >/dev/null 2>&1; then
-  echo "gpt-qq-bot Chat Hub started:"
+  echo "Codex QQ Bot Chat Hub started:"
   echo "http://localhost:$PORT"
 else
-  echo "gpt-qq-bot Chat Hub did not start. Check:"
+  echo "Codex QQ Bot Chat Hub did not start. Check:"
     echo "$PROJECT_DIR/runtime/logs/chat-hub.err.log"
   exit 1
 fi

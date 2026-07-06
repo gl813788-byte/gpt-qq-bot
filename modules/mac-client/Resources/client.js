@@ -238,11 +238,11 @@ const i18n = {
 const introI18n = {
   zh: {
     introTitle: "项目简介",
-    introBody: "GPT QQ Bot 是一个把 GPT 风格助手接入 QQ 群聊和私聊的本地项目。它通过 QQ/OneBot 连接 Codex CLI，在本机保存轻量上下文，并通过 ncc 与 Hub API 管理运行状态。"
+    introBody: "Codex QQ Bot 是一个把 Codex 风格助手接入 QQ 群聊和私聊的本地项目。它通过 QQ/OneBot 连接 Codex CLI，在本机保存轻量上下文，并通过 ncc 与 Hub API 管理运行状态。"
   },
   en: {
     introTitle: "Project Introduction",
-    introBody: "GPT QQ Bot is a local project for running a GPT-style assistant in QQ groups and private chats. It connects QQ/OneBot to Codex CLI, keeps lightweight context on the machine, and uses ncc plus the Hub API for runtime control."
+    introBody: "Codex QQ Bot is a local project for running a Codex-style assistant in QQ groups and private chats. It connects QQ/OneBot to Codex CLI, keeps lightweight context on the machine, and uses ncc plus the Hub API for runtime control."
   }
 };
 
@@ -255,7 +255,7 @@ function t(key, ...args) {
 
 function applyLanguage() {
   document.documentElement.lang = "zh-CN";
-  document.title = "GPT QQ Bot";
+  document.title = "Codex QQ Bot";
   if (els.languageSelect) els.languageSelect.value = introLanguage;
   document.querySelectorAll("[data-i18n]").forEach((node) => {
     node.textContent = t(node.dataset.i18n);

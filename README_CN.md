@@ -1,10 +1,10 @@
 <div align="center">
 
-# GPT QQ Bot
+# Codex QQ Bot
 
-### QQ 群聊里的本地 GPT 助手
+### QQ 群聊里的本地 Codex 助手
 
-**一个保存到 `gl813788-byte/GPT` 仓库里的 QQ/OneBot + Codex CLI 本地助手中枢。**
+**一个保存到 `gl813788-byte/codex-qq-bot` 仓库里的 QQ/OneBot + Codex CLI 本地助手中枢。**
 
 简体中文 | [English](README.md)
 
@@ -21,7 +21,7 @@
 
 ## 介绍
 
-GPT QQ Bot 运行在本机，把 QQ/OneBot、Codex CLI、本机自动化脚本、代理节点控制和由 `ncc` 控制的 HTTP API 接到同一个服务里。
+Codex QQ Bot 运行在本机，把 QQ/OneBot、Codex CLI、本机自动化脚本、代理节点控制和由 `ncc` 控制的 HTTP API 接到同一个服务里。
 
 主程序可以独立启动。需要更强的 QQ 群聊能力或跨端记忆时，再把 `qq-enhancer`、`unified-memory` 等可选升级包放到旁边即可。
 
@@ -100,7 +100,7 @@ xcode-select --install
 如果已经安装 `claude-to-im` Codex skill，可以直接让 Codex 下载并配置本项目：
 
 ```text
-使用 claude-to-im skill 下载并配置 GPT QQ Bot。
+使用 claude-to-im skill 下载并配置 Codex QQ Bot。
 把后端放到 /root/Codex-Remote-Contact，并使用 ncc 作为统一控制入口。
 ```
 
@@ -116,7 +116,7 @@ cp skills/claude-to-im/SKILL.md ~/.codex/skills/claude-to-im/SKILL.md
 #### 手动 Git 下载
 
 ```bash
-git clone https://github.com/gl813788-byte/GPT.git /root/Codex-Remote-Contact
+git clone https://github.com/gl813788-byte/codex-qq-bot.git /root/Codex-Remote-Contact
 cd /root/Codex-Remote-Contact
 npm install --omit=dev
 ```

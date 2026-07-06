@@ -50,12 +50,12 @@ Default services:
 
 ## Backend Install / Download
 
-Use this when the user asks Codex to download, install, reinstall, or set up the GPT QQ Bot / Codex Remote Contact backend through this skill.
+Use this when the user asks Codex to download, install, reinstall, or set up the Codex QQ Bot / Codex Remote Contact backend through this skill.
 
 Default backend repository:
 
 ```bash
-https://github.com/gl813788-byte/GPT.git
+https://github.com/gl813788-byte/codex-qq-bot.git
 ```
 
 Default install path:
@@ -69,7 +69,7 @@ Install flow:
 1. If `/root/Codex-Remote-Contact/.git` does not exist, clone the backend:
 
    ```bash
-   git clone https://github.com/gl813788-byte/GPT.git /root/Codex-Remote-Contact
+   git clone https://github.com/gl813788-byte/codex-qq-bot.git /root/Codex-Remote-Contact
    ```
 
 2. If the repo already exists, check it before updating:
