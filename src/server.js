@@ -5,11 +5,13 @@ import { access, copyFile, mkdir, readFile, readdir, stat, writeFile } from "nod
 import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { brotliDecompressSync } from "node:zlib";
+import { createLogger, readLogEntries } from "./logger.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const projectDir = join(__dirname, "..");
 const codexWorkspaceDir = join(projectDir, "workspaces", "codex-cli");
 const codexTmpDir = join(projectDir, "runtime", "replies");
+const logFilePath = process.env.CODEX_REMOTE_CONTACT_LOG_FILE || join(projectDir, "runtime", "logs", "hub.jsonl");
 const imessageScreenshotsDir = join(projectDir, "runtime", "imessage-screenshots");
 const qqStickerDir = process.env.CODEX_REMOTE_CONTACT_QQ_STICKER_DIR || join(projectDir, "data", "qq-stickers");
 const qqOutputImagesDir = process.env.CODEX_REMOTE_CONTACT_QQ_OUTPUT_IMAGE_DIR || join(projectDir, "runtime", "qq-output-images");
@@ -35,6 +37,12 @@ const assistantProfilePath = process.env.CODEX_REMOTE_CONTACT_ASSISTANT_PROFILE_
 const shadowrocketNodeControlPath = join(projectDir, "modules", "shadowrocket", "shadowrocket-node-control.command");
 const backlightOffScriptPath = join(projectDir, "modules", "system-control", "backlight-off-keep-awake.command");
 const backlightRestoreScriptPath = join(projectDir, "modules", "system-control", "backlight-restore.command");
+const logger = createLogger({
+  filePath: logFilePath,
+  maxBytes: Number(process.env.CODEX_REMOTE_CONTACT_LOG_MAX_BYTES || 5 * 1024 * 1024),
+  maxFiles: Number(process.env.CODEX_REMOTE_CONTACT_LOG_MAX_FILES || 5),
+  consoleOutput: process.env.CODEX_REMOTE_CONTACT_LOG_CONSOLE !== "0"
+});
 
 function fallbackMemoryStore() {
   return {
@@ -104,11 +112,11 @@ async function importOptionalModule(label, candidates) {
       return await import(specifier);
     } catch (error) {
       if (error?.code && !["ERR_MODULE_NOT_FOUND", "ERR_INVALID_FILE_URL_PATH", "ERR_UNSUPPORTED_ESM_URL_SCHEME"].includes(error.code)) {
-        console.warn(`${label} failed to load from ${candidate}: ${error.message}`);
+        logger.warn(`${label} failed to load`, { candidate, error }, "system");
       }
     }
   }
-  console.warn(`${label} not installed; continuing with built-in fallback.`);
+  logger.warn(`${label} not installed; continuing with built-in fallback.`, {}, "system");
   return null;
 }
 
@@ -435,7 +443,7 @@ async function loadQqMemory() {
     }
   } catch (error) {
     if (error.code !== "ENOENT") {
-      console.warn(`Unable to load QQ memory: ${error.message}`);
+      logger.warn("Unable to load QQ memory", { error }, "memory");
     }
   }
 }
@@ -452,7 +460,7 @@ async function loadQqPublicMemory() {
     }
   } catch (error) {
     if (error.code !== "ENOENT") {
-      console.warn(`Unable to load QQ public memory: ${error.message}`);
+      logger.warn("Unable to load QQ public memory", { error }, "memory");
     }
   }
 }
@@ -466,7 +474,7 @@ async function loadQqPersonas() {
     }
   } catch (error) {
     if (error.code !== "ENOENT") {
-      console.warn(`Unable to load QQ personas: ${error.message}`);
+      logger.warn("Unable to load QQ personas", { error }, "memory");
     }
   }
 }
@@ -556,7 +564,7 @@ async function loadSettings() {
     }
   } catch (error) {
     if (error.code !== "ENOENT") {
-      console.warn(`Unable to load settings: ${error.message}`);
+      logger.warn("Unable to load settings", { error }, "system");
     }
   }
 }
@@ -954,7 +962,7 @@ async function loadIMessageMemory() {
     }
   } catch (error) {
     if (error.code !== "ENOENT") {
-      console.warn(`Unable to load iMessage memory: ${error.message}`);
+      logger.warn("Unable to load iMessage memory", { error }, "memory");
     }
   }
 }
@@ -981,7 +989,7 @@ async function loadRemoteExecutionMemory() {
     }
   } catch (error) {
     if (error.code !== "ENOENT") {
-      console.warn(`Unable to load remote execution memory: ${error.message}`);
+      logger.warn("Unable to load remote execution memory", { error }, "memory");
     }
   }
 }
@@ -1701,6 +1709,10 @@ async function checkOneBotHealth() {
       selfId: body.data?.user_id == null ? null : String(body.data.user_id),
       nickname: body.data?.nickname || null
     };
+    logger.debug("OneBot health check succeeded", {
+      selfId: state.maintenance.oneBot.selfId,
+      nickname: state.maintenance.oneBot.nickname
+    }, "onebot");
   } catch (error) {
     state.maintenance.oneBot = {
       ...state.maintenance.oneBot,
@@ -1708,6 +1720,7 @@ async function checkOneBotHealth() {
       lastCheckedAt: checkedAt,
       lastError: error.message
     };
+    logger.warn("OneBot health check failed", { error }, "onebot");
   }
 }
 
@@ -1770,7 +1783,7 @@ async function prepareQqModelImagesFallback(images, { outputDir, fetchOneBotImag
   const prepared = [];
   for (const image of list.slice(0, 4)) {
     const localPath = await prepareSingleQqModelImage(image, { outputDir: dir, fetchOneBotImage: fetchImage }).catch((error) => {
-      console.warn(`Unable to prepare QQ image ${image?.file || image?.url || ""}: ${error.message}`);
+      logger.warn("Unable to prepare QQ image", { image: image?.file || image?.url || "", error }, "qq");
       return "";
     });
     if (localPath) prepared.push(localPath);
@@ -1802,7 +1815,7 @@ async function cleanupQqEventTaskWorkspaceByBot(event, reason = "QQ send finishe
   event.qqTaskWorkspace = null;
   event.imagePaths = [];
   await askCodexToCleanupQqTaskWorkspace(workspace, reason).catch((error) => {
-    console.warn(`Unable to cleanup QQ task workspace ${workspace.root}: ${error.message}`);
+    logger.warn("Unable to cleanup QQ task workspace", { workspace: workspace.root, reason, error }, "qq");
   });
 }
 
@@ -2046,7 +2059,7 @@ function pruneExpiredQqBans({ persist = true } = {}) {
   const expiredSet = new Set(expiredIds);
   state.qq.bannedUserIds = state.qq.bannedUserIds.filter((id) => !expiredSet.has(String(id)));
   for (const id of expiredIds) delete state.qq.bannedUntilByUserId[id];
-  if (persist) saveSettings().catch((error) => console.warn(`Unable to save expired QQ ban cleanup: ${error.message}`));
+  if (persist) saveSettings().catch((error) => logger.warn("Unable to save expired QQ ban cleanup", { error }, "qq"));
   return true;
 }
 
@@ -7548,6 +7561,11 @@ function runCodexCli(args, input, options) {
       state.maintenance.codex.lastOk = false;
       state.maintenance.codex.lastError = "Codex CLI timed out while generating a reply";
       state.maintenance.codex.lastDurationMs = Date.now() - startedAt;
+      logger.error("Codex CLI timed out", {
+        cwd: options.cwd,
+        durationMs: state.maintenance.codex.lastDurationMs,
+        qqGenerationId
+      }, "codex");
       child.kill("SIGTERM");
       clearTrackedQqGeneration(qqGenerationId);
       reject(new Error("Codex CLI timed out while generating a reply"));
@@ -7568,6 +7586,11 @@ function runCodexCli(args, input, options) {
       state.maintenance.codex.lastOk = false;
       state.maintenance.codex.lastError = error.message;
       state.maintenance.codex.lastDurationMs = Date.now() - startedAt;
+      logger.error("Codex CLI failed to start", {
+        cwd: options.cwd,
+        durationMs: state.maintenance.codex.lastDurationMs,
+        error
+      }, "codex");
       clearTrackedQqGeneration(qqGenerationId);
       reject(error);
     });
@@ -7582,12 +7605,23 @@ function runCodexCli(args, input, options) {
       if (code === 0) {
         state.maintenance.codex.lastOk = true;
         state.maintenance.codex.lastError = null;
+        logger.success("Codex CLI finished", {
+          cwd: options.cwd,
+          durationMs: state.maintenance.codex.lastDurationMs,
+          qqGenerationId,
+          stderr: stderr.trim().slice(-1000) || null
+        }, "codex");
         refreshCodexQuotaSnapshotAfterRun({ startedAtMs: startedAt, previousQuota }).catch(() => null).finally(() => {
           resolve({ stdout, stderr });
         });
       } else if (qqGenerationId && stoppedQqGenerationIds.delete(qqGenerationId)) {
         state.maintenance.codex.lastOk = false;
         state.maintenance.codex.lastError = "QQ generation stopped by /stop";
+        logger.warn("QQ Codex generation stopped", {
+          cwd: options.cwd,
+          durationMs: state.maintenance.codex.lastDurationMs,
+          qqGenerationId
+        }, "codex");
         const stoppedError = new Error("QQ generation stopped by /stop");
         stoppedError.code = "QQ_GENERATION_STOPPED";
         reject(stoppedError);
@@ -7595,6 +7629,13 @@ function runCodexCli(args, input, options) {
         const message = `Codex CLI exited with ${code}: ${(stderr || stdout).trim()}`;
         state.maintenance.codex.lastOk = false;
         state.maintenance.codex.lastError = message;
+        logger.error("Codex CLI exited with non-zero status", {
+          cwd: options.cwd,
+          code,
+          durationMs: state.maintenance.codex.lastDurationMs,
+          stderr: stderr.trim().slice(-2000),
+          stdout: stdout.trim().slice(-1000)
+        }, "codex");
         reject(new Error(message));
       }
     });
@@ -8254,6 +8295,7 @@ function rememberEvent(key) {
 }
 
 async function handleApi(req, res) {
+  const requestUrl = new URL(req.url || "/", "http://localhost");
   if (req.method === "OPTIONS") {
     res.writeHead(204, corsHeaders());
     res.end();
@@ -8266,6 +8308,20 @@ async function handleApi(req, res) {
 
   if (req.method === "GET" && req.url === "/api/maintenance") {
     return sendJson(res, 200, await buildMaintenanceStatus());
+  }
+
+  if (req.method === "GET" && requestUrl.pathname === "/api/logs") {
+    const limit = Number(requestUrl.searchParams.get("limit") || 100);
+    const level = requestUrl.searchParams.get("level") || "";
+    const category = requestUrl.searchParams.get("category") || "";
+    const entries = await readLogEntries(logFilePath, { limit, level, category });
+    return sendJson(res, 200, {
+      logFile: logFilePath,
+      limit: Math.max(1, Math.min(1000, Number(limit) || 100)),
+      level: level || null,
+      category: category || null,
+      entries
+    });
   }
 
   if (req.method === "GET" && req.url === "/api/memory") {
@@ -8380,6 +8436,13 @@ async function handleApi(req, res) {
 
   if (req.method === "POST" && req.url === "/api/qq/event") {
     const event = enrichQqEvent(await readBody(req));
+    logger.info("QQ event received", {
+      source: "qq",
+      type: event.type,
+      groupId: event.groupId || null,
+      senderId: event.senderId || null,
+      textLength: String(event.text || "").length
+    }, "qq");
     await processQqReplyEvent(event, { source: "qq" });
     return sendJson(res, 200, { status: "ok" });
   }
@@ -8388,6 +8451,10 @@ async function handleApi(req, res) {
     const payload = await readBody(req);
     if (isOneBotPokeNotice(payload)) {
       if (!isOneBotPokeToSelf(payload)) {
+        logger.debug("OneBot poke ignored because it did not target the bot", {
+          senderId: payload.user_id || payload.sender_id || null,
+          targetId: payload.target_id || null
+        }, "onebot");
         return sendJson(res, 200, { ignored: true, reason: "Only poke events targeting the bot are handled" });
       }
       const event = enrichQqEvent(normalizeOneBotPokeEvent(payload));
@@ -8405,12 +8472,19 @@ async function handleApi(req, res) {
         };
         state.qq.events.unshift(record);
         state.qq.events = state.qq.events.slice(0, 30);
+        logger.debug("Duplicate OneBot poke ignored", { dedupeKey, groupId: event.groupId || null, senderId: event.senderId || null }, "onebot");
         return sendJson(res, 200, { status: "ok", duplicate: true });
       }
+      logger.info("OneBot poke received", { groupId: event.groupId || null, senderId: event.senderId || null }, "onebot");
       await processQqReplyEvent(event, { source: "onebot" });
       return sendJson(res, 200, { status: "ok" });
     }
     if (payload.post_type !== "message" || !["group", "private"].includes(payload.message_type)) {
+      logger.debug("OneBot event ignored", {
+        postType: payload.post_type || null,
+        messageType: payload.message_type || null,
+        noticeType: payload.notice_type || null
+      }, "onebot");
       return sendJson(res, 200, { ignored: true, reason: "Only group/private message events are handled" });
     }
 
@@ -8429,9 +8503,16 @@ async function handleApi(req, res) {
       };
       state.qq.events.unshift(record);
       state.qq.events = state.qq.events.slice(0, 30);
+      logger.debug("Duplicate OneBot message ignored", { dedupeKey, groupId: event.groupId || null, senderId: event.senderId || null }, "onebot");
       return sendJson(res, 200, { status: "ok", duplicate: true });
     }
 
+    logger.info("OneBot message received", {
+      messageType: payload.message_type,
+      groupId: event.groupId || null,
+      senderId: event.senderId || null,
+      textLength: String(event.text || "").length
+    }, "onebot");
     await processQqReplyEvent(event, { source: "onebot" });
     return sendJson(res, 200, { status: "ok" });
   }
@@ -8456,10 +8537,18 @@ const server = createServer(async (req, res) => {
     }
     sendJson(res, 404, { error: "Not found" });
   } catch (error) {
+    logger.error("HTTP API request failed", {
+      method: req.method,
+      url: req.url,
+      error
+    }, "web");
     sendJson(res, 500, { error: error.message });
   }
 });
 
 server.listen(3789, () => {
-  console.log("Codex QQ Bot hub: http://localhost:3789");
+  logger.success("Codex QQ Bot hub started", {
+    url: "http://localhost:3789",
+    logFile: logFilePath
+  }, "system");
 });

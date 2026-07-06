@@ -17,6 +17,7 @@ PROJECT_DIR="${GPT_QQ_BOT_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SETTINGS_FILE="$PROJECT_DIR/data/settings.json"
 LOCAL_ENV_FILE="$PROJECT_DIR/config/local.env"
 HUB_URL="${GPT_QQ_BOT_HUB_URL:-http://127.0.0.1:3789}"
+LOG_FILE="${CODEX_REMOTE_CONTACT_LOG_FILE:-$PROJECT_DIR/runtime/logs/hub.jsonl}"
 ONEBOT_API_BASE_DEFAULT="http://127.0.0.1:3000"
 
 log() {
@@ -241,6 +242,14 @@ open_hub_api() {
   fi
 }
 
+print_logs() {
+  if [ ! -f "$LOG_FILE" ]; then
+    log "暂无日志文件：$LOG_FILE"
+    return 0
+  fi
+  node "$PROJECT_DIR/scripts/ncc-log-viewer.mjs" "$LOG_FILE" "$@"
+}
+
 setup_wizard() {
   ensure_settings
   while true; do
@@ -256,6 +265,7 @@ Codex QQ Bot 快捷配置（ncc）
 6) 启动 Hub
 7) 状态检查
 8) 打开 Hub API 状态
+9) 查看日志
 0) 退出
 MENU
     printf '\n请选择：'
@@ -269,6 +279,7 @@ MENU
       6) start_hub; pause ;;
       7) show_status; pause ;;
       8) open_hub_api; pause ;;
+      9) print_logs; pause ;;
       0|q|quit|exit) break ;;
       *) log "未知选项。"; pause ;;
     esac
@@ -285,9 +296,10 @@ case "${1:-setup}" in
   branding) branding_menu ;;
   start) start_hub ;;
   open) open_hub_api ;;
+  logs) shift; print_logs "$@" ;;
   *)
     cat <<EOF
-用法：ncc [setup|status|codex-login|qq|owner|groups|branding|start|open]
+用法：ncc [setup|status|codex-login|qq|owner|groups|branding|start|open|logs]
 项目目录：$PROJECT_DIR
 EOF
     ;;

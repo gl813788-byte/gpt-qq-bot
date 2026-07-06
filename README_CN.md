@@ -259,12 +259,16 @@ curl http://localhost:3789/api/state
 
 ### 8. 日志
 
-`ncc` 会在名为 `codex-contact` 的 `screen` 会话里启动后端。
+后端会把统一结构化日志写到 `runtime/logs/hub.jsonl`。日常排障优先用 `ncc logs` 查看彩色、给人看的输出：
 
 ```bash
-ncc status
-screen -r codex-contact
+ncc logs
+ncc logs --tail 200 --level error
+ncc logs -f
+curl 'http://localhost:3789/api/logs?limit=50&category=qq'
 ```
+
+`ncc` 仍会在名为 `codex-contact` 的 `screen` 会话里启动后端；只有排查进程启动输出时才需要 `screen -r codex-contact`。
 
 ## 可选升级包
 

@@ -122,6 +122,7 @@ Map user intent to the existing control script whenever possible:
 | connect, 修复连接, 扫码后继续连接 | `ncc connect` |
 | start NapCat only | `ncc napcat` |
 | start backend only | `ncc hub` |
+| logs, 日志, 看日志 | `ncc logs`, `ncc logs -f`, or `ncc logs --tail 200 --level error` |
 | groups, 群白名单 | `ncc groups` or non-interactive `ncc group-add`, `ncc group-remove`, `ncc group-set` |
 | stop backend | `ncc stop-hub` |
 | help | `ncc help` |
@@ -212,9 +213,14 @@ ps -ef | rg -i 'napcat|QQ/qq|Codex-Remote-Contact|node src/server|npm start|xvfb
 ss -ltnp | rg ':3000|:3789|:6099|qq|node'
 curl -fsS --max-time 3 http://127.0.0.1:3789/api/state | jq .
 curl -fsS --max-time 3 http://127.0.0.1:3789/api/maintenance | jq '.webLookup'
+curl -fsS --max-time 3 'http://127.0.0.1:3789/api/logs?limit=50' | jq .
+ncc logs --tail 80
+ncc logs -f
 curl -fsS --max-time 3 http://127.0.0.1:3000/get_login_info | jq .
 screen -ls
 ```
+
+Unified backend logs are written as JSONL to `/root/Codex-Remote-Contact/runtime/logs/hub.jsonl` unless `CODEX_REMOTE_CONTACT_LOG_FILE` overrides the path. Prefer `ncc logs` for human-readable colored output; use `/api/logs` for structured filtering by `level` and `category`.
 
 Common states:
 

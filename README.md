@@ -259,12 +259,16 @@ curl http://localhost:3789/api/state
 
 ### 8. Logs
 
-`ncc` starts the hub in a `screen` session named `codex-contact`.
+The hub writes structured JSONL logs to `runtime/logs/hub.jsonl`. Use `ncc logs` for colored, human-readable output:
 
 ```bash
-ncc status
-screen -r codex-contact
+ncc logs
+ncc logs --tail 200 --level error
+ncc logs -f
+curl 'http://localhost:3789/api/logs?limit=50&category=qq'
 ```
+
+`ncc` also starts the hub in a `screen` session named `codex-contact`; use `screen -r codex-contact` only when diagnosing process-level startup output.
 
 ## Optional Packages
 
