@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
-import { access, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { brotliDecompressSync } from "node:zlib";
@@ -13,6 +13,7 @@ const codexTmpDir = join(projectDir, "runtime", "replies");
 const imessageScreenshotsDir = join(projectDir, "runtime", "imessage-screenshots");
 const qqStickerDir = process.env.CODEX_REMOTE_CONTACT_QQ_STICKER_DIR || join(projectDir, "data", "qq-stickers");
 const qqOutputImagesDir = process.env.CODEX_REMOTE_CONTACT_QQ_OUTPUT_IMAGE_DIR || join(projectDir, "runtime", "qq-output-images");
+const qqTaskWorkspacesDir = process.env.CODEX_REMOTE_CONTACT_QQ_TASK_WORKSPACE_DIR || join(projectDir, "runtime", "qq-task-workspaces");
 const qqSendableImageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 const dataDir = join(projectDir, "data");
 const codexHomeDir = join(process.env.HOME || "", ".codex");
@@ -1777,6 +1778,79 @@ async function prepareQqModelImagesFallback(images, { outputDir, fetchOneBotImag
   return [...new Set(prepared)];
 }
 
+async function createQqTaskWorkspace(kind = "task", id = crypto.randomUUID()) {
+  const safeKind = String(kind || "task").replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 40) || "task";
+  const safeId = String(id || crypto.randomUUID()).replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 80) || crypto.randomUUID();
+  const root = join(qqTaskWorkspacesDir, `${Date.now()}-${safeKind}-${safeId}`);
+  const inputDir = join(root, "input");
+  const outputDir = join(root, "output");
+  await mkdir(inputDir, { recursive: true });
+  await mkdir(outputDir, { recursive: true });
+  return {
+    id: safeId,
+    kind: safeKind,
+    root,
+    inputDir,
+    outputDir,
+    createdAt: new Date().toISOString()
+  };
+}
+
+async function cleanupQqEventTaskWorkspaceByBot(event, reason = "QQ send finished") {
+  if (!event?.qqTaskWorkspace) return;
+  const workspace = event.qqTaskWorkspace;
+  event.qqTaskWorkspace = null;
+  event.imagePaths = [];
+  await askCodexToCleanupQqTaskWorkspace(workspace, reason).catch((error) => {
+    console.warn(`Unable to cleanup QQ task workspace ${workspace.root}: ${error.message}`);
+  });
+}
+
+async function askCodexToCleanupQqTaskWorkspace(workspace, reason = "QQ send finished") {
+  const root = workspace?.root ? String(workspace.root) : "";
+  if (!root || !isPathUnderAnyDir(root, [qqTaskWorkspacesDir])) return;
+  if (!await pathExists(root)) return;
+  await ensureCodexReplyWorkspace();
+  const outputPath = join(codexTmpDir, `${crypto.randomUUID()}.qq-task-cleanup.txt`);
+  const prompt = [
+    "你刚完成一个 QQ 图片/文件任务，现在只做清理。",
+    "目标：删除本次任务的临时工作区及其中所有文件。",
+    "严格限制：只能删除下面这个目录本身以及它下面的内容；不能删除其他路径。",
+    "如果路径不存在，直接输出已清理。",
+    "",
+    `清理原因：${reason}`,
+    `本次任务工作区：${root}`,
+    "",
+    "请执行清理，并只输出一句简短结果。"
+  ].join("\n");
+  const args = [
+    "exec",
+    "--ephemeral",
+    "--skip-git-repo-check",
+    "--ignore-rules",
+    "-s",
+    "danger-full-access",
+    "-m",
+    state.ai.model,
+    "-c",
+    `model_reasoning_effort="${state.ai.reasoningEffort}"`,
+    "-C",
+    projectDir,
+    "-o",
+    outputPath,
+    "-"
+  ];
+  await runCodexCli(args, prompt, {
+    cwd: projectDir,
+    timeout: 60000,
+    env: {
+      ...process.env,
+      CODEX_REMOTE_CONTACT_QQ_TASK_CLEANUP: "1",
+      CODEX_REMOTE_CONTACT_QQ_TASK_WORKSPACE_DIR: root
+    }
+  });
+}
+
 async function prepareSingleQqModelImage(image, { outputDir, fetchOneBotImage: fetchImage } = {}) {
   const directPath = getExistingQqImagePath(image);
   if (directPath && await fileExists(directPath)) {
@@ -3061,9 +3135,11 @@ async function buildModelReply(event) {
   const stickerCatalog = state.qq.enhancer.enabled ? await buildQqStickerCatalog(qqStickerDir) : [];
   const qqModelImages = getQqModelImageInputs(event, text);
   const shouldInspectImages = qqModelImages.length > 0;
+  const taskWorkspace = shouldInspectImages ? await createQqTaskWorkspace("qq-reply", id) : null;
+  if (taskWorkspace) event.qqTaskWorkspace = taskWorkspace;
   const imagePaths = shouldInspectImages
     ? await prepareQqModelImages(qqModelImages, {
-      outputDir: join(projectDir, "tmp", "qq-images"),
+      outputDir: taskWorkspace.inputDir,
       fetchOneBotImage
     })
     : [];
@@ -3185,8 +3261,7 @@ async function buildModelReply(event) {
     if (!reply) return buildAssistantReply(event);
     return reply.slice(0, 900);
   } finally {
-    await cleanupQqTempImages(imagePaths);
-    event.imagePaths = [];
+    event.imagePaths = imagePaths;
   }
 }
 
@@ -3317,16 +3392,18 @@ async function buildQqOwnerFileImageReply(event) {
   const id = crypto.randomUUID();
   const outputPath = join(codexTmpDir, `${id}.qq-owner-file-image.txt`);
   const taskStartedAt = Date.now();
+  const taskWorkspace = await createQqTaskWorkspace(isOwnerTask ? "qq-owner-file-image" : "qq-public-image", id);
+  event.qqTaskWorkspace = taskWorkspace;
   const quotedContext = formatQuotedContext(event);
   const qqModelImages = getQqModelImageInputs(event, text);
   const imagePaths = qqModelImages.length > 0
     ? await prepareQqModelImages(qqModelImages, {
-      outputDir: join(projectDir, "tmp", "qq-images"),
+      outputDir: taskWorkspace.inputDir,
       fetchOneBotImage
     })
     : [];
   event.imagePaths = imagePaths;
-  await mkdir(qqOutputImagesDir, { recursive: true });
+  await mkdir(taskWorkspace.outputDir, { recursive: true });
   const prompt = [
     isOwnerTask
       ? `你正在通过 QQ 为已验证的${ownerLabel}处理本机文件和图片任务。`
@@ -3340,13 +3417,18 @@ async function buildQqOwnerFileImageReply(event) {
       ? "- 不要删除、移动、覆盖用户文件，不要修改系统设置，不要安装依赖，不要杀进程，不要发送外部网络请求，除非用户明确要求且你先要求确认。"
       : "- 不要删除、移动、覆盖用户文件，不要修改系统设置，不要安装依赖，不要杀进程；除图片生成所需调用外，不要发送外部网络请求。",
     "- 不要输出 token、密钥、密码、cookie、私钥或完整敏感配置。遇到敏感内容只做脱敏摘要。",
-    "- 如果用户让你画图、生成图、做海报或生成表情包，优先使用 image 2 能力生成图片，把图片保存为 png/jpg/webp 到下面的输出目录，并在最终回复单独写一行 [[qq_image:/absolute/path/to/image.png]]。",
+    "- 如果用户让你画图、生成图、做海报或生成表情包，优先使用 image 2 能力生成图片，把图片保存为 png/jpg/webp 到下面的本次任务输出目录，并在最终回复单独写一行 [[qq_image:/absolute/path/to/image.png]]。",
     "- 如果 image 2/API 被当前账号或网关拒绝，直接说明“图片接口被拒绝/不可用”，不要假装已经画好，也不要只给空回复。",
-    "- 如果用户要你发普通文件，在最终回复单独写一行 [[qq_file:/absolute/path/to/file]]；需要指定发送文件名时写 [[qq_file:/absolute/path/to/file|filename.ext]]。",
+    "- 如果用户要你发普通文件，在最终回复单独写一行 [[qq_file:/absolute/path/to/file]]；需要指定发送文件名时写 [[qq_file:/absolute/path/to/file|filename.ext]]。如果你为发送而新建、转换或复制文件，必须写到本次任务输出目录。",
+    "- 由你决定最终要发哪些图片或文件：只有你在最终回复里显式写出的 [[qq_image:...]] / [[qq_file:...]] 会被 Hub 发送。",
+    "- 本次任务临时工作区只服务这一次 QQ 请求。不要把新生成的图片、中间文件或待发送副本写到项目其他目录；最终回复前不要删除待发送文件，Hub 会在 QQ 发送完成后再让你单独清理这个工作区。",
     "- 如果只是分析图片或文件，直接给结论；不要把大文件全文贴到 QQ。",
     "- 如果路径不存在或权限不足，说明具体失败原因。",
     "",
-    `QQ 图片输出目录：${qqOutputImagesDir}`,
+    `本次任务工作区：${taskWorkspace.root}`,
+    `本次任务输入目录：${taskWorkspace.inputDir}`,
+    `本次任务输出目录：${taskWorkspace.outputDir}`,
+    `旧版 QQ 图片输出目录（仅兼容，不要优先使用）：${qqOutputImagesDir}`,
     `当前项目目录：${projectDir}`,
     quotedContext,
     quotedContext ? "" : null,
@@ -3385,12 +3467,13 @@ async function buildQqOwnerFileImageReply(event) {
       env: {
         ...process.env,
         CODEX_REMOTE_CONTACT_QQ_OWNER_FILE_IMAGE_MODE: "1",
-        CODEX_REMOTE_CONTACT_QQ_OUTPUT_IMAGE_DIR: qqOutputImagesDir
+        CODEX_REMOTE_CONTACT_QQ_OUTPUT_IMAGE_DIR: taskWorkspace.outputDir,
+        CODEX_REMOTE_CONTACT_QQ_TASK_WORKSPACE_DIR: taskWorkspace.root
       },
       qqEvent: event
     });
     let reply = cleanCodexReply(await readFile(outputPath, "utf8"));
-    if (await shouldRetryQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt })) {
+    if (await shouldRetryQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt, outputDir: taskWorkspace.outputDir })) {
       const retryStartedAt = Date.now();
       const retryOutputPath = join(codexTmpDir, `${id}.qq-owner-file-image-retry.txt`);
       const retryArgs = withCodexOutputPath(args, retryOutputPath);
@@ -3398,7 +3481,7 @@ async function buildQqOwnerFileImageReply(event) {
         isOwnerTask,
         text,
         previousReply: reply,
-        outputDir: qqOutputImagesDir
+        outputDir: taskWorkspace.outputDir
       });
       await runCodexCli(retryArgs, retryPrompt, {
         cwd: projectDir,
@@ -3406,26 +3489,26 @@ async function buildQqOwnerFileImageReply(event) {
         env: {
           ...process.env,
           CODEX_REMOTE_CONTACT_QQ_OWNER_FILE_IMAGE_MODE: "1",
-          CODEX_REMOTE_CONTACT_QQ_OUTPUT_IMAGE_DIR: qqOutputImagesDir
+          CODEX_REMOTE_CONTACT_QQ_OUTPUT_IMAGE_DIR: taskWorkspace.outputDir,
+          CODEX_REMOTE_CONTACT_QQ_TASK_WORKSPACE_DIR: taskWorkspace.root
         },
         qqEvent: event
       });
       reply = cleanCodexReply(await readFile(retryOutputPath, "utf8"));
-      const retryNormalizedReply = await normalizeQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt: retryStartedAt });
+      const retryNormalizedReply = await normalizeQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt: retryStartedAt, outputDir: taskWorkspace.outputDir });
       return (retryNormalizedReply || "执行完了，但没有生成可读回复。").slice(0, 1800);
     }
-    const normalizedReply = await normalizeQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt });
+    const normalizedReply = await normalizeQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt, outputDir: taskWorkspace.outputDir });
     return (normalizedReply || "执行完了，但没有生成可读回复。").slice(0, 1800);
   } finally {
-    await cleanupQqTempImages(imagePaths);
-    event.imagePaths = [];
+    event.imagePaths = imagePaths;
   }
 }
 
-async function shouldRetryQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt } = {}) {
+async function shouldRetryQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt, outputDir } = {}) {
   if (!isImageGeneration) return false;
   if ((await getExistingQqImageMarkerPaths(reply)).length > 0) return false;
-  if ((await findRecentQqOutputImages(taskStartedAt)).length > 0) return false;
+  if ((await findRecentQqOutputImages(taskStartedAt, { outputDir })).length > 0) return false;
   return true;
 }
 
@@ -3444,6 +3527,7 @@ function buildQqImageGenerationRetryPrompt({ isOwnerTask, text, previousReply, o
       : "你正在通过 QQ 继续处理公开群聊里的图片生成/补发任务。",
     "上一轮结果没有可发送图片：没有找到真实存在的 png/jpg/webp/gif 文件，或回复里的 [[qq_image:/path]] 指向了不存在的文件。",
     "你可以继续尝试补救一次：如果能生成或找到本次任务对应的真实图片，请保存到下面的输出目录，并在最终回复单独写一行 [[qq_image:/absolute/path/to/image.png]]。",
+    "只有最终回复里显式写出的 [[qq_image:...]] 会被 Hub 发送；最终回复前不要删除待发送文件。",
     "如果图片接口、工具或策略限制导致无法生成，就直接说明失败原因；不要说“已生成”，也不要输出指向不存在文件的 marker。",
     `QQ 图片输出目录：${outputDir}`,
     "",
@@ -3455,14 +3539,14 @@ function buildQqImageGenerationRetryPrompt({ isOwnerTask, text, previousReply, o
   ].join("\n");
 }
 
-async function normalizeQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt } = {}) {
+async function normalizeQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt, outputDir } = {}) {
   const text = String(reply || "").trim();
   if (!isImageGeneration) return text;
 
   const existingMarkerPaths = await getExistingQqImageMarkerPaths(text);
   if (existingMarkerPaths.length > 0) return text;
 
-  const recentImages = await findRecentQqOutputImages(taskStartedAt);
+  const recentImages = await findRecentQqOutputImages(taskStartedAt, { outputDir });
   if (recentImages.length > 0) {
     const cleanText = stripLocalQqMediaMarkers(text) || "已生成。";
     const markers = recentImages.map((filePath) => `[[qq_image:${filePath}]]`);
@@ -3491,13 +3575,14 @@ async function getExistingQqImageMarkerPaths(reply) {
   return existing;
 }
 
-async function findRecentQqOutputImages(sinceMs) {
+async function findRecentQqOutputImages(sinceMs, { outputDir } = {}) {
   const threshold = Number.isFinite(sinceMs) ? sinceMs - 2000 : Date.now() - 5 * 60 * 1000;
-  const entries = await readdir(qqOutputImagesDir, { withFileTypes: true }).catch(() => []);
+  const scanDir = outputDir || qqOutputImagesDir;
+  const entries = await readdir(scanDir, { withFileTypes: true }).catch(() => []);
   const candidates = [];
   for (const entry of entries) {
     if (!entry.isFile()) continue;
-    const filePath = join(qqOutputImagesDir, entry.name);
+    const filePath = join(scanDir, entry.name);
     if (!isSendableQqImagePath(filePath)) continue;
     const stats = await stat(filePath).catch(() => null);
     if (!stats?.isFile() || stats.mtimeMs < threshold) continue;
@@ -4449,6 +4534,7 @@ async function processQqReplyEvent(event, options = {}) {
 
   if (record.reply && record.send?.ok !== false && commandAction?.afterSend) await commandAction.afterSend();
   if (record.reply && record.send?.ok !== false && !commandAction?.skipMemory) await rememberQqExchange(event, record.reply);
+  if (event.qqTaskWorkspace) await cleanupQqEventTaskWorkspaceByBot(event, record.send?.skipped ? "QQ send skipped" : "QQ reply processing finished");
   recordQqEvent(record);
 
   const scopeId = getQqMemoryScopeId(event);
@@ -7473,6 +7559,7 @@ async function ensureCodexReplyWorkspace() {
       "如果需要通过 QQ 发图，单独输出一行 [[qq_image:/absolute/path/to/image.png]]。",
       "如果被要求画图、生成图、做海报或生成表情包，优先使用 image 2 能力生成图片，再用 [[qq_image:/absolute/path/to/image.png]] 发出。",
       "如果需要通过 QQ 发普通文件，单独输出一行 [[qq_file:/absolute/path/to/file]]；需要指定发送文件名时写 [[qq_file:/absolute/path/to/file|filename.ext]]。",
+      "Hub 只会发送最终回复里显式写出的 QQ 图片/文件 marker；如果某次任务给了临时工作区，待发送文件在 QQ 发送完成前不要删除，Hub 会另开清理回合让你清理。",
       state.qq.enhancer.enabled ? "如果要发表情包，优先输出 [[qq_sticker:表情包名]]；表情包名必须来自提示里的本地表情包库。" : null,
       formatQqBubbleInstruction(),
       "群内 /stop 是强制停止当前回复并开启新对话，不是关闭 QQ 通道；关闭通道使用 /关闭QQ。",
@@ -7485,104 +7572,104 @@ async function ensureCodexReplyWorkspace() {
 
 async function sendOneBotGroupReply(event, reply, options = {}) {
   if (!event.groupId) return { ok: false, reason: "Missing group id" };
-  return sendQqGroupBubbles({
-    event,
-    reply,
-    quoteFirstBubble: isExplicitQqAtEvent(event),
-    sendGroupMessage: (bubble, options) => sendOneBotGroupMessage(event, bubble, options)
-  });
+  try {
+    return await sendQqGroupBubbles({
+      event,
+      reply,
+      quoteFirstBubble: isExplicitQqAtEvent(event),
+      sendGroupMessage: (bubble, options) => sendOneBotGroupMessage(event, bubble, options)
+    });
+  } finally {
+    await cleanupQqEventTaskWorkspaceByBot(event);
+  }
 }
 
 async function sendOneBotGroupMessage(event, reply, options = {}) {
   if (!event.groupId) return { ok: false, reason: "Missing group id" };
   const mediaPaths = await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir });
   const fileAttachments = await resolveQqReplyFiles(reply);
-  try {
-    const message = await buildOneBotReplyMessage(event, reply, options, mediaPaths);
-    let messageResult = { ok: true, skipped: true };
+  const message = await buildOneBotReplyMessage(event, reply, options, mediaPaths);
+  let messageResult = { ok: true, skipped: true };
 
-    if (hasSendableOneBotMessage(message)) {
-      const response = await fetch(`${oneBotApiBase}/send_group_msg`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          group_id: Number(event.groupId),
-          message
-        })
-      });
+  if (hasSendableOneBotMessage(message)) {
+    const response = await fetch(`${oneBotApiBase}/send_group_msg`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        group_id: Number(event.groupId),
+        message
+      })
+    });
 
-      const body = await response.json().catch(() => ({}));
-      messageResult = {
-        ok: response.ok && (body.status == null || body.status === "ok"),
-        status: response.status,
-        body
-      };
-    }
-
-    const fileResults = [];
-    for (const attachment of fileAttachments) {
-      fileResults.push(await uploadOneBotGroupFile(event.groupId, attachment));
-    }
-
-    return combineOneBotSendResults(messageResult, fileResults);
-  } finally {
-    await cleanupQqGeneratedImages(mediaPaths);
+    const body = await response.json().catch(() => ({}));
+    messageResult = {
+      ok: response.ok && (body.status == null || body.status === "ok"),
+      status: response.status,
+      body
+    };
   }
+
+  const fileResults = [];
+  for (const attachment of fileAttachments) {
+    fileResults.push(await uploadOneBotGroupFile(event.groupId, attachment));
+  }
+
+  return combineOneBotSendResults(messageResult, fileResults);
 }
 
 async function sendOneBotPrivateReply(event, reply) {
   if (!event.senderId) return { ok: false, reason: "Missing user id" };
-  const plan = buildQqSendPlan(event, reply);
-  const bubbles = plan.bubbles || [];
-  if (bubbles.length === 0) return { ok: true, bubbles: [], results: [] };
-  const results = [];
-  for (const [index, bubble] of bubbles.entries()) {
-    if (index > 0) await sleep(qqBubbleSendDelayMs);
-    results.push(await sendOneBotPrivateMessage(event, bubble));
+  try {
+    const plan = buildQqSendPlan(event, reply);
+    const bubbles = plan.bubbles || [];
+    if (bubbles.length === 0) return { ok: true, bubbles: [], results: [] };
+    const results = [];
+    for (const [index, bubble] of bubbles.entries()) {
+      if (index > 0) await sleep(qqBubbleSendDelayMs);
+      results.push(await sendOneBotPrivateMessage(event, bubble));
+    }
+    return {
+      ok: results.every((result) => result?.ok !== false),
+      bubbles,
+      flattened: plan.flattened,
+      results
+    };
+  } finally {
+    await cleanupQqEventTaskWorkspaceByBot(event);
   }
-  return {
-    ok: results.every((result) => result?.ok !== false),
-    bubbles,
-    flattened: plan.flattened,
-    results
-  };
 }
 
 async function sendOneBotPrivateMessage(event, reply) {
   if (!event.senderId) return { ok: false, reason: "Missing user id" };
   const mediaPaths = await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir });
   const fileAttachments = await resolveQqReplyFiles(reply);
-  try {
-    const message = await buildOneBotPrivateReplyMessage(reply, mediaPaths);
-    let messageResult = { ok: true, skipped: true };
+  const message = await buildOneBotPrivateReplyMessage(reply, mediaPaths);
+  let messageResult = { ok: true, skipped: true };
 
-    if (hasSendableOneBotMessage(message)) {
-      const response = await fetch(`${oneBotApiBase}/send_private_msg`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          user_id: Number(event.senderId),
-          message
-        })
-      });
+  if (hasSendableOneBotMessage(message)) {
+    const response = await fetch(`${oneBotApiBase}/send_private_msg`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        user_id: Number(event.senderId),
+        message
+      })
+    });
 
-      const body = await response.json().catch(() => ({}));
-      messageResult = {
-        ok: response.ok && (body.status == null || body.status === "ok"),
-        status: response.status,
-        body
-      };
-    }
-
-    const fileResults = [];
-    for (const attachment of fileAttachments) {
-      fileResults.push(await uploadOneBotPrivateFile(event.senderId, attachment));
-    }
-
-    return combineOneBotSendResults(messageResult, fileResults);
-  } finally {
-    await cleanupQqGeneratedImages(mediaPaths);
+    const body = await response.json().catch(() => ({}));
+    messageResult = {
+      ok: response.ok && (body.status == null || body.status === "ok"),
+      status: response.status,
+      body
+    };
   }
+
+  const fileResults = [];
+  for (const attachment of fileAttachments) {
+    fileResults.push(await uploadOneBotPrivateFile(event.senderId, attachment));
+  }
+
+  return combineOneBotSendResults(messageResult, fileResults);
 }
 
 async function buildOneBotPrivateReplyMessage(reply, resolvedImagePaths = null) {
@@ -7899,24 +7986,12 @@ async function fileExists(filePath) {
   }
 }
 
-async function cleanupQqTempImages(paths) {
-  await cleanupQqOwnedImages(paths, [
-    join(projectDir, "tmp", "qq-images")
-  ]);
-}
-
-async function cleanupQqGeneratedImages(paths) {
-  await cleanupQqOwnedImages(paths, [
-    qqOutputImagesDir,
-    join(projectDir, "tmp", "qq-images")
-  ]);
-}
-
-async function cleanupQqOwnedImages(paths, allowedDirs) {
-  const uniquePaths = [...new Set((Array.isArray(paths) ? paths : []).map((item) => String(item || "").trim()).filter(Boolean))];
-  for (const filePath of uniquePaths) {
-    if (!isPathUnderAnyDir(filePath, allowedDirs)) continue;
-    await rm(filePath, { force: true }).catch(() => null);
+async function pathExists(filePath) {
+  try {
+    await stat(filePath);
+    return true;
+  } catch {
+    return false;
   }
 }
 
