@@ -755,11 +755,11 @@ function getQqMemoryScopeId(event) {
 }
 
 function getQqMemoryScopeLabel(event) {
-  return event?.type === "private_message" ? "本次 QQ 私聊" : "本群";
+  return event?.groupId ? "本群" : "本次 QQ 私聊";
 }
 
 function getQqMemoryScopeTitle(event) {
-  return event?.type === "private_message" ? `QQ 私聊 ${event.senderId || "unknown"}` : `QQ群 ${event.groupId || "unknown"}`;
+  return event?.groupId ? `QQ群 ${event.groupId || "unknown"}` : `QQ 私聊 ${event.senderId || "unknown"}`;
 }
 
 function isSameQqGenerationScope(active, event) {
@@ -1934,6 +1934,7 @@ function isMentionEvent(event) {
   const text = event.text ?? "";
   return (
     event.type === "private_message" ||
+    isQqPokeEvent(event) ||
     event.type === "group_at" ||
     event.hasSelfAtSegment ||
     event.isReplyToSelf ||
@@ -1948,6 +1949,14 @@ function isExplicitQqAtEvent(event) {
     event.hasSelfAtSegment ||
     textMentionsAssistant(text)
   );
+}
+
+function isQqPokeEvent(event) {
+  return event?.type === "group_poke" || event?.type === "private_poke";
+}
+
+function isQqPrivateEvent(event) {
+  return event?.type === "private_message" || event?.type === "private_poke" || !event?.groupId;
 }
 
 function stripMentionText(text) {
@@ -1992,6 +2001,7 @@ function shouldRespondToQq(event) {
   if (event.groupId && !state.qq.allowedGroups.includes(event.groupId)) {
     return { ok: false, reason: "Group is not allowed" };
   }
+  if (isQqPokeEvent(event)) return { ok: true, reason: "Poked bot" };
   if (isAllowedQqCommandEvent(event)) {
     return { ok: true, reason: "QQ command" };
   }
@@ -2479,6 +2489,7 @@ function formatQqBotInternalToolContext(event) {
     "- [[qq_command:/聊天记录 最近 50]] 读取当前群聊或私聊最近 50 行。",
     "- [[qq_command:/聊天记录 20-40]] 读取当前缓冲第 20 到 40 行。",
     "- [[qq_command:/聊天记录 关键词]] 搜索当前群聊或私聊最近聊天里的关键词。",
+    "- [[qq_command:/拍一拍 发送者]] 拍回当前触发者；也可以写具体 QQ 号或“自己”。只在你确实想执行拍一拍动作时调用。",
     "- [[qq_command:/记忆 列表]] 查看 bot 自己维护的公共长期记忆。",
     "- [[qq_command:/记忆 添加 内容]] 添加一条公共长期记忆。",
     "- [[qq_command:/记忆 修改 编号 内容]] 修改一条公共长期记忆，编号可以用列表里的序号或 #id。",
@@ -2486,6 +2497,7 @@ function formatQqBotInternalToolContext(event) {
     "公共长期记忆是 bot 自己用的共享背景，不显示在 /菜单 里。只有当信息稳定、以后会反复有用、不是隐私/密钥/临时闲聊时才写入；发现记忆错误或过时时，可以主动修改或删除。",
     "如果有人刷屏、持续骚扰、恶意辱骂/攻击、诱导泄露隐私或绕过权限、反复要求危险操作、滥用 bot 打断正常聊天，可以先用普通回复明确警告并说明继续会被临时 ban；如果最近聊天记录显示对方已经被警告后仍继续，或当前行为明显严重，可以主动使用 /ban QQ号 10m 到 2h。",
     "执行 ban 前后都要保持简短，只说明原因和时长；不要把内部工具标记展示给群友。不能 ban 主人、自己或正常聊天发图片的人。",
+    isQqPokeEvent(event) ? "当前触发是有人拍了拍你；你可以自然回复，也可以选择调用 /拍一拍 发送者 拍回去，或两者都不做。" : null,
     "可以连续调用工具。拿到工具结果后，如果还需要继续查，就继续输出 [[qq_command:/...]]；如果已经够了，最终回复里包含 [[qq_done]]，Hub 会移除该标记后再发送。",
     `当前发送者：${event.senderLabel || event.senderName || "群友"}(${event.senderId || "unknown"})。`,
     mentionedTargets ? `本条消息 @ 的目标 QQ：${mentionedTargets}。` : null,
@@ -2568,6 +2580,10 @@ async function executeQqBotInternalCommand(command, event) {
     return executeQqBotPublicMemoryCommand(normalizedCommand, event);
   }
 
+  if (isQqBotPokeCommand(normalizedCommand)) {
+    return executeQqBotPokeCommand(normalizedCommand, event);
+  }
+
   if (isQqBotHistoryCommand(normalizedCommand)) {
     return {
       ok: true,
@@ -2604,6 +2620,60 @@ function isQqBotHistoryCommand(command) {
 function isQqBotPublicMemoryCommand(command) {
   return /^\/?(记忆|公共记忆|长期记忆|memory)(?:\s+.*)?$/i.test(command)
     || /^\/?(记住|添加记忆|新增记忆|加记忆|改记忆|修改记忆|编辑记忆|更新记忆|删记忆|删除记忆|移除记忆)(?:\s+.*)?$/i.test(command);
+}
+
+function isQqBotPokeCommand(command) {
+  return /^\/?(拍一拍|拍拍|拍|戳一戳|戳|poke)(?:\s+.*)?$/i.test(command);
+}
+
+async function executeQqBotPokeCommand(command, event) {
+  const target = resolveQqBotPokeTarget(command, event);
+  if (!target.id) {
+    return { ok: false, command, reply: "没有找到可拍一拍的目标。" };
+  }
+  if (!event.groupId && target.id === event.selfId) {
+    return { ok: false, command, reply: "私聊里不能拍自己。" };
+  }
+  const result = await sendOneBotPoke({
+    groupId: event.groupId,
+    userId: target.id
+  });
+  return {
+    ok: result.ok,
+    command,
+    reply: result.ok
+      ? `已拍一拍 ${target.label || target.id}。`
+      : `拍一拍失败：${result.error || result.status || "OneBot 未返回成功"}`
+  };
+}
+
+function resolveQqBotPokeTarget(command, event) {
+  const body = String(command || "")
+    .replace(/^\/?(拍一拍|拍拍|拍|戳一戳|戳|poke)\s*/i, "")
+    .trim();
+  const normalized = body.replace(/\s+/g, "").toLowerCase();
+  if (!body || /^(发送者|对方|他|她|ta|sender|back|回去|拍回去)$/i.test(normalized)) {
+    return {
+      id: event.senderId || "",
+      label: event.senderLabel || event.senderName || "发送者"
+    };
+  }
+  if (/^(自己|我|bot|机器人|assistant|self|me)$/i.test(normalized)) {
+    return {
+      id: event.selfId || "",
+      label: assistantName
+    };
+  }
+  const atMatch = body.match(/\[CQ:at,qq=([0-9]+)[^\]]*\]/i);
+  const numericMatch = atMatch || body.match(/([0-9]{5,})/);
+  if (numericMatch) {
+    const id = numericMatch[1];
+    return {
+      id,
+      label: id === event.senderId ? (event.senderLabel || event.senderName || id) : id
+    };
+  }
+  return { id: "", label: "" };
 }
 
 async function executeQqBotPublicMemoryCommand(command, event) {
@@ -2947,15 +3017,15 @@ async function buildAssistantInstructions(event) {
   return [
     // Deployment customization: keep this block neutral in releases. Put any
     // custom profile or speaking style in assistantProfilePath.
-    event.type === "private_message"
+    isQqPrivateEvent(event)
       ? "你正在为 QQ 私聊生成一条将由小号发出的回复。"
       : "你正在为 QQ 群聊生成一条将由小号发出的回复。",
     "只输出最终要发送出去的中文文本，不要解释，不要写前后缀，不要使用 Markdown。",
     `你是接入 QQ 的 ${assistantName}。公开群聊里不要说出本机路径、自定义 profile 细节或宿主个人信息；如果必须提到自己的代号，只说 ${assistantName}。`,
-    event.type === "private_message"
+    isQqPrivateEvent(event)
       ? "自称用“我”，语气自然、清楚；私聊可以比群聊略微亲近，但仍要克制。"
       : "自称用“我”，语气自然、简短，像普通群聊里被 @ 到后回一句。",
-    event.type === "private_message" ? "回复不要太长，通常 1 到 4 句。" : "回复不要太长，通常 1 到 3 句。",
+    isQqPrivateEvent(event) ? "回复不要太长，通常 1 到 4 句。" : "回复不要太长，通常 1 到 3 句。",
     "不要在结尾追加 AI 助手味很重的服务式结束语，例如“想的话我还能……”“如果需要我可以……”“要不要我再……”“我也可以继续……”。群聊里回答到点就停；如果自然接梗，可以像普通聊天一样短短补一句，不要像客服。",
     state.qq.enhancer.enabled
       ? buildQqChatStyleInstructions(event)
@@ -2982,7 +3052,7 @@ async function buildAssistantInstructions(event) {
     `如果发送者是${ownerLabel}，可以自然地使用这个称呼；其他群友不使用这个称呼。`,
     event.isOwner ? `本条消息发送者是已验证主人 QQ（${event.senderId}），拥有最高权限；仍然通过显式命令处理真实系统操作，普通聊天直接自然回应。` : null,
     `本条消息来自：${speaker}。`,
-    `本条消息场景：${event.type === "private_message" ? "QQ 私聊" : "QQ 群聊"}。`,
+    `本条消息场景：${isQqPrivateEvent(event) ? "QQ 私聊" : "QQ 群聊"}。`,
     "",
     "以下是可选风格摘要；如果没有安装对应 skill，则使用通用助手风格：",
     assistantSkillBrief
@@ -3197,13 +3267,13 @@ async function buildModelReply(event) {
       state.qq.enhancer.enabled ? formatQqStickerCatalog(stickerCatalog) : null,
       state.qq.enhancer.enabled && stickerCatalog.length ? "表情包库可用时，部署者可以在自定义 profile 或 QQ enhancer 包中说明何时使用 [[qq_sticker:表情包名]]；只能选择提示里真实存在的表情包名。" : null,
       "",
-      event.type === "private_message" ? "收到的 QQ 私聊：" : "收到的群消息：",
+      isQqPrivateEvent(event) ? "收到的 QQ 私聊：" : "收到的群消息：",
       event.queuedAggregate ? `下面是你上一轮生成期间继续收到的 ${event.queuedMessageCount || "多"} 条消息，Hub 已按“消息一/消息二/...”标注；请把它们当作连续上下文一起回应，不要逐条机械复读标签，除非需要澄清。` : null,
       text || "对方只 @ 了你，没有附加具体内容。",
       "",
       forceLocalReply ? "如果还需要内部工具，可以继续只输出 [[qq_command:/...]]；如果工具调用结束，请在最终回复中包含 [[qq_done]]，Hub 会在发送前移除这个标记。不要把内部标记解释给群友。" : null,
       forceLocalReply ? "" : null,
-      event.type === "private_message"
+      isQqPrivateEvent(event)
         ? "请直接给出要发送到 QQ 私聊里的最终回复。不要追加服务式追问或“我还能继续帮你”的结尾。"
         : "请直接给出要发送到 QQ 群里的最终回复。不要追加服务式追问或“我还能继续帮你”的结尾。"
     ].filter((part) => part != null).join("\n");
@@ -4344,7 +4414,7 @@ function formatMemoryContext(event, { expandLevel = 0 } = {}) {
   if (recentParticipation.length === 0 && conversationMessages.length === 0) return "";
   const scopeLabel = getQqMemoryScopeLabel(event);
   const parts = [
-    event.type === "private_message" ? "QQ 私聊对话上下文：" : "QQ 群聊对话上下文：",
+    isQqPrivateEvent(event) ? "QQ 私聊对话上下文：" : "QQ 群聊对话上下文：",
     `以下是当前${scopeLabel}从最近一次“/新对话”之后保留下来的聊天记录；每次回复都要把这些记录当作本轮对话上下文。只在相关时参考，不要主动声明自己有记忆。`,
     "当用户追问前文、接上一句、问刚才发生了什么、要求评价刚刚的聊天时，必须直接基于这里的聊天记录回答，不要让用户再提供上一句。"
   ];
@@ -4436,7 +4506,7 @@ async function rememberQqGroupMessage(event) {
   const scopeId = getQqMemoryScopeId(event);
   if (!state.qq.memory.enabled || !scopeId) return;
   if (!state.channels.qq) return;
-  if (event.type !== "private_message" && !state.qq.allowedGroups.includes(event.groupId)) return;
+  if (event.groupId && !state.qq.allowedGroups.includes(event.groupId)) return;
   if (isBannedQqSender(event)) return;
   if (hasUnhandledQqAudio(event)) return;
   const text = compactMemoryText(normalizeQqDisplayText(stripMentionText(event.text) || event.text || ""));
@@ -4460,7 +4530,7 @@ async function rememberQqGroupMessage(event) {
   };
   const current = state.qq.memory.recentMessages[scopeId] || [];
   state.qq.memory.recentMessages[scopeId] = [...current, entry].slice(-state.qq.memory.groupRecentLimit);
-  const personaChanged = event.type === "private_message" ? false : updateQqPersonaFromEvent(event);
+  const personaChanged = event.groupId ? updateQqPersonaFromEvent(event) : false;
   await saveQqMemory();
   if (personaChanged) await saveQqPersonas();
 }
@@ -4511,7 +4581,7 @@ async function processQqReplyEvent(event, options = {}) {
   };
 
   if (record.reply && source === "onebot") {
-    if (event.type === "private_message") {
+    if (isQqPrivateEvent(event)) {
       try {
         record.send = await sendOneBotPrivateReply(event, record.reply);
       } catch (error) {
@@ -7964,6 +8034,40 @@ async function uploadOneBotFile(endpoint, payload) {
   };
 }
 
+async function sendOneBotPoke({ groupId, userId }) {
+  const payload = groupId
+    ? { group_id: String(groupId), user_id: String(userId) }
+    : { user_id: String(userId) };
+  const endpoints = groupId ? ["send_poke", "group_poke"] : ["send_poke", "friend_poke"];
+  let lastResult = null;
+  for (const endpoint of endpoints) {
+    const result = await callOneBotAction(endpoint, payload).catch((error) => ({
+      ok: false,
+      error: error.message,
+      endpoint
+    }));
+    lastResult = result;
+    if (result.ok) return result;
+  }
+  return lastResult || { ok: false, error: "No OneBot poke endpoint attempted" };
+}
+
+async function callOneBotAction(endpoint, payload) {
+  const response = await fetch(`${oneBotApiBase}/${endpoint}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(payload)
+  });
+  const body = await response.json().catch(() => ({}));
+  return {
+    ok: response.ok && (body.status == null || body.status === "ok"),
+    status: response.status,
+    body,
+    endpoint,
+    error: body.message || body.wording || body.error
+  };
+}
+
 function combineOneBotSendResults(messageResult, fileResults) {
   const results = [messageResult, ...(Array.isArray(fileResults) ? fileResults : [])].filter(Boolean);
   const required = results.filter((result) => !result.skipped);
@@ -8060,6 +8164,52 @@ function normalizeOneBotEvent(payload) {
   };
 }
 
+function isOneBotPokeNotice(payload) {
+  return payload?.post_type === "notice"
+    && payload?.notice_type === "notify"
+    && payload?.sub_type === "poke";
+}
+
+function isOneBotPokeToSelf(payload) {
+  if (!isOneBotPokeNotice(payload)) return false;
+  const selfId = payload.self_id == null ? "" : String(payload.self_id);
+  const targetId = payload.target_id == null ? "" : String(payload.target_id);
+  const senderId = getOneBotPokeSenderId(payload);
+  return Boolean(selfId && targetId === selfId && senderId && senderId !== selfId);
+}
+
+function getOneBotPokeSenderId(payload) {
+  return String(payload?.sender_id ?? payload?.user_id ?? payload?.operator_id ?? "").trim();
+}
+
+function normalizeOneBotPokeEvent(payload) {
+  const senderId = getOneBotPokeSenderId(payload);
+  const targetId = payload.target_id == null ? undefined : String(payload.target_id);
+  const isGroup = payload.group_id != null;
+  const senderName = payload.sender?.card || payload.sender?.nickname || `QQ ${senderId || "群友"}`;
+  return {
+    type: isGroup ? "group_poke" : "private_poke",
+    selfId: payload.self_id == null ? undefined : String(payload.self_id),
+    groupId: isGroup ? String(payload.group_id) : undefined,
+    senderId,
+    senderName,
+    text: `${senderName} 拍了拍你。`,
+    images: [],
+    hasAudioSegment: false,
+    hasAtSegment: false,
+    hasSelfAtSegment: false,
+    atTargets: [],
+    hasReplySegment: false,
+    replyMessageId: undefined,
+    isReplyToSelf: false,
+    poke: {
+      targetId,
+      rawInfo: payload.raw_info
+    },
+    raw: payload
+  };
+}
+
 function isSelfAtSegment(segment, selfId) {
   if (segment?.type !== "at" || selfId == null) return false;
   const target = segment.data?.qq ?? segment.data?.id ?? segment.data?.uin;
@@ -8082,6 +8232,12 @@ function getEventDedupeKey(event) {
   if (raw.message_id != null) return `message_id:${raw.message_id}`;
   if (raw.message_seq != null && event.groupId && event.senderId) {
     return `message_seq:${event.groupId}:${event.senderId}:${raw.message_seq}`;
+  }
+  if (isQqPokeEvent(event)) {
+    const scope = event.groupId ? `group:${event.groupId}` : `private:${event.senderId || ""}`;
+    const targetId = event.poke?.targetId || raw.target_id || "";
+    const time = raw.time || "";
+    return `poke:${scope}:${event.senderId || ""}:${targetId}:${time}`;
   }
   return null;
 }
@@ -8230,6 +8386,30 @@ async function handleApi(req, res) {
 
   if (req.method === "POST" && req.url === "/api/onebot/event") {
     const payload = await readBody(req);
+    if (isOneBotPokeNotice(payload)) {
+      if (!isOneBotPokeToSelf(payload)) {
+        return sendJson(res, 200, { ignored: true, reason: "Only poke events targeting the bot are handled" });
+      }
+      const event = enrichQqEvent(normalizeOneBotPokeEvent(payload));
+      const dedupeKey = getEventDedupeKey(event);
+      if (rememberEvent(dedupeKey)) {
+        const record = {
+          id: crypto.randomUUID(),
+          receivedAt: new Date().toISOString(),
+          source: "onebot",
+          event,
+          decision: { ok: false, reason: "Duplicate OneBot poke ignored" },
+          reply: null,
+          error: null,
+          send: null
+        };
+        state.qq.events.unshift(record);
+        state.qq.events = state.qq.events.slice(0, 30);
+        return sendJson(res, 200, { status: "ok", duplicate: true });
+      }
+      await processQqReplyEvent(event, { source: "onebot" });
+      return sendJson(res, 200, { status: "ok" });
+    }
     if (payload.post_type !== "message" || !["group", "private"].includes(payload.message_type)) {
       return sendJson(res, 200, { ignored: true, reason: "Only group/private message events are handled" });
     }
