@@ -5,38 +5,42 @@ import { access, copyFile, mkdir, readFile, readdir, stat, writeFile } from "nod
 import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { brotliDecompressSync } from "node:zlib";
-import { createLogger, readLogEntries } from "./logger.js";
+import { corsHeaders, readBody, sendJson } from "./http-utils.js";
+import { createLogger } from "./logger.js";
+import { buildLogsResponse } from "./log-api.js";
+import { importOptionalModule } from "./optional-modules.js";
+import { defaultQqPublicCommands, qqCommandCatalog } from "./qq-command-catalog.js";
+import { createRuntimePaths } from "./runtime-paths.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const projectDir = join(__dirname, "..");
-const codexWorkspaceDir = join(projectDir, "workspaces", "codex-cli");
-const codexTmpDir = join(projectDir, "runtime", "replies");
-const logFilePath = process.env.CODEX_REMOTE_CONTACT_LOG_FILE || join(projectDir, "runtime", "logs", "hub.jsonl");
-const imessageScreenshotsDir = join(projectDir, "runtime", "imessage-screenshots");
-const qqStickerDir = process.env.CODEX_REMOTE_CONTACT_QQ_STICKER_DIR || join(projectDir, "data", "qq-stickers");
-const qqOutputImagesDir = process.env.CODEX_REMOTE_CONTACT_QQ_OUTPUT_IMAGE_DIR || join(projectDir, "runtime", "qq-output-images");
-const qqTaskWorkspacesDir = process.env.CODEX_REMOTE_CONTACT_QQ_TASK_WORKSPACE_DIR || join(projectDir, "runtime", "qq-task-workspaces");
 const qqSendableImageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
-const dataDir = join(projectDir, "data");
-const codexHomeDir = join(process.env.HOME || "", ".codex");
-const codexSessionsDir = join(codexHomeDir, "sessions");
-const codexArchivedSessionsDir = join(codexHomeDir, "archived_sessions");
-const codexLogsDbPath = join(codexHomeDir, "logs_2.sqlite");
-const codexStateDbPath = join(codexHomeDir, "state_5.sqlite");
-const codexDesktopCacheDir = join(process.env.HOME || "", "Library", "Application Support", "Codex", "Cache", "Cache_Data");
-const settingsPath = join(dataDir, "settings.json");
-const qqMemoryPath = join(dataDir, "qq-memory.json");
-const qqPublicMemoryPath = join(dataDir, "qq-public-memory.json");
-const qqPersonasPath = join(dataDir, "qq-personas.json");
-const imessageMemoryPath = join(dataDir, "imessage-memory.json");
-const remoteExecutionMemoryPath = join(dataDir, "remote-execution-memory.json");
-const unifiedMemoryPath = join(dataDir, "unified-memory.json");
-// Deployment customization: point this at a local prompt/profile file if you
-// want a custom style. Leave empty for the neutral release prompt.
-const assistantProfilePath = process.env.CODEX_REMOTE_CONTACT_ASSISTANT_PROFILE_PATH || "";
-const shadowrocketNodeControlPath = join(projectDir, "modules", "shadowrocket", "shadowrocket-node-control.command");
-const backlightOffScriptPath = join(projectDir, "modules", "system-control", "backlight-off-keep-awake.command");
-const backlightRestoreScriptPath = join(projectDir, "modules", "system-control", "backlight-restore.command");
+const {
+  codexWorkspaceDir,
+  codexTmpDir,
+  logFilePath,
+  imessageScreenshotsDir,
+  qqStickerDir,
+  qqOutputImagesDir,
+  qqTaskWorkspacesDir,
+  dataDir,
+  codexSessionsDir,
+  codexArchivedSessionsDir,
+  codexLogsDbPath,
+  codexStateDbPath,
+  codexDesktopCacheDir,
+  settingsPath,
+  qqMemoryPath,
+  qqPublicMemoryPath,
+  qqPersonasPath,
+  imessageMemoryPath,
+  remoteExecutionMemoryPath,
+  unifiedMemoryPath,
+  assistantProfilePath,
+  shadowrocketNodeControlPath,
+  backlightOffScriptPath,
+  backlightRestoreScriptPath
+} = createRuntimePaths({ projectDir });
 const logger = createLogger({
   filePath: logFilePath,
   maxBytes: Number(process.env.CODEX_REMOTE_CONTACT_LOG_MAX_BYTES || 5 * 1024 * 1024),
@@ -103,29 +107,12 @@ let prepareQqModelImages = prepareQqModelImagesFallback;
 let resolveQqReplyMedia = async (reply, { stickerDir } = {}) => resolveLocalQqReplyMedia(reply, { stickerDir });
 let stripQqImageAttachmentMarkers = (text) => stripLocalQqMediaMarkers(text);
 
-async function importOptionalModule(label, candidates) {
-  for (const candidate of candidates.filter(Boolean)) {
-    try {
-      const specifier = candidate.startsWith("file:") || candidate.startsWith(".")
-        ? candidate
-        : pathToFileURL(candidate).href;
-      return await import(specifier);
-    } catch (error) {
-      if (error?.code && !["ERR_MODULE_NOT_FOUND", "ERR_INVALID_FILE_URL_PATH", "ERR_UNSUPPORTED_ESM_URL_SCHEME"].includes(error.code)) {
-        logger.warn(`${label} failed to load`, { candidate, error }, "system");
-      }
-    }
-  }
-  logger.warn(`${label} not installed; continuing with built-in fallback.`, {}, "system");
-  return null;
-}
-
 const unifiedMemoryModule = await importOptionalModule("unified-memory", [
   process.env.CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE,
   new URL("./unified-memory/index.js", import.meta.url).href,
   pathToFileURL(join(projectDir, "modules", "unified-memory", "index.js")).href,
   pathToFileURL(join(projectDir, "..", "unified-memory", "src", "unified-memory", "index.js")).href
-]);
+], { logger });
 if (unifiedMemoryModule) {
   buildUnifiedMemoryJudgePrompt = unifiedMemoryModule.buildUnifiedMemoryJudgePrompt || buildUnifiedMemoryJudgePrompt;
   createUnifiedMemory = unifiedMemoryModule.createUnifiedMemory || createUnifiedMemory;
@@ -138,7 +125,7 @@ const recentContextModule = await importOptionalModule("unified-memory recent co
   new URL("./unified-memory/recent-context.js", import.meta.url).href,
   pathToFileURL(join(projectDir, "modules", "unified-memory", "recent-context.js")).href,
   pathToFileURL(join(projectDir, "..", "unified-memory", "src", "unified-memory", "recent-context.js")).href
-]);
+], { logger });
 if (recentContextModule) {
   formatRecentContextPrompt = recentContextModule.formatRecentContextPrompt || formatRecentContextPrompt;
   searchRecentCodexContext = recentContextModule.searchRecentCodexContext || searchRecentCodexContext;
@@ -149,7 +136,7 @@ const qqEnhancerModule = await importOptionalModule("qq-enhancer", [
   new URL("./qq-enhancer/index.js", import.meta.url).href,
   pathToFileURL(join(projectDir, "modules", "qq-enhancer", "index.js")).href,
   pathToFileURL(join(projectDir, "..", "qq-enhancer", "src", "qq-enhancer", "index.js")).href
-]);
+], { logger });
 if (qqEnhancerModule) {
   buildQqChatStyleInstructions = qqEnhancerModule.buildQqChatStyleInstructions || buildQqChatStyleInstructions;
   buildQqReplyWorkspaceStyleInstructions = qqEnhancerModule.buildQqReplyWorkspaceStyleInstructions || buildQqReplyWorkspaceStyleInstructions;
@@ -353,83 +340,12 @@ const imessageSeenTtlMs = 30 * 60 * 1000;
 const imessageRequestDedupeTtlMs = 45 * 1000;
 const imessageStartupGraceMs = 10 * 1000;
 const appleDateEpochMs = Date.UTC(2001, 0, 1);
-const qqCommandCatalog = [
-  {
-    key: "menu",
-    defaultPublic: true,
-    configurable: true,
-    menuLine: "/菜单",
-    aliases: ["菜单", "管理菜单", "menu", "help", "帮助", "指令"]
-  },
-  {
-    key: "newDialog",
-    defaultPublic: true,
-    configurable: true,
-    menuLine: "/新对话",
-    aliases: ["新对话", "开启新对话", "开始新对话", "清空上下文", "清除上下文", "清理上下文", "重置上下文", "忘记上下文"]
-  },
-  {
-    key: "stop",
-    defaultPublic: true,
-    configurable: true,
-    menuLine: "/stop",
-    aliases: ["stop", "停止", "停", "打住", "停一下", "别回了", "别生成了", "中止", "终止"]
-  },
-  {
-    key: "summary",
-    defaultPublic: true,
-    configurable: true,
-    menuLine: "/总结聊天记录",
-    aliases: ["总结上下文", "总结前文", "总结聊天记录", "总结群聊", "总结私聊", "总结最近", "概括上下文", "概括聊天记录", "概括群聊", "概括私聊", "summary"]
-  },
-  { key: "status", defaultPublic: false, configurable: true, menuLine: "/状态", aliases: ["状态", "status", "查看状态"] },
-  { key: "config", defaultPublic: false, configurable: true, menuLine: "/详细配置", aliases: ["详细配置", "配置", "config", "settings", "详细状态"] },
-  { key: "model", defaultPublic: false, configurable: true, menuLine: "/模型 5.5", aliases: ["模型", "qq模型", "切模型", "切换模型", "5.5", "5.4", "mini", "codex"] },
-  { key: "reasoning", defaultPublic: false, configurable: true, menuLine: "/智能等级 low|medium|high|xhigh", aliases: ["智能等级", "智能", "思考强度", "qq智能等级"] },
-  {
-    key: "allowlist",
-    defaultPublic: false,
-    configurable: true,
-    menuLine: "/白名单",
-    menuLines: ["/白名单", "/加群 群号", "/删群 群号"],
-    aliases: ["白名单", "群白名单", "白名单列表", "加群", "添加白名单群", "删群", "移除白名单群"]
-  },
-  { key: "ban", defaultPublic: false, configurable: true, menuLine: "/ban @用户", aliases: ["ban", "封禁", "拉黑", "unban", "解禁", "banlist"] },
-  { key: "permissions", defaultPublic: false, configurable: false, menuLine: "/菜单权限", aliases: ["菜单权限", "权限菜单", "公开指令", "允许指令", "禁用指令"] },
-  { key: "shutdown", defaultPublic: false, configurable: true, menuLine: "/关闭QQ", aliases: ["关闭qq", "关掉qq", "停止qq", "切断qq"] }
-];
-const defaultQqPublicCommands = Object.fromEntries(
-  qqCommandCatalog.filter((command) => command.defaultPublic).map((command) => [command.key, true])
-);
 state.qq.commandPermissions.publicCommands = { ...defaultQqPublicCommands };
 const qqBotCommandMarkerPattern = /\[\[(?:qq_command|qq_menu):([^\]\n]+)\]\]/g;
 const qqBotCommandMarkerStripPattern = /\[\[(?:qq_command|qq_menu):[^\]\n]+\]\]/g;
 const qqBotMenuActionLimit = 3;
 const qqBotToolLoopLimit = 5;
 const qqBotDoneMarkerPattern = /\[\[qq_done\]\]/g;
-
-function sendJson(res, code, body) {
-  res.writeHead(code, {
-    "content-type": "application/json; charset=utf-8",
-    ...corsHeaders()
-  });
-  res.end(JSON.stringify(body, null, 2));
-}
-
-function corsHeaders() {
-  return {
-    "access-control-allow-origin": "*",
-    "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type"
-  };
-}
-
-async function readBody(req) {
-  const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
-  if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
-}
 
 async function loadQqMemory() {
   await mkdir(dataDir, { recursive: true });
@@ -8311,17 +8227,7 @@ async function handleApi(req, res) {
   }
 
   if (req.method === "GET" && requestUrl.pathname === "/api/logs") {
-    const limit = Number(requestUrl.searchParams.get("limit") || 100);
-    const level = requestUrl.searchParams.get("level") || "";
-    const category = requestUrl.searchParams.get("category") || "";
-    const entries = await readLogEntries(logFilePath, { limit, level, category });
-    return sendJson(res, 200, {
-      logFile: logFilePath,
-      limit: Math.max(1, Math.min(1000, Number(limit) || 100)),
-      level: level || null,
-      category: category || null,
-      entries
-    });
+    return sendJson(res, 200, await buildLogsResponse(logFilePath, requestUrl.searchParams));
   }
 
   if (req.method === "GET" && req.url === "/api/memory") {
