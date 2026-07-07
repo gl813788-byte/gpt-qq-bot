@@ -181,8 +181,18 @@ const imessageMemoryLimit = Number(process.env.CODEX_REMOTE_CONTACT_IMESSAGE_MEM
 const remoteExecutionMemoryLimit = Number(process.env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MEMORY_LIMIT || 160);
 const remoteExecutionIdleTtlMs = Number(process.env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_IDLE_TTL_MS || 15 * 60 * 1000);
 const qqWebLookupEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP !== "0";
-const qqWebLookupTimeoutMs = Number(process.env.CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS || 12000);
+const qqWebLookupTimeoutMs = Number(
+  process.env.CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS
+  || process.env.CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP_TIMEOUT_MS
+  || 12000
+);
+const qqWebLookupAttemptTimeoutMs = Number(
+  process.env.CODEX_REMOTE_CONTACT_QQ_WEB_ATTEMPT_TIMEOUT_MS
+  || Math.min(6500, Math.max(2500, Math.floor(qqWebLookupTimeoutMs * 0.55)))
+);
 const qqWebSearchProvider = String(process.env.CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER || "auto").trim().toLowerCase();
+const qqWebSearchPreset = String(process.env.CODEX_REMOTE_CONTACT_QQ_WEB_PRESET || "balanced").trim().toLowerCase();
+const qqWebSearchProviderConfig = String(process.env.CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS || "").trim();
 const tavilyApiKey = process.env.TAVILY_API_KEY || process.env.CODEX_REMOTE_CONTACT_TAVILY_API_KEY || "";
 const qqOwnerFileImageTasksEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_OWNER_FILE_IMAGE_TASKS !== "0";
 const qqBubbleSeparator = normalizeQqBubbleSeparator(process.env.CODEX_REMOTE_CONTACT_QQ_BUBBLE_SEPARATOR || "|||");
@@ -315,11 +325,15 @@ const state = {
     webLookup: {
       enabled: qqWebLookupEnabled,
       effectiveProvider: null,
+      providerPreset: qqWebSearchPreset,
+      configuredProviders: [],
       lastQuery: null,
       lastRunAt: null,
       lastDurationMs: null,
       lastOk: null,
-      lastError: null
+      lastError: null,
+      lastProviderErrors: [],
+      lastAttempts: []
     }
   }
 };
@@ -1077,8 +1091,15 @@ async function buildMaintenanceStatus() {
   const codexPathOk = await access(codexCliPath).then(() => true).catch(() => false);
   const quota = await getCachedCodexQuotaSnapshot();
   await checkOneBotHealth();
+  const webLookupProviderPlan = buildWebSearchProviderPlan();
   return {
     ...state.maintenance,
+    webLookup: {
+      ...state.maintenance.webLookup,
+      providerPreset: qqWebSearchPreset,
+      configuredProviders: webLookupProviderPlan,
+      effectiveProvider: state.maintenance.webLookup.effectiveProvider || webLookupProviderPlan[0] || null
+    },
     codex: {
       ...state.maintenance.codex,
       pathExists: codexPathOk,
@@ -2423,6 +2444,10 @@ function formatQqBotInternalToolContext(event) {
     "- [[qq_command:/记忆 添加 内容]] 添加一条公共长期记忆。",
     "- [[qq_command:/记忆 修改 编号 内容]] 修改一条公共长期记忆，编号可以用列表里的序号或 #id。",
     "- [[qq_command:/记忆 删除 编号]] 删除一条过时、错误或用户要求忘记的公共长期记忆。",
+    "- [[qq_command:/统一记忆 列表]] 查看跨端统一记忆。",
+    "- [[qq_command:/统一记忆 搜索 关键词]] 搜索跨端统一记忆。",
+    "- [[qq_command:/统一记忆 添加 内容]] 写入一条跨端统一记忆；只写稳定、以后会复用的事实或项目状态。",
+    "- [[qq_command:/统一记忆 状态]] 查看统一记忆条数和最近状态。",
     "公共长期记忆是 bot 自己用的共享背景，不显示在 /菜单 里。只有当信息稳定、以后会反复有用、不是隐私/密钥/临时闲聊时才写入；发现记忆错误或过时时，可以主动修改或删除。",
     "如果有人刷屏、持续骚扰、恶意辱骂/攻击、诱导泄露隐私或绕过权限、反复要求危险操作、滥用 bot 打断正常聊天，可以先用普通回复明确警告并说明继续会被临时 ban；如果最近聊天记录显示对方已经被警告后仍继续，或当前行为明显严重，可以主动使用 /ban QQ号 10m 到 2h。",
     "执行 ban 前后都要保持简短，只说明原因和时长；不要把内部工具标记展示给群友。不能 ban 主人、自己或正常聊天发图片的人。",
@@ -2509,6 +2534,10 @@ async function executeQqBotInternalCommand(command, event) {
     return executeQqBotPublicMemoryCommand(normalizedCommand, event);
   }
 
+  if (isQqBotUnifiedMemoryCommand(normalizedCommand)) {
+    return executeQqBotUnifiedMemoryCommand(normalizedCommand, event);
+  }
+
   if (isQqBotPokeCommand(normalizedCommand)) {
     return executeQqBotPokeCommand(normalizedCommand, event);
   }
@@ -2549,6 +2578,10 @@ function isQqBotHistoryCommand(command) {
 function isQqBotPublicMemoryCommand(command) {
   return /^\/?(记忆|公共记忆|长期记忆|memory)(?:\s+.*)?$/i.test(command)
     || /^\/?(记住|添加记忆|新增记忆|加记忆|改记忆|修改记忆|编辑记忆|更新记忆|删记忆|删除记忆|移除记忆)(?:\s+.*)?$/i.test(command);
+}
+
+function isQqBotUnifiedMemoryCommand(command) {
+  return /^\/?(统一记忆|跨端记忆|全局记忆|unified-memory|unified memory)(?:\s+.*)?$/i.test(command);
 }
 
 function isQqBotPokeCommand(command) {
@@ -2603,6 +2636,79 @@ function resolveQqBotPokeTarget(command, event) {
     };
   }
   return { id: "", label: "" };
+}
+
+async function executeQqBotUnifiedMemoryCommand(command, event) {
+  const normalized = String(command || "").trim().replace(/^\/+/, "");
+  const body = normalized.replace(/^(?:统一记忆|跨端记忆|全局记忆|unified-memory|unified memory)\s*/i, "").trim();
+  const addMatch = body.match(/^(?:添加|新增|写入|记住|add|write)\s+([\s\S]+)$/i);
+  const searchMatch = body.match(/^(?:搜索|查找|查|search)\s+(.+)$/i);
+  if (!body || /^(?:列表|查看|看看|list|show)$/i.test(body)) {
+    const snapshot = await unifiedMemory.read({ query: "", limit: 8 });
+    return { ok: true, command, reply: formatUnifiedMemorySnapshotForQq(snapshot) };
+  }
+  if (/^(?:状态|status)$/i.test(body)) {
+    const status = await unifiedMemory.status();
+    return { ok: true, command, reply: formatUnifiedMemoryStatusForQq(status) };
+  }
+  if (searchMatch) {
+    const snapshot = await unifiedMemory.read({ query: searchMatch[1], limit: 8 });
+    return { ok: true, command, reply: formatUnifiedMemorySnapshotForQq(snapshot, searchMatch[1]) };
+  }
+  if (addMatch) {
+    const text = compactPublicMemoryText(addMatch[1]);
+    if (!text) return { ok: false, command, reply: "统一记忆内容为空，未写入。" };
+    const result = await unifiedMemory.write({
+      type: "projectNote",
+      source: "qq_bot",
+      channel: "qq",
+      originDevice: "qq",
+      executionDevice: "desktop",
+      mode: "qq_internal_tool",
+      topic: text.slice(0, 60),
+      summary: text,
+      sourceTextHint: event?.text || "",
+      confidence: 0.76,
+      zone: "base"
+    });
+    return {
+      ok: result.ok,
+      command,
+      reply: result.ok ? `已写入统一记忆：${text}` : `统一记忆写入失败：${result.reason || "未知原因"}`
+    };
+  }
+  return {
+    ok: false,
+    command,
+    reply: "统一记忆命令未识别。可用：/统一记忆 列表、/统一记忆 搜索 关键词、/统一记忆 添加 内容、/统一记忆 状态。"
+  };
+}
+
+function formatUnifiedMemorySnapshotForQq(snapshot, query = "") {
+  const lines = [];
+  if (snapshot.latestHandoff?.summary) lines.push(`最近交接：${snapshot.latestHandoff.summary}`);
+  for (const entry of snapshot.entries || []) {
+    lines.push(`${entry.topic ? `${entry.topic}：` : ""}${entry.summary}`);
+  }
+  if (!lines.length) return query ? `统一记忆里没有找到和“${query}”相关的内容。` : "统一记忆现在还是空的。";
+  return [
+    query ? `统一记忆搜索“${query}”：` : "统一记忆：",
+    ...[...new Set(lines)].slice(0, 10)
+  ].join("\n");
+}
+
+function formatUnifiedMemoryStatusForQq(status) {
+  const counts = status.counts || {};
+  return [
+    "统一记忆状态：",
+    `总数：${status.count || 0} 条`,
+    `更新时间：${status.updatedAt || "暂无"}`,
+    `交接：${counts.handoffHistory || 0} 条`,
+    `项目：${counts.projectNotes || 0} 条`,
+    `点子：${counts.ideas || 0} 条`,
+    `待办：${counts.openLoops || 0} 条`,
+    `日常状态：${counts.dailyTimeline || 0} 条`
+  ].join("\n");
 }
 
 async function executeQqBotPublicMemoryCommand(command, event) {
@@ -3128,6 +3234,7 @@ async function buildModelReply(event) {
   const outputPath = join(codexTmpDir, `${id}.txt`);
   const quotedContext = formatQuotedContext(event);
   let memoryContext = formatMemoryContext(event, { expandLevel: 0 });
+  const unifiedMemoryContext = await unifiedMemory.formatForPrompt({ query: text, limit: 6 });
   const personaContext = formatQqPersonaContext(event);
   const repetitionGuard = state.qq.enhancer.enabled ? buildQqRepetitionGuard(event) : "";
   const webContext = await buildWebLookupContext(event);
@@ -3165,6 +3272,8 @@ async function buildModelReply(event) {
       botToolContext ? "" : null,
       publicMemoryContext,
       publicMemoryContext ? "" : null,
+      unifiedMemoryContext,
+      unifiedMemoryContext ? "" : null,
       personaContext,
       personaContext ? "" : null,
       memoryBlock,
@@ -3849,11 +3958,33 @@ function stableModuloLocal(seed, modulo) {
 
 async function buildWebLookupContext(event) {
   const text = stripMentionText(event.text);
-  if (!shouldUseWebLookup(event, text)) return "";
+  const triggerReason = webLookupTriggerReason(event, text);
+  if (!triggerReason) return "";
   const query = buildWebLookupQuery(text);
+  logger.debug("QQ web lookup trigger matched", {
+    query,
+    reason: triggerReason,
+    text: text.slice(0, 500),
+    groupId: event.groupId || null,
+    senderId: event.senderId || null,
+    messageType: event.type || null,
+    imageCount: Array.isArray(event.images) ? event.images.length : 0,
+    hasReply: Boolean(event.replyContext || event.replyMessageId),
+    isAt: isExplicitQqAtEvent(event)
+  }, "search");
   try {
     const results = await searchWeb(query);
     if (results.length === 0) return "";
+    logger.debug("QQ web lookup results selected", {
+      query,
+      resultCount: results.length,
+      results: results.map((result) => ({
+        title: result.title,
+        url: result.url,
+        snippet: String(result.snippet || "").slice(0, 280),
+        source: result.source || null
+      }))
+    }, "search");
     return [
       "联网查询摘要：",
       "以下是 Hub 为这个 QQ 群聊问题临时查询到的网页搜索摘要。只在相关时参考；不要编造未查到的细节；如果结果不可靠，可以说不确定。",
@@ -3872,19 +4003,23 @@ async function buildWebLookupContext(event) {
 }
 
 function shouldUseWebLookup(event, text) {
+  return Boolean(webLookupTriggerReason(event, text));
+}
+
+function webLookupTriggerReason(event, text) {
   const normalized = String(text || "").trim();
-  if (!state.qq.webLookup.enabled || !normalized) return false;
-  if (isFilesystemProbe(normalized)) return false;
-  if (/(是什么意思|什么意思|啥意思|什么梗|啥梗|什么定义|定义|是谁|谁是|是什么东西|是什么|百科|查一下|搜一下|网上|最近|最新|新闻|出处|来源)/i.test(normalized)) return true;
+  if (!state.qq.webLookup.enabled || !normalized) return "";
+  if (isFilesystemProbe(normalized)) return "";
+  if (/(是什么意思|什么意思|啥意思|什么梗|啥梗|什么定义|定义|是谁|谁是|是什么东西|是什么|百科|查一下|搜一下|网上|最近|最新|新闻|出处|来源)/i.test(normalized)) return "命中显式搜索/百科/最新信息关键词";
   if (/(最好|最好用|推荐|排行|排名|强度|攻略|通关|配装|卡牌|角色|装备|技能|流派|打法|弱点|结局|路线|隐藏|解锁|mod|MOD|版本|补丁)/i.test(normalized)
     && /(游戏|手游|Steam|steam|Switch|switch|主机|东方|虹龙洞|原神|崩铁|明日方舟|碧蓝|gal|galgame|GameCube|GC|任天堂|索尼|Xbox|xbox|卡牌|角色|装备|关卡)/i.test(normalized)) {
-    return true;
+    return "命中游戏攻略/版本/排行类问题";
   }
   if (/(哪[个些]|几个|多少|为什么|怎么|如何|能不能|可以吗|对不对|是不是|有没有|靠谱吗|厉害吗|强吗)/.test(normalized)
     && /[A-Za-z0-9]{3,}|[·《》]|东方|虹龙洞|游戏|手游|番|角色|卡牌|装备|模型|软件|项目|插件|版本|系统|硬件|显卡|驱动/.test(normalized)) {
-    return true;
+    return "命中具体名词或产品相关问题";
   }
-  return false;
+  return "";
 }
 
 function buildWebLookupQuery(text) {
@@ -3956,14 +4091,26 @@ async function searchWeb(query) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), qqWebLookupTimeoutMs);
   const startedAt = Date.now();
+  const providerPlan = buildWebSearchProviderPlan();
   state.maintenance.webLookup.lastQuery = query;
   state.maintenance.webLookup.lastRunAt = new Date().toISOString();
+  state.maintenance.webLookup.lastProviderErrors = [];
+  state.maintenance.webLookup.lastAttempts = [];
+  state.maintenance.webLookup.configuredProviders = providerPlan;
+  state.maintenance.webLookup.providerPreset = qqWebSearchPreset;
   try {
     const queryVariants = buildWebQueryVariants(query);
     const wikipediaResults = [];
     const webResults = [];
-    const preferredProvider = chooseWebSearchProvider();
+    const preferredProvider = providerPlan[0] || chooseWebSearchProvider();
     state.maintenance.webLookup.effectiveProvider = preferredProvider;
+    logger.info("QQ web lookup started", {
+      query,
+      preset: qqWebSearchPreset,
+      providers: providerPlan.map(formatWebSearchProviderName),
+      timeoutMs: qqWebLookupTimeoutMs,
+      attemptTimeoutMs: qqWebLookupAttemptTimeoutMs
+    }, "search");
 
     if (preferredProvider !== "tavily" && shouldUseWikipediaForQuery(query)) {
       for (const variant of queryVariants.slice(0, 2)) {
@@ -3973,17 +4120,30 @@ async function searchWeb(query) {
       }
     }
 
-    await collectSearchProviderResults(preferredProvider, queryVariants, controller.signal, webResults);
+    await collectSearchProviderResults(providerPlan, queryVariants, controller.signal, webResults);
     const results = mergeSearchResults([...wikipediaResults, ...webResults]).slice(0, 5);
-    const enriched = await enrichWebResults(results);
+    const enriched = await enrichWebResults(results, controller.signal);
     state.maintenance.webLookup.lastOk = true;
     state.maintenance.webLookup.lastError = null;
     state.maintenance.webLookup.lastDurationMs = Date.now() - startedAt;
+    logger.success("QQ web lookup succeeded", {
+      query,
+      provider: formatWebSearchProviderName(state.maintenance.webLookup.effectiveProvider),
+      resultCount: enriched.length,
+      durationMs: state.maintenance.webLookup.lastDurationMs
+    }, "search");
     return enriched;
   } catch (error) {
     state.maintenance.webLookup.lastOk = false;
     state.maintenance.webLookup.lastError = error.message;
     state.maintenance.webLookup.lastDurationMs = Date.now() - startedAt;
+    logger.warn("QQ web lookup failed", {
+      query,
+      provider: state.maintenance.webLookup.effectiveProvider,
+      durationMs: state.maintenance.webLookup.lastDurationMs,
+      error: error.message,
+      providerErrors: state.maintenance.webLookup.lastProviderErrors
+    }, "search");
     if (error.name === "AbortError") throw new Error("search timed out");
     throw error;
   } finally {
@@ -3995,42 +4155,188 @@ function chooseWebSearchProvider() {
   if (qqWebSearchProvider === "tavily") return "tavily";
   if (qqWebSearchProvider === "duckduckgo" || qqWebSearchProvider === "ddg") return "duckduckgo";
   if (qqWebSearchProvider === "bing") return "bing";
+  if (qqWebSearchProvider === "baidu") return "baidu";
+  if (qqWebSearchProvider === "so360" || qqWebSearchProvider === "360") return "so360";
   if (qqWebSearchProvider === "sogou") return "sogou";
   return tavilyApiKey ? "tavily" : "bing";
 }
 
-async function collectSearchProviderResults(provider, queryVariants, signal, output) {
-  const fallbackProviders = [
-    ...(tavilyApiKey ? ["tavily"] : []),
-    "bing",
-    "sogou",
-    "duckduckgo"
-  ];
-  const providers = [provider, ...fallbackProviders.filter((item) => item !== provider)];
+function buildWebSearchProviderPlan() {
+  const configured = parseWebSearchProviders(qqWebSearchProviderConfig);
+  const preset = configured.length > 0
+    ? configured
+    : webSearchPresetProviders(qqWebSearchPreset);
+  const preferred = normalizeWebSearchProvider(qqWebSearchProvider);
+  const providers = preferred && preferred !== "auto"
+    ? [preferred, ...preset.filter((item) => item !== preferred)]
+    : preset;
+  const normalized = [...new Set(providers.map(normalizeWebSearchProvider).filter(Boolean))];
+  if (tavilyApiKey) return normalized;
+  return normalized.filter((provider) => provider !== "tavily");
+}
+
+function parseWebSearchProviders(value) {
+  return String(value || "")
+    .split(/[,\s，、|>]+/g)
+    .map(normalizeWebSearchProvider)
+    .filter(Boolean);
+}
+
+function webSearchPresetProviders(preset) {
+  if (preset === "tavily") return ["tavily", "bing", "baidu", "so360"];
+  if (preset === "china" || preset === "cn") return ["baidu", "so360", "bing", "sogou"];
+  if (preset === "global") return ["tavily", "bing", "duckduckgo", "baidu", "so360"];
+  if (preset === "privacy") return ["duckduckgo", "bing", "baidu", "so360"];
+  return ["tavily", "bing", "baidu", "so360", "sogou", "duckduckgo"];
+}
+
+function normalizeWebSearchProvider(provider) {
+  const value = String(provider || "").trim().toLowerCase();
+  if (!value || value === "auto") return value || "";
+  if (value === "ddg") return "duckduckgo";
+  if (value === "360" || value === "so" || value === "so.com") return "so360";
+  if (["tavily", "bing", "baidu", "so360", "sogou", "duckduckgo"].includes(value)) return value;
+  return "";
+}
+
+function formatWebSearchProviderName(provider) {
+  return {
+    tavily: "Tavily",
+    bing: "Bing",
+    baidu: "Baidu",
+    so360: "360 Search",
+    sogou: "Sogou",
+    duckduckgo: "DuckDuckGo"
+  }[provider] || String(provider || "unknown");
+}
+
+async function collectSearchProviderResults(providers, queryVariants, signal, output) {
+  if (!Array.isArray(queryVariants) || queryVariants.length === 0) return;
+  const providerList = Array.isArray(providers) && providers.length > 0 ? providers : buildWebSearchProviderPlan();
   const errors = [];
-  for (const currentProvider of providers) {
+  for (const currentProvider of providerList) {
+    const outputLengthBeforeProvider = output.length;
+    let providerReturnedEmpty = false;
+    let providerFailed = false;
     state.maintenance.webLookup.effectiveProvider = currentProvider;
     for (const variant of queryVariants.slice(0, 4)) {
+      const attemptStartedAt = Date.now();
       try {
-        const hits = await searchWithProvider(currentProvider, variant, signal);
+        const hits = await runWebSearchAttempt(
+          (attemptSignal) => searchWithProvider(currentProvider, variant, attemptSignal),
+          signal,
+          providerAttemptTimeoutMs(currentProvider)
+        );
+        recordWebLookupAttempt({
+          provider: currentProvider,
+          query: variant,
+          ok: hits.length > 0,
+          resultCount: hits.length,
+          durationMs: Date.now() - attemptStartedAt
+        });
+        logger.debug("QQ web lookup provider attempt", {
+          provider: formatWebSearchProviderName(currentProvider),
+          rawProvider: currentProvider,
+          query: variant,
+          resultCount: hits.length,
+          durationMs: Date.now() - attemptStartedAt,
+          status: hits.length > 0 ? "found_results" : "no_results"
+        }, "search");
+        if (hits.length === 0) {
+          providerReturnedEmpty = true;
+          continue;
+        }
         output.push(...hits);
         if (output.length >= 5) return;
       } catch (error) {
-        errors.push(`${currentProvider}: ${error.message}`);
+        providerFailed = true;
+        const message = `${currentProvider}: ${error.message}`;
+        errors.push(message);
+        state.maintenance.webLookup.lastProviderErrors = errors.slice(-8);
+        recordWebLookupAttempt({
+          provider: currentProvider,
+          query: variant,
+          ok: false,
+          error: error.message,
+          durationMs: Date.now() - attemptStartedAt
+        });
+        logger.warn("QQ web lookup provider failed", {
+          provider: formatWebSearchProviderName(currentProvider),
+          query: variant,
+          durationMs: Date.now() - attemptStartedAt,
+          error: error.message
+        }, "search");
         if (error.name === "AbortError") throw error;
-        break;
       }
     }
     if (output.length > 0) return;
+    if (output.length === outputLengthBeforeProvider && providerReturnedEmpty && !providerFailed) {
+      errors.push(`${currentProvider}: no results`);
+      state.maintenance.webLookup.lastProviderErrors = errors.slice(-8);
+    }
   }
   if (errors.length > 0) {
     throw new Error(`all search providers failed (${errors.join("; ")})`);
+  } else {
+    throw new Error("all search providers returned no results");
   }
+}
+
+function recordWebLookupAttempt(attempt) {
+  const entry = {
+    provider: formatWebSearchProviderName(attempt.provider),
+    rawProvider: attempt.provider,
+    query: String(attempt.query || "").slice(0, 200),
+    ok: Boolean(attempt.ok),
+    resultCount: Number(attempt.resultCount || 0),
+    durationMs: Number(attempt.durationMs || 0),
+    error: attempt.error ? String(attempt.error).slice(0, 300) : null
+  };
+  state.maintenance.webLookup.lastAttempts.push(entry);
+  state.maintenance.webLookup.lastAttempts = state.maintenance.webLookup.lastAttempts.slice(-20);
+}
+
+async function runWebSearchAttempt(fn, parentSignal, timeoutMs) {
+  if (parentSignal?.aborted) throw createAbortError("search timed out");
+  const controller = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
+  const abortFromParent = () => controller.abort();
+  parentSignal?.addEventListener("abort", abortFromParent, { once: true });
+  try {
+    return await fn(controller.signal);
+  } catch (error) {
+    if (timedOut && error.name === "AbortError") {
+      throw new Error(`attempt timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+    parentSignal?.removeEventListener("abort", abortFromParent);
+  }
+}
+
+function providerAttemptTimeoutMs(provider) {
+  if (provider === "tavily") {
+    return Math.min(qqWebLookupTimeoutMs, Math.max(qqWebLookupAttemptTimeoutMs, 5000));
+  }
+  return qqWebLookupAttemptTimeoutMs;
+}
+
+function createAbortError(message) {
+  const error = new Error(message);
+  error.name = "AbortError";
+  return error;
 }
 
 async function searchWithProvider(provider, query, signal) {
   if (provider === "tavily") return searchTavily(query, signal);
   if (provider === "bing") return searchBing(query, signal);
+  if (provider === "baidu") return searchBaidu(query, signal);
+  if (provider === "so360") return searchSo360(query, signal);
   if (provider === "sogou") return searchSogou(query, signal);
   return searchDuckDuckGo(query, signal);
 }
@@ -4134,11 +4440,15 @@ async function searchDuckDuckGo(query, signal) {
   const response = await fetch(url, {
     signal,
     headers: {
-      "user-agent": userAgentName
+      "user-agent": webSearchUserAgent()
     }
   });
   if (!response.ok) throw new Error(`search returned HTTP ${response.status}`);
-  return parseDuckDuckGoResults(await response.text()).slice(0, 3);
+  const html = await response.text();
+  if (response.status === 202 || /anomaly|challenge-form|Please prove you are human/i.test(html)) {
+    throw new Error("duckduckgo returned verification page");
+  }
+  return parseDuckDuckGoResults(html).slice(0, 3);
 }
 
 async function searchTavily(query, signal) {
@@ -4174,7 +4484,7 @@ async function searchBing(query, signal) {
   const response = await fetch(url, {
     signal,
     headers: {
-      "user-agent": userAgentName,
+      "user-agent": webSearchUserAgent(),
       "accept-language": "zh-CN,zh;q=0.9,en;q=0.7"
     }
   });
@@ -4182,17 +4492,60 @@ async function searchBing(query, signal) {
   return parseBingResults(await response.text()).slice(0, 5);
 }
 
+async function searchBaidu(query, signal) {
+  const url = `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`;
+  const response = await fetch(url, {
+    signal,
+    headers: {
+      "user-agent": webSearchUserAgent(),
+      "accept-language": "zh-CN,zh;q=0.9,en;q=0.7"
+    }
+  });
+  if (!response.ok) throw new Error(`baidu returned HTTP ${response.status}`);
+  const html = await response.text();
+  if (/请输入验证码|安全验证|verify.baidu.com/i.test(html)) {
+    throw new Error("baidu returned verification page");
+  }
+  return parseBaiduResults(html).slice(0, 5);
+}
+
+async function searchSo360(query, signal) {
+  const url = `https://www.so.com/s?q=${encodeURIComponent(query)}`;
+  const response = await fetch(url, {
+    signal,
+    headers: {
+      "user-agent": webSearchUserAgent(),
+      "accept-language": "zh-CN,zh;q=0.9,en;q=0.7"
+    }
+  });
+  if (!response.ok) throw new Error(`so360 returned HTTP ${response.status}`);
+  const html = await response.text();
+  if (/请输入验证码|安全验证|检测到异常请求/i.test(html)) {
+    throw new Error("so360 returned verification page");
+  }
+  return parseSo360Results(html).slice(0, 5);
+}
+
 async function searchSogou(query, signal) {
   const url = `https://www.sogou.com/web?query=${encodeURIComponent(query)}`;
   const response = await fetch(url, {
     signal,
     headers: {
-      "user-agent": userAgentName,
+      "user-agent": webSearchUserAgent(),
       "accept-language": "zh-CN,zh;q=0.9,en;q=0.7"
     }
   });
   if (!response.ok) throw new Error(`sogou returned HTTP ${response.status}`);
-  return parseSogouResults(await response.text()).slice(0, 5);
+  const html = await response.text();
+  if (/anti\.min\.css|antispider|请输入验证码|搜狗搜索验证/i.test(html)) {
+    throw new Error("sogou returned verification page");
+  }
+  return parseSogouResults(html).slice(0, 5);
+}
+
+function webSearchUserAgent() {
+  return process.env.CODEX_REMOTE_CONTACT_QQ_WEB_USER_AGENT
+    || "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 }
 
 function mergeSearchResults(results) {
@@ -4205,13 +4558,13 @@ function mergeSearchResults(results) {
   });
 }
 
-async function enrichWebResults(results) {
+async function enrichWebResults(results, signal) {
   const enriched = [];
   for (const result of results) {
     if (!result.snippet && result.source !== "wikipedia" && enriched.length < 2 && result.url) {
       enriched.push({
         ...result,
-        snippet: await fetchPageSnippet(result.url).catch(() => "")
+        snippet: await fetchPageSnippet(result.url, signal).catch(() => "")
       });
     } else {
       enriched.push(result);
@@ -4220,10 +4573,13 @@ async function enrichWebResults(results) {
   return enriched;
 }
 
-async function fetchPageSnippet(url) {
+async function fetchPageSnippet(url, parentSignal) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), Math.min(3500, qqWebLookupTimeoutMs));
+  const abortFromParent = () => controller.abort();
+  parentSignal?.addEventListener("abort", abortFromParent, { once: true });
   try {
+    if (parentSignal?.aborted) return "";
     const response = await fetch(url, {
       signal: controller.signal,
       headers: { "user-agent": userAgentName }
@@ -4235,6 +4591,7 @@ async function fetchPageSnippet(url) {
     return text.slice(0, 420);
   } finally {
     clearTimeout(timeout);
+    parentSignal?.removeEventListener("abort", abortFromParent);
   }
 }
 
@@ -4279,6 +4636,53 @@ function parseBingResults(html) {
     .filter((result, index, list) => list.findIndex((item) => item.url === result.url) === index);
 }
 
+function parseBaiduResults(html) {
+  return String(html || "")
+    .split(/<h3\b/gi)
+    .map((block) => {
+      const h3 = `<h3${block.split(/<\/h3>/i)[0] || ""}</h3>`;
+      const linkMatch = h3.match(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+      if (!linkMatch) return null;
+      const title = cleanHtml(linkMatch[2]);
+      if (!isUsableSearchResultTitle(title)) return null;
+      const after = block.slice(block.indexOf("</h3>") + 5, block.indexOf("</h3>") + 1600);
+      const snippetMatch = after.match(/<!--s-text-->([\s\S]*?)<!--\/s-text-->/i)
+        || after.match(/<(?:div|span|p)[^>]*class="[^"]*(?:content|abstract|summary|c-abstract|paragraph)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|span|p)>/i);
+      return {
+        title,
+        url: htmlDecode(linkMatch[1]),
+        snippet: snippetMatch ? cleanHtml(snippetMatch[1]) : "",
+        source: "baidu"
+      };
+    })
+    .filter((result) => result?.title && result.url)
+    .filter((result, index, list) => list.findIndex((item) => item.url === result.url) === index);
+}
+
+function parseSo360Results(html) {
+  return String(html || "")
+    .split(/<h3\b/gi)
+    .map((block) => {
+      const h3 = `<h3${block.split(/<\/h3>/i)[0] || ""}</h3>`;
+      const linkMatch = h3.match(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+      if (!linkMatch) return null;
+      const title = cleanHtml(linkMatch[2]);
+      if (!isUsableSearchResultTitle(title)) return null;
+      const url = extractHtmlAttribute(linkMatch[0], "data-mdurl") || htmlDecode(linkMatch[1]);
+      const after = block.slice(block.indexOf("</h3>") + 5, block.indexOf("</h3>") + 1600);
+      const snippetMatch = after.match(/<(?:p|div)[^>]*class="[^"]*(?:res-desc|g-desc|mh-summary|cont|summary)[^"]*"[^>]*>([\s\S]*?)<\/(?:p|div)>/i)
+        || after.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
+      return {
+        title,
+        url,
+        snippet: snippetMatch ? cleanHtml(snippetMatch[1]) : "",
+        source: "so360"
+      };
+    })
+    .filter((result) => result?.title && result.url)
+    .filter((result, index, list) => list.findIndex((item) => item.url === result.url) === index);
+}
+
 function parseSogouResults(html) {
   return String(html || "")
     .split(/<div class="vrwrap|<div class="rb"/g)
@@ -4296,6 +4700,16 @@ function parseSogouResults(html) {
     })
     .filter((result) => result?.title && result.url)
     .filter((result, index, list) => list.findIndex((item) => item.url === result.url) === index);
+}
+
+function isUsableSearchResultTitle(title) {
+  return Boolean(title)
+    && !/^(首页|其他人还搜了|相关搜索|大家还在搜|网页搜索|搜索结果)$/i.test(title);
+}
+
+function extractHtmlAttribute(html, name) {
+  const match = String(html || "").match(new RegExp(`${name}="([^"]+)"`, "i"));
+  return match ? htmlDecode(match[1]) : "";
 }
 
 function cleanHtml(value) {
@@ -8419,6 +8833,18 @@ async function handleApi(req, res) {
       senderId: event.senderId || null,
       textLength: String(event.text || "").length
     }, "onebot");
+    logger.debug("QQ message details received", {
+      source: "OneBot",
+      messageType: payload.message_type,
+      groupId: event.groupId || null,
+      senderId: event.senderId || null,
+      senderName: event.senderName || null,
+      text: String(event.text || "").slice(0, 800),
+      imageCount: Array.isArray(event.images) ? event.images.length : 0,
+      hasReply: Boolean(event.replyContext || event.replyMessageId),
+      isAt: Boolean(event.hasSelfAtSegment || event.type === "group_at"),
+      atTargets: Array.isArray(event.atTargets) ? event.atTargets : []
+    }, "qq");
     await processQqReplyEvent(event, { source: "onebot" });
     return sendJson(res, 200, { status: "ok" });
   }

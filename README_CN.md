@@ -23,7 +23,7 @@
 
 Codex QQ Bot 运行在本机，把 QQ/OneBot、Codex CLI、本机自动化脚本、代理节点控制和由 `ncc` 控制的 HTTP API 接到同一个服务里。
 
-主程序可以独立启动。需要更强的 QQ 群聊能力或跨端记忆时，再把 `qq-enhancer`、`unified-memory` 等可选升级包放到旁边即可。
+主程序可以独立启动，并内置 QQ enhancer、统一记忆与最近 Codex 上下文检索。需要替换为更高级实现时，可以把外部升级包放到旁边覆盖默认模块。
 
 项目不再提供自己的浏览器 WebUI。日常控制统一通过 `ncc` 脚本完成。
 
@@ -36,7 +36,7 @@ Codex QQ Bot 运行在本机，把 QQ/OneBot、Codex CLI、本机自动化脚本
 | QQ/OneBot 通道 | 接收 QQ 群聊和私聊，忽略尚未转写的语音消息，识别明确 @ 附图，在需要时继续向前翻上下文，并保存轻量群友画像。 |
 | 远程执行模式 | 开启完整 Codex CLI 本机任务通道。iMessage 入口仅 macOS；后端和 QQ 桥接可在 Linux 和 Windows 运行。 |
 | 代理与系统控制 | macOS 专用辅助脚本，支持 Shadowrocket 节点状态、测速、切换确认，以及防休眠、显示器休眠、内置屏背光控制。 |
-| 可选升级包 | 存在时加载 `qq-enhancer` 与 `unified-memory`；不存在时自动降级。 |
+| QQ 增强与记忆 | 默认内置 QQ enhancer、统一记忆和最近 Codex 上下文检索；存在外部 `qq-enhancer` 或自定义 `unified-memory` 时可覆盖增强。 |
 
 ## 项目结构
 
@@ -75,10 +75,10 @@ codexremotecontact/
 ```bash
 # Debian / Ubuntu
 sudo apt update
-sudo apt install -y nodejs npm git curl
+sudo apt install -y nodejs npm git curl zsh
 
 # macOS
-brew install node git curl
+brew install node git curl zsh
 
 # Windows PowerShell
 winget install OpenJS.NodeJS Git.Git
@@ -264,33 +264,38 @@ curl http://localhost:3789/api/state
 ```bash
 ncc logs
 ncc logs --tail 200 --level error
+ncc logs --verbose --category search
 ncc logs -f
 curl 'http://localhost:3789/api/logs?limit=50&category=qq'
 ```
 
+默认日志会隐藏调试级细节，只显示翻译后的人类可读摘要。需要排查 QQ 消息内容、搜索触发原因、每个搜索厂商的 query 变体、命中标题/链接/摘要时，使用 `--verbose`。
+
 `ncc` 仍会在名为 `codex-contact` 的 `screen` 会话里启动后端；只有排查进程启动输出时才需要 `screen -r codex-contact`。
 
-## 可选升级包
+## 内置记忆与可选升级包
 
 推荐目录结构：
 
 ```text
 Projects/
   codexremotecontact/
-  qq-enhancer/
-  unified-memory/
+  qq-enhancer/                   # 可选：覆盖内置 QQ enhancer
+  unified-memory/                # 可选：覆盖内置统一记忆实现
 ```
 
-主程序会按以下顺序尝试加载可选升级包：
+主程序默认使用 `src/qq-enhancer/` 和 `src/unified-memory/` 内置实现。需要替换为外部高级实现时，会按以下顺序尝试加载：
 
 | 顺序 | 来源 |
 | :--- | :--- |
 | 1 | 环境变量指定的模块路径，例如 `CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE` 和 `CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE`。 |
 | 2 | 主程序内部 `src/` 或 `modules/` 下的本地开发目录。 |
 | 3 | 同级目录中的 `../qq-enhancer/` 和 `../unified-memory/`。 |
-| 4 | 内置空实现降级。 |
+| 4 | 内置默认实现。 |
 
 ### QQ Enhancer
+
+QQ enhancer 已内置在 `src/qq-enhancer/`，默认安装即可使用。它提供群聊风格提示、保守主动回复判断、图片提取、看图准备、本地表情包目录读取、气泡拆分和 QQ 媒体 marker 处理。
 
 在 `data/settings.json` 中启用：
 
@@ -315,6 +320,13 @@ export CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE="/absolute/path/to/qq-enhancer/sr
 ```
 
 ### Unified Memory
+
+统一记忆和最近 Codex 上下文检索已内置在 `src/unified-memory/`，默认安装即可使用。QQ bot 也可以通过内部工具调用统一记忆：
+
+- `[[qq_command:/统一记忆 列表]]`
+- `[[qq_command:/统一记忆 搜索 关键词]]`
+- `[[qq_command:/统一记忆 添加 内容]]`
+- `[[qq_command:/统一记忆 状态]]`
 
 自定义数据路径：
 
@@ -380,7 +392,11 @@ CODEX_REMOTE_CONTACT_QQ_MEMORY_LIMIT=10
 CODEX_REMOTE_CONTACT_QQ_GROUP_MEMORY_LIMIT=200
 CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP=1
 CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS=12000
-CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER=auto
+CODEX_REMOTE_CONTACT_QQ_WEB_ATTEMPT_TIMEOUT_MS=6500
+CODEX_REMOTE_CONTACT_QQ_WEB_PRESET=balanced
+CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER=tavily
+CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS=tavily,bing,baidu,so360,sogou,duckduckgo
+TAVILY_API_KEY=tvly-...
 
 CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MODEL=gpt-5.4
 CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_REASONING_EFFORT=medium
@@ -393,6 +409,13 @@ CODEX_REMOTE_CONTACT_ASSISTANT_PROFILE_PATH=/absolute/path/to/assistant-profile.
 CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE=/absolute/path/to/qq-enhancer/src/qq-enhancer/index.js
 CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE=/absolute/path/to/unified-memory/src/unified-memory/index.js
 ```
+
+联网搜索可以自由配置：
+
+- `CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER`：优先厂商，可用 `auto`、`tavily`、`bing`、`baidu`、`so360`、`sogou`、`duckduckgo`。
+- `CODEX_REMOTE_CONTACT_QQ_WEB_PRESET`：预设顺序，可用 `balanced`、`china`、`global`、`tavily`、`privacy`。
+- `CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS`：完全自定义厂商顺序，逗号分隔；例如 `tavily,bing,baidu`。
+- `ncc search-config` 会把本机默认搜索配置写入 `config/local.env`；如果环境里有 `TAVILY_API_KEY`，会自动启用 Tavily 优先。
 
 ## 故障排查
 

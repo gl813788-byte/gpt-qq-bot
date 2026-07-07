@@ -19,6 +19,10 @@ LOCAL_ENV_FILE="$PROJECT_DIR/config/local.env"
 HUB_URL="${GPT_QQ_BOT_HUB_URL:-http://127.0.0.1:3789}"
 LOG_FILE="${CODEX_REMOTE_CONTACT_LOG_FILE:-$PROJECT_DIR/runtime/logs/hub.jsonl}"
 ONEBOT_API_BASE_DEFAULT="http://127.0.0.1:3000"
+QQ_WEB_SEARCH_PRESET="${CODEX_REMOTE_CONTACT_QQ_WEB_PRESET:-balanced}"
+QQ_WEB_SEARCH_PROVIDERS="${CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS:-tavily,bing,baidu,so360,sogou,duckduckgo}"
+QQ_WEB_SEARCH_TIMEOUT_MS="${CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS:-12000}"
+QQ_WEB_SEARCH_ATTEMPT_TIMEOUT_MS="${CODEX_REMOTE_CONTACT_QQ_WEB_ATTEMPT_TIMEOUT_MS:-6500}"
 
 log() {
   printf '[ncc] %s\n' "$*"
@@ -81,6 +85,52 @@ set_env_value() {
   printf "export %s=%q\n" "$key" "$value" >> "$tmp"
   mv "$tmp" "$LOCAL_ENV_FILE"
   chmod 600 "$LOCAL_ENV_FILE"
+}
+
+env_file_value() {
+  local file="$1"
+  local key="$2"
+  [ -f "$file" ] || return 0
+  sed -n "s/^export ${key}=//p; s/^${key}=//p" "$file" | tail -n 1 | sed "s/^'//; s/'$//"
+}
+
+mask_secret() {
+  local value="$1"
+  if [ -z "$value" ]; then
+    printf '<未设置>'
+  elif [ "${#value}" -le 8 ]; then
+    printf '****'
+  else
+    printf '****%s' "${value[-4,-1]}"
+  fi
+}
+
+search_config() {
+  ensure_settings
+  local tavily_key provider
+  tavily_key="${TAVILY_API_KEY:-${CODEX_REMOTE_CONTACT_TAVILY_API_KEY:-}}"
+  [ -n "$tavily_key" ] || tavily_key="$(env_file_value "$LOCAL_ENV_FILE" TAVILY_API_KEY)"
+  [ -n "$tavily_key" ] || tavily_key="$(env_file_value "$LOCAL_ENV_FILE" CODEX_REMOTE_CONTACT_TAVILY_API_KEY)"
+
+  provider="auto"
+  [ -n "$tavily_key" ] && provider="tavily"
+
+  set_env_value "CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP" "1"
+  set_env_value "CODEX_REMOTE_CONTACT_QQ_WEB_PRESET" "$QQ_WEB_SEARCH_PRESET"
+  set_env_value "CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS" "$QQ_WEB_SEARCH_PROVIDERS"
+  set_env_value "CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER" "$provider"
+  set_env_value "CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS" "$QQ_WEB_SEARCH_TIMEOUT_MS"
+  set_env_value "CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP_TIMEOUT_MS" "$QQ_WEB_SEARCH_TIMEOUT_MS"
+  set_env_value "CODEX_REMOTE_CONTACT_QQ_WEB_ATTEMPT_TIMEOUT_MS" "$QQ_WEB_SEARCH_ATTEMPT_TIMEOUT_MS"
+  if [ -n "$tavily_key" ]; then
+    set_env_value "TAVILY_API_KEY" "$tavily_key"
+  fi
+
+  log "联网搜索配置已保存到 $LOCAL_ENV_FILE"
+  log "搜索预设：$QQ_WEB_SEARCH_PRESET"
+  log "厂商顺序：$QQ_WEB_SEARCH_PROVIDERS"
+  log "优先厂商：$provider"
+  log "Tavily key：$(mask_secret "$tavily_key")"
 }
 
 show_status() {
@@ -217,6 +267,7 @@ NODE
 
 start_hub() {
   ensure_settings
+  search_config
   "$PROJECT_DIR/modules/install-launchd-plist.command"
   if [[ "$(uname -s)" == "Darwin" ]] && command -v launchctl >/dev/null 2>&1; then
     "$PROJECT_DIR/modules/start-all.command"
@@ -262,10 +313,11 @@ Codex QQ Bot 快捷配置（ncc）
 3) 设置主人 QQ 号
 4) 设置 QQ 群白名单
 5) 设置助手名称和 @ 别名
-6) 启动 Hub
-7) 状态检查
-8) 打开 Hub API 状态
-9) 查看日志
+6) 初始化/刷新联网搜索配置
+7) 启动 Hub
+8) 状态检查
+9) 打开 Hub API 状态
+10) 查看日志
 0) 退出
 MENU
     printf '\n请选择：'
@@ -276,10 +328,11 @@ MENU
       3) owner_menu ;;
       4) groups_menu ;;
       5) branding_menu ;;
-      6) start_hub; pause ;;
-      7) show_status; pause ;;
-      8) open_hub_api; pause ;;
-      9) print_logs; pause ;;
+      6) search_config; pause ;;
+      7) start_hub; pause ;;
+      8) show_status; pause ;;
+      9) open_hub_api; pause ;;
+      10) print_logs; pause ;;
       0|q|quit|exit) break ;;
       *) log "未知选项。"; pause ;;
     esac
@@ -294,12 +347,13 @@ case "${1:-setup}" in
   owner) owner_menu ;;
   groups) groups_menu ;;
   branding) branding_menu ;;
+  search-config) search_config ;;
   start) start_hub ;;
   open) open_hub_api ;;
   logs) shift; print_logs "$@" ;;
   *)
     cat <<EOF
-用法：ncc [setup|status|codex-login|qq|owner|groups|branding|start|open|logs]
+用法：ncc [setup|status|codex-login|qq|owner|groups|branding|search-config|start|open|logs]
 项目目录：$PROJECT_DIR
 EOF
     ;;

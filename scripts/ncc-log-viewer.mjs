@@ -9,6 +9,7 @@ const categoryNames = {
   codex: "Codex",
   imessage: "iMessage",
   web: "接口",
+  search: "搜索",
   memory: "记忆",
   command: "指令"
 };
@@ -21,7 +22,11 @@ const colors = {
   cyan: "\x1b[36m",
   blue: "\x1b[34m",
   magenta: "\x1b[35m",
-  gray: "\x1b[90m"
+  gray: "\x1b[90m",
+  white: "\x1b[37m",
+  brightBlue: "\x1b[94m",
+  brightCyan: "\x1b[96m",
+  brightMagenta: "\x1b[95m"
 };
 
 const options = parseArgs(process.argv.slice(2));
@@ -40,7 +45,8 @@ function parseArgs(args) {
     follow: false,
     level: "",
     category: "",
-    plain: !process.stdout.isTTY
+    plain: !process.stdout.isTTY,
+    verbose: false
   };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -56,6 +62,8 @@ function parseArgs(args) {
       output.category = String(args[++index] || "").toLowerCase();
     } else if (arg === "--plain") {
       output.plain = true;
+    } else if (arg === "--verbose" || arg === "--detail" || arg === "--details") {
+      output.verbose = true;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -124,6 +132,7 @@ function renderLine(line, options) {
   }
   if (options.level && String(entry.level || "").toLowerCase() !== options.level) return null;
   if (options.category && String(entry.category || "").toLowerCase() !== options.category) return null;
+  if (!options.verbose && String(entry.level || "").toLowerCase() === "debug") return null;
   const level = String(entry.level || "info").toLowerCase();
   const category = String(entry.category || "system").toLowerCase();
   const ts = String(entry.ts || "").replace("T", " ").replace(/\.\d+Z$/, "");
@@ -133,20 +142,222 @@ function renderLine(line, options) {
     color((levelNames[level] || level).padEnd(2, " "), colorName, options),
     color((categoryNames[category] || category).padEnd(7, " "), colorName, options)
   ].join(" ");
-  const details = entry.details && Object.keys(entry.details).length
-    ? ` ${color(JSON.stringify(entry.details), "gray", options)}`
-    : "";
-  return `${header} ${entry.message || ""}${details}`;
+  const message = humanMessage(entry.message || "");
+  const details = formatDetails(entry, options);
+  return `${header} ${message}${details ? ` ${color(details, "gray", options)}` : ""}`;
 }
 
 function colorFor(level, category) {
   if (level === "error") return "red";
   if (level === "warn") return "yellow";
   if (level === "success") return "green";
-  if (category === "qq") return "blue";
-  if (category === "codex") return "magenta";
+  if (level === "debug") return "gray";
+  if (category === "search") return "brightCyan";
+  if (category === "qq") return "brightBlue";
   if (category === "onebot") return "cyan";
+  if (category === "codex") return "brightMagenta";
+  if (category === "imessage") return "magenta";
+  if (category === "web") return "blue";
+  if (category === "memory") return "green";
+  if (category === "command") return "yellow";
   return "gray";
+}
+
+function humanMessage(message) {
+  const value = String(message || "");
+  return {
+    "QQ web lookup started": "QQ 联网搜索开始",
+    "QQ web lookup succeeded": "QQ 联网搜索成功",
+    "QQ web lookup failed": "QQ 联网搜索失败",
+    "QQ web lookup provider failed": "某个搜索厂商尝试失败",
+    "QQ web lookup provider attempt": "搜索厂商尝试完成",
+    "QQ web lookup trigger matched": "QQ 消息触发联网搜索",
+    "QQ web lookup results selected": "已选择联网搜索结果",
+    "QQ message details received": "收到 QQ 消息详情",
+    "OneBot message received": "收到 OneBot 消息",
+    "OneBot health check succeeded": "OneBot 健康检查成功",
+    "OneBot event ignored": "已忽略 OneBot 事件",
+    "Duplicate OneBot message ignored": "已忽略重复 OneBot 消息",
+    "Codex QQ Bot hub started": "Codex QQ Bot 后端已启动",
+    "unified-memory not installed; continuing with built-in fallback.": "统一记忆模块未安装，已使用内置降级模式。",
+    "qq-enhancer not installed; continuing with built-in fallback.": "QQ 增强模块未安装，已使用内置降级模式。",
+    "unified-memory recent context not installed; continuing with built-in fallback.": "最近上下文模块未安装，已使用内置降级模式。"
+  }[value] || value;
+}
+
+function formatDetails(entry, options) {
+  const details = entry.details || {};
+  if (!details || Object.keys(details).length === 0) return "";
+  if (entry.category === "search") return formatSearchDetails(details, options);
+  return formatGenericDetails(details, options);
+}
+
+function formatSearchDetails(details, options) {
+  const parts = [];
+  pushPart(parts, "查询", details.query);
+  pushPart(parts, "触发原因", details.reason);
+  pushPart(parts, "厂商", details.provider);
+  if (options.verbose && details.rawProvider) pushPart(parts, "厂商代码", details.rawProvider);
+  if ((options.verbose || !details.provider) && Array.isArray(details.providers) && details.providers.length > 0) {
+    pushPart(parts, "搜索顺序", details.providers.join(" -> "));
+  }
+  if (options.verbose) pushPart(parts, "预设", details.preset);
+  if (options.verbose && details.status) pushPart(parts, "状态", humanStatus(details.status));
+  pushPart(parts, "用时", formatMs(details.durationMs));
+  if (options.verbose) {
+    pushPart(parts, "总超时", formatMs(details.timeoutMs));
+    pushPart(parts, "单次超时", formatMs(details.attemptTimeoutMs));
+  }
+  if (details.resultCount != null) pushPart(parts, "结果", `${details.resultCount} 条`);
+  if (Array.isArray(details.results) && details.results.length > 0) {
+    pushPart(parts, "结果详情", details.results.map(formatSearchResult).join("；"));
+  }
+  pushPart(parts, "错误", humanError(details.error));
+  if (Array.isArray(details.providerErrors) && details.providerErrors.length > 0) {
+    pushPart(parts, "厂商错误", details.providerErrors.map(humanError).join("；"));
+  }
+  return parts.join(" · ");
+}
+
+function formatGenericDetails(details) {
+  const parts = [];
+  for (const [key, value] of Object.entries(details)) {
+    if (value == null || value === "") continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    parts.push(`${detailLabel(key)}: ${formatDetailValue(value, key)}`);
+  }
+  return parts.join(" · ");
+}
+
+function detailLabel(key) {
+  return {
+    query: "查询",
+    provider: "厂商",
+    providers: "厂商顺序",
+    preset: "预设",
+    durationMs: "用时",
+    timeoutMs: "总超时",
+    attemptTimeoutMs: "单次超时",
+    resultCount: "结果数",
+    results: "结果详情",
+    title: "标题",
+    url: "链接",
+    snippet: "摘要",
+    reason: "触发原因",
+    status: "状态",
+    rawProvider: "厂商代码",
+    text: "消息内容",
+    textLength: "消息长度",
+    messageType: "消息类型",
+    source: "来源",
+    senderName: "发送者昵称",
+    imageCount: "图片数",
+    hasReply: "是否引用",
+    isAt: "是否@机器人",
+    atTargets: "@目标",
+    error: "错误",
+    providerErrors: "厂商错误",
+    groupId: "群",
+    senderId: "发送者",
+    messageId: "消息",
+    channel: "通道",
+    enabled: "是否开启",
+    selfId: "机器人 QQ",
+    nickname: "机器人昵称",
+    postType: "事件类型",
+    noticeType: "通知类型",
+    logFile: "日志文件",
+    url: "地址",
+    dedupeKey: "去重标识"
+  }[key] || key;
+}
+
+function formatSearchResult(result, index) {
+  if (!result || typeof result !== "object") return formatDetailValue(result);
+  const parts = [];
+  const prefix = index == null ? "" : `${index + 1}. `;
+  if (result.title) parts.push(`${prefix}标题: ${result.title}`);
+  if (result.url) parts.push(`链接: ${result.url}`);
+  if (result.snippet) parts.push(`摘要: ${String(result.snippet).slice(0, 180)}`);
+  if (result.source || result.provider) parts.push(`来源: ${result.source || result.provider}`);
+  return parts.join("，");
+}
+
+function humanStatus(status) {
+  return {
+    found_results: "找到了结果",
+    no_results: "没有解析到结果",
+    skipped: "已跳过",
+    failed: "失败"
+  }[String(status || "")] || humanError(String(status || ""));
+}
+
+function formatDetailValue(value, key = "") {
+  if (Array.isArray(value)) return value.map((item) => formatDetailValue(item, key)).join(", ");
+  if (value && typeof value === "object") {
+    return Object.entries(value)
+      .map(([itemKey, item]) => `${detailLabel(itemKey)}: ${formatDetailValue(item, itemKey)}`)
+      .join("，");
+  }
+  if (typeof value === "string") return humanDetailValue(key, value);
+  if (typeof value === "boolean") return value ? "是" : "否";
+  return String(value);
+}
+
+function humanDetailValue(key, value) {
+  const text = humanError(value);
+  if (key === "messageType") {
+    return {
+      group: "群消息",
+      private: "私聊",
+      group_message: "群消息",
+      private_message: "私聊",
+      group_at: "群里 @ 机器人"
+    }[text] || text;
+  }
+  if (key === "postType") {
+    return {
+      message: "消息",
+      notice: "通知",
+      request: "请求",
+      meta_event: "元事件"
+    }[text] || text;
+  }
+  if (key === "noticeType") {
+    return {
+      notify: "提醒通知",
+      group_recall: "群消息撤回",
+      friend_recall: "好友消息撤回",
+      group_increase: "群成员增加",
+      group_decrease: "群成员减少"
+    }[text] || text;
+  }
+  if (key === "source" && text.toLowerCase() === "onebot") return "OneBot";
+  return text;
+}
+
+function humanError(error) {
+  const value = String(error || "");
+  return value
+    .replace(/attempt timed out after (\d+)ms/g, "单次请求超过 $1ms")
+    .replace(/search timed out/g, "整次搜索超时")
+    .replace(/returned HTTP (\d+)/g, "返回 HTTP $1")
+    .replace(/returned verification page/g, "返回验证页")
+    .replace(/Tavily API key is not configured/g, "没有配置 Tavily API key")
+    .replace(/no results/g, "没有解析到结果")
+    .replace(/all search providers failed/g, "所有搜索厂商都失败")
+    .replace(/all search providers returned no results/g, "所有搜索厂商都没有结果");
+}
+
+function formatMs(value) {
+  if (value == null || value === "") return "";
+  const number = Number(value);
+  return Number.isFinite(number) ? `${number}ms` : String(value);
+}
+
+function pushPart(parts, label, value) {
+  if (value == null || value === "") return;
+  parts.push(`${label}: ${value}`);
 }
 
 function color(text, colorName, options) {
@@ -155,5 +366,5 @@ function color(text, colorName, options) {
 }
 
 function usage() {
-  process.stderr.write("用法: ncc-log-viewer.mjs LOG_FILE [--tail N] [-f] [--level LEVEL] [--category CATEGORY] [--plain]\n");
+  process.stderr.write("用法: ncc-log-viewer.mjs LOG_FILE [--tail N] [-f] [--level LEVEL] [--category CATEGORY] [--plain] [--verbose]\n");
 }

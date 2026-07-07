@@ -91,7 +91,7 @@ ensure_node() {
 }
 
 ensure_basic_tools() {
-  for cmd in curl git; do
+  for cmd in curl git zsh; do
     if command -v "$cmd" >/dev/null 2>&1; then
       log "已找到 $cmd。"
       continue

@@ -23,7 +23,7 @@
 
 Codex QQ Bot runs locally and connects QQ/OneBot, Codex CLI, local automation scripts, proxy node control, and an HTTP API controlled by `ncc` into one service.
 
-The main program is intentionally usable by itself. Optional update packages such as `qq-enhancer` and `unified-memory` can be placed next to it when you need enhanced QQ group-chat behavior or cross-device memory.
+The main program is intentionally usable by itself and includes built-in QQ enhancer, unified memory, and recent Codex context search. External packages can still be placed next to it when you want to override the default modules.
 
 The project no longer serves its own browser WebUI. Normal operation is controlled through the single `ncc` script.
 
@@ -36,7 +36,7 @@ The project no longer serves its own browser WebUI. Normal operation is controll
 | QQ/OneBot channel | Receive QQ group and private messages, ignore untranscribed voice messages, inspect explicitly mentioned images, expand recent context when needed, and keep lightweight member personas. |
 | Remote execution | Start a full Codex CLI local task channel. The iMessage entry point is macOS-only; the backend and QQ bridge can run on Linux and Windows. |
 | Proxy and system control | macOS-specific helper scripts for Shadowrocket, keep-awake, display sleep, and built-in-display backlight control. |
-| Optional packages | Load `qq-enhancer` and `unified-memory` when present; fall back cleanly when absent. |
+| QQ enhancement and memory | Built-in QQ enhancer, unified memory, and recent Codex context search are enabled by default; external `qq-enhancer` or custom `unified-memory` packages can override or extend behavior. |
 
 ## Project Structure
 
@@ -75,10 +75,10 @@ Install the basic dependency:
 ```bash
 # Debian / Ubuntu
 sudo apt update
-sudo apt install -y nodejs npm git curl
+sudo apt install -y nodejs npm git curl zsh
 
 # macOS
-brew install node git curl
+brew install node git curl zsh
 
 # Windows PowerShell
 winget install OpenJS.NodeJS Git.Git
@@ -264,33 +264,38 @@ The hub writes structured JSONL logs to `runtime/logs/hub.jsonl`. Use `ncc logs`
 ```bash
 ncc logs
 ncc logs --tail 200 --level error
+ncc logs --verbose --category search
 ncc logs -f
 curl 'http://localhost:3789/api/logs?limit=50&category=qq'
 ```
 
+Default logs hide debug-level details and show translated, human-readable summaries. Use `--verbose` when diagnosing QQ message text, web lookup trigger reasons, provider query variants, result titles, URLs, and snippets.
+
 `ncc` also starts the hub in a `screen` session named `codex-contact`; use `screen -r codex-contact` only when diagnosing process-level startup output.
 
-## Optional Packages
+## Built-In Memory And Optional Packages
 
 Recommended layout:
 
 ```text
 Projects/
   codexremotecontact/
-  qq-enhancer/
-  unified-memory/
+  qq-enhancer/                   # Optional: override built-in QQ enhancer
+  unified-memory/                # Optional: override built-in unified memory
 ```
 
-The hub tries to load optional packages in this order:
+The hub uses the built-in `src/qq-enhancer/` and `src/unified-memory/` implementations by default. If you want to replace them with external advanced implementations, modules are loaded in this order:
 
 | Order | Source |
 | :--- | :--- |
 | 1 | Environment module paths, such as `CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE` and `CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE`. |
 | 2 | Local development folders under `src/` or `modules/`. |
 | 3 | Sibling packages such as `../qq-enhancer/` and `../unified-memory/`. |
-| 4 | Built-in no-op fallbacks. |
+| 4 | Built-in default implementation. |
 
 ### QQ Enhancer
+
+QQ enhancer is built into `src/qq-enhancer/` and works out of the box. It provides group-chat style guidance, conservative proactive reply decisions, image extraction and preparation, local sticker catalog loading, bubble splitting, and QQ media marker handling.
 
 Enable in `data/settings.json`:
 
@@ -315,6 +320,13 @@ export CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE="/absolute/path/to/qq-enhancer/sr
 ```
 
 ### Unified Memory
+
+Unified memory and recent Codex context search are built into `src/unified-memory/` and work out of the box. The QQ bot can also call unified memory through internal tools:
+
+- `[[qq_command:/统一记忆 列表]]`
+- `[[qq_command:/统一记忆 搜索 关键词]]`
+- `[[qq_command:/统一记忆 添加 内容]]`
+- `[[qq_command:/统一记忆 状态]]`
 
 Custom data paths:
 
@@ -380,7 +392,11 @@ CODEX_REMOTE_CONTACT_QQ_MEMORY_LIMIT=10
 CODEX_REMOTE_CONTACT_QQ_GROUP_MEMORY_LIMIT=200
 CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP=1
 CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS=12000
-CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER=auto
+CODEX_REMOTE_CONTACT_QQ_WEB_ATTEMPT_TIMEOUT_MS=6500
+CODEX_REMOTE_CONTACT_QQ_WEB_PRESET=balanced
+CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER=tavily
+CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS=tavily,bing,baidu,so360,sogou,duckduckgo
+TAVILY_API_KEY=tvly-...
 
 CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MODEL=gpt-5.4
 CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_REASONING_EFFORT=medium
@@ -393,6 +409,13 @@ CODEX_REMOTE_CONTACT_ASSISTANT_PROFILE_PATH=/absolute/path/to/assistant-profile.
 CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE=/absolute/path/to/qq-enhancer/src/qq-enhancer/index.js
 CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE=/absolute/path/to/unified-memory/src/unified-memory/index.js
 ```
+
+Web lookup is configurable:
+
+- `CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER`: preferred provider, one of `auto`, `tavily`, `bing`, `baidu`, `so360`, `sogou`, `duckduckgo`.
+- `CODEX_REMOTE_CONTACT_QQ_WEB_PRESET`: provider preset, one of `balanced`, `china`, `global`, `tavily`, `privacy`.
+- `CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS`: fully custom provider order, comma-separated, such as `tavily,bing,baidu`.
+- `ncc search-config` writes the local default search config into `config/local.env`. If `TAVILY_API_KEY` is present, Tavily is used first.
 
 ## Troubleshooting
 

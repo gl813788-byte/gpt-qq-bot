@@ -172,7 +172,9 @@ Important behavior:
   - Files: `[[qq_file:/absolute/path/to/file]]` or `[[qq_file:/absolute/path/to/file|filename.ext]]`
   - Stickers: `[[qq_sticker:表情包名]]` when the local sticker catalog contains that name.
 - QQ replies can send multiple consecutive text bubbles by putting `|||` on a line by itself between bubbles. The separator is configurable with `CODEX_REMOTE_CONTACT_QQ_BUBBLE_SEPARATOR`; the default send delay is controlled by `CODEX_REMOTE_CONTACT_QQ_BUBBLE_SEND_DELAY_MS`.
-- QQ web lookup is implemented inside `/root/Codex-Remote-Contact`, not through this chat's built-in browser tool. The live backend is configured to use Tavily via `TAVILY_API_KEY` and `CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER='tavily'` in `/root/.codex/ncc-profiles/active.env` and `/root/.codex/ncc-profiles/sharedchat.env`. If QQ search fails, check `/api/maintenance` and Tavily connectivity before changing model prompts.
+- QQ web lookup is implemented inside `/root/Codex-Remote-Contact`, not through this chat's built-in browser tool. The live backend is configured through `/root/.codex/ncc-profiles/active.env` and `/root/.codex/ncc-profiles/sharedchat.env`; `ncc search-config` writes the default search config. Current supported providers are `tavily`, `bing`, `baidu`, `so360`, `sogou`, and `duckduckgo`. Provider presets include `balanced`, `china`, `global`, `tavily`, and `privacy`; `CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS` can override the exact comma-separated provider order. If `TAVILY_API_KEY` is configured, `CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER='tavily'` should be active. If QQ search fails, check `/api/maintenance`, `ncc logs --verbose --category search`, and Tavily connectivity before changing model prompts.
+- Unified memory and recent Codex context search are built into `/root/Codex-Remote-Contact/src/unified-memory/` by default. The QQ bot can call unified memory with internal tools such as `[[qq_command:/统一记忆 列表]]`, `[[qq_command:/统一记忆 搜索 关键词]]`, `[[qq_command:/统一记忆 添加 内容]]`, and `[[qq_command:/统一记忆 状态]]`. If startup logs say unified-memory is not installed, inspect syntax/import errors in `src/unified-memory/index.js` and `src/unified-memory/recent-context.js`; it should no longer be treated as a missing optional package.
+- QQ enhancer is built into `/root/Codex-Remote-Contact/src/qq-enhancer/` by default. It provides group-chat style prompts, conservative proactive reply routing, image extraction/preparation, sticker catalog loading, bubble splitting, and QQ media marker handling. If startup logs say qq-enhancer is not installed, inspect syntax/import errors in `src/qq-enhancer/index.js`; it should no longer be treated as a missing optional package.
 - QQ image generation and owner file/image tasks use a per-request workspace under `runtime/qq-task-workspaces/<timestamp-kind-id>/` with `input/` for downloaded QQ images and `output/` for files the bot may choose to send. The bot decides what to send by emitting explicit `[[qq_image:/path]]` or `[[qq_file:/path]]` markers; the Hub does not automatically send every file in `output/`. The backend validates that generated `[[qq_image:/path]]` markers point to real local image files before claiming success; if the first model pass has no sendable file, the backend gives Codex one repair pass scoped to that request's `output/` directory. If the repair pass still has no real file, QQ should receive an explicit failure message instead of a text-only “已生成”. After QQ sending finishes, the Hub starts a separate Codex cleanup pass and asks the bot to delete only that request workspace. When diagnosing image-send bugs, check the reply file, retry reply file, the per-request workspace, and whether the generated marker path existed before the cleanup pass.
 - When changing Codex Remote Contact behavior in a way that contradicts or extends this skill, update this `SKILL.md` after finishing the code change so future sessions follow the live behavior.
 
@@ -215,6 +217,7 @@ curl -fsS --max-time 3 http://127.0.0.1:3789/api/state | jq .
 curl -fsS --max-time 3 http://127.0.0.1:3789/api/maintenance | jq '.webLookup'
 curl -fsS --max-time 3 'http://127.0.0.1:3789/api/logs?limit=50' | jq .
 ncc logs --tail 80
+ncc logs --verbose --category search --tail 120
 ncc logs -f
 curl -fsS --max-time 3 http://127.0.0.1:3000/get_login_info | jq .
 screen -ls
@@ -228,7 +231,7 @@ Common states:
 - Backend on `3789` running, `channels.qq` false: run `connect` after OneBot is available.
 - Dead screen sockets: run `screen -wipe`, then retry.
 - No `onebot11_*.json`: log in to NapCat once so it creates an account-specific OneBot config.
-- QQ web lookup should show `webLookupProvider: "tavily"` in `status`, and `/api/maintenance` should show `.webLookup.effectiveProvider == "tavily"` after a search-triggering QQ query. If `.lastError` says an operation was aborted, make sure Tavily mode is active; Wikipedia/DuckDuckGo may time out from this host.
+- QQ web lookup should show `webLookupProvider: "tavily"` in `status` when a Tavily key is configured, and `/api/maintenance` should show `.webLookup.effectiveProvider == "tavily"` after a search-triggering QQ query. `/api/maintenance` also exposes `.webLookup.configuredProviders`, `.webLookup.providerPreset`, `.webLookup.lastAttempts`, and `.webLookup.lastProviderErrors`. `ncc logs` is concise by default; use `ncc logs --verbose --category search` for translated detailed logs showing QQ message text, trigger reason, provider attempts, result titles, URLs, and snippets.
 
 ## Safety
 
