@@ -6,6 +6,9 @@ const imageIntentPattern = /(?:看|看看|看下|识别|认|评价|锐评|这图
 const contextQuestionPattern = /(?:刚刚|刚才|前面|上面|之前|上下文|聊天记录|谁说的|在聊什么|什么情况|咋回事|怎么回事)/i;
 const questionShapePattern = /(?:怎么|咋|为什么|如何|能不能|可以吗|有没有|是不是|对不对|哪[个些]|多少|咋修|怎么修|怎么弄|咋弄|吗|嘛|么)|[?？]$/i;
 const defaultOpenRouterBaseUrl = "https://openrouter.ai/api/v1";
+const defaultOpenRouterJudgeModel = "nousresearch/hermes-3-llama-3.1-405b:free";
+const proactiveJudgeFinalMinInterest = 20;
+const defaultJudgeEveryMessages = 20;
 
 const likedTopicRules = [
   {
@@ -46,10 +49,15 @@ export async function shouldProactivelyReplyToQq(event = {}, state = {}, helpers
     return { ok: false, reason: "explicit mention is handled by mention-only route" };
   }
 
-  const minIntervalMs = Number(state.proactive.minIntervalMs || 180000);
-  const lastAt = Number(state.proactive.lastGroupReplyAt?.[event.groupId] || 0);
-  if (lastAt && Date.now() - lastAt < minIntervalMs) {
-    return { ok: false, reason: "proactive cooldown" };
+  const judgeEveryMessages = normalizeJudgeEveryMessages(state.proactive?.judgeEveryMessages);
+  const currentCount = incrementProactiveMessageCount(state.proactive, event.groupId);
+  if (currentCount % judgeEveryMessages !== 0) {
+    return {
+      ok: false,
+      reason: "waiting for proactive judge message interval",
+      messageCount: currentCount,
+      judgeEveryMessages
+    };
   }
 
   const text = helpers.stripMentionText ? helpers.stripMentionText(event.text || "") : String(event.text || "");
@@ -58,73 +66,38 @@ export async function shouldProactivelyReplyToQq(event = {}, state = {}, helpers
     ownerUserIds: state.ownerUserIds || []
   });
 
-  if (assessment.blocked) {
-    return { ok: false, reason: assessment.reason, interestScore: assessment.score, interest: assessment };
-  }
-
-  const judgeConfig = normalizeJudgeConfig(state.proactive?.judge);
-  if (judgeConfig.enabled) {
-    if (!isModelJudgeCandidate(assessment, judgeConfig)) {
-      return {
-        ok: false,
-        reason: "below model judge prefilter",
-        interestScore: assessment.score,
-        interest: assessment,
-        modelJudgeSkipped: true
-      };
-    }
-    const judge = await judgeProactiveInterestWithOpenRouter(event, assessment, {
-      ...judgeConfig,
-      apiKey: helpers.openRouterApiKey || "",
-      recentMessages: helpers.recentMessages || [],
-      assistantName: helpers.assistantName || "assistant",
-      ownerLabel: helpers.ownerLabel || "主人"
-    });
-    if (judge.ok && judge.shouldReply && judge.interest >= judgeConfig.minInterest) {
-      return buildDecision("model interested", assessment, judge);
-    }
-    if (!judge.ok && judge.fallback) {
-      const fallback = decideByRules(assessment);
-      return {
-        ...fallback,
-        reason: fallback.ok ? `rule fallback after judge failure: ${fallback.reason}` : `model judge failed: ${judge.reason || judge.error || "unknown error"}`,
-        modelJudge: judge
-      };
-    }
+  const judgeConfig = normalizeJudgeConfig({
+    ...(state.proactive?.judge || {}),
+    judgeEveryMessages
+  });
+  if (!judgeConfig.enabled) {
     return {
       ok: false,
-      reason: judge.ok ? "model declined proactive reply" : `model judge failed: ${judge.reason || judge.error || "unknown error"}`,
+      reason: "model judge disabled",
+      messageCount: currentCount,
+      judgeEveryMessages,
       interestScore: assessment.score,
-      interest: assessment,
-      modelJudge: judge
+      interest: assessment
     };
   }
-
-  return decideByRules(assessment);
-}
-
-function decideByRules(assessment) {
-  if (assessment.directness >= 7 && assessment.score >= 7) {
-    return buildDecision("direct bot invitation", assessment);
+  const judge = await judgeProactiveInterestWithOpenRouter(event, assessment, {
+    ...judgeConfig,
+    apiKey: helpers.openRouterApiKey || "",
+    recentMessages: helpers.recentMessages || [],
+    assistantName: helpers.assistantName || "assistant",
+    ownerLabel: helpers.ownerLabel || "主人"
+  });
+  if (judge.ok && judge.shouldReply && judge.interest >= judgeConfig.minInterest) {
+    return buildDecision("model final decision", assessment, judge, { messageCount: currentCount, judgeEveryMessages });
   }
-
-  if (assessment.likedTopicScore >= 6 && assessment.score >= 10) {
-    return buildDecision("liked topic matched", assessment);
-  }
-
-  if (assessment.likedTopicScore >= 6 && assessment.hasQuestionShape && assessment.score >= 7) {
-    return buildDecision("liked topic question", assessment);
-  }
-
-  if (assessment.likedTopicScore >= 5 && assessment.contextScore >= 3 && assessment.score >= 9) {
-    return buildDecision("liked topic with live context", assessment);
-  }
-
   return {
     ok: false,
-    reason: "interest score too low",
+    reason: judge.ok ? "model final decision declined proactive reply" : `model judge failed: ${judge.reason || judge.error || "unknown error"}`,
+    messageCount: currentCount,
+    judgeEveryMessages,
     interestScore: assessment.score,
-    interest: assessment
+    interest: assessment,
+    modelJudge: judge
   };
 }
 
@@ -271,7 +244,7 @@ async function judgeProactiveInterestWithOpenRouter(event, assessment, config) {
       body: JSON.stringify({
         model: config.model,
         temperature: 0.2,
-        max_tokens: 220,
+        max_tokens: 420,
         messages: buildJudgeMessages(event, assessment, config)
       }),
       signal: controller.signal
@@ -320,10 +293,10 @@ function buildJudgeMessages(event, assessment, config) {
       role: "system",
       content: [
         "你是 QQ 群聊 bot 的主动回复判定器，只判断未被 @ 时是否值得主动插一句。",
-        "你必须非常保守：普通寒暄、水群、两个人聊天、短反应、无关生活碎碎念都不要回。",
-        "只有当前消息明显命中 bot 喜欢的话题，或在自然邀请 bot 参与时，才 shouldReply=true。",
-        "不要因为群里有人提问就默认回复；判断重点是 bot 自己是否真的感兴趣。",
-        "只输出一行 JSON，不要 Markdown，不要解释。字段：shouldReply(boolean), interest(0-100), reason(string), replyStyle(string)。"
+        "达到配置的消息间隔时，普通群消息会交给你判断；规则评分、blockers、labels 只作为参考信号，不是硬性过滤器。",
+        "你可以先做简短分析，判断上下文、当前消息是否适合 bot 自然插一句。",
+        "最后必须单独输出一行 FINAL_JSON: {\"shouldReply\":boolean,\"interest\":0-100,\"reason\":\"string\",\"replyStyle\":\"string\"}。",
+        "Hub 只读取最后的 FINAL_JSON；shouldReply 和 interest 是最终依据。不要使用 Markdown。"
       ].join("\n")
     },
     {
@@ -331,6 +304,10 @@ function buildJudgeMessages(event, assessment, config) {
       content: JSON.stringify({
         assistantName: config.assistantName,
         ownerLabel: config.ownerLabel,
+        proactiveJudgeInterval: {
+          everyMessages: config.judgeEveryMessages,
+          note: "这是本次主动判断的消息间隔配置；最终是否回复仍只看 FINAL_JSON。"
+        },
         currentMessage: {
           text: assessment.normalized,
           senderIsOwner: Boolean(event.isOwner),
@@ -355,6 +332,7 @@ function buildJudgeMessages(event, assessment, config) {
         recentMessages: recent,
         outputPolicy: {
           replyOnlyIfInterestAtLeast: config.minInterest,
+          finalResultOnly: "最后一行 FINAL_JSON 是唯一生效结果；前面的分析不会被当作结论。",
           ifReplyStyle: "短、自然、像群友顺口接话；不要解释触发规则；不要频繁叫主人；不要服务式结尾。"
         }
       })
@@ -367,7 +345,23 @@ function parseJudgeJson(content) {
     .replace(/^```(?:json)?/i, "")
     .replace(/```$/i, "")
     .trim();
-  const match = cleaned.match(/\{[\s\S]*\}/);
+  const finalLine = cleaned
+    .split(/\r?\n/)
+    .reverse()
+    .map((line) => line.trim())
+    .find((line) => /^FINAL_JSON\s*:/i.test(line));
+  if (finalLine) {
+    const finalMatch = finalLine.replace(/^FINAL_JSON\s*:/i, "").trim().match(/\{[\s\S]*\}$/);
+    if (finalMatch) {
+      try {
+        return JSON.parse(finalMatch[0]);
+      } catch {
+        return {};
+      }
+    }
+  }
+  const matches = [...cleaned.matchAll(/\{[^{}]*(?:"shouldReply"|'shouldReply')[\s\S]*?\}/g)];
+  const match = matches[matches.length - 1] || cleaned.match(/\{[\s\S]*\}/);
   if (!match) return {};
   try {
     return JSON.parse(match[0]);
@@ -376,25 +370,35 @@ function parseJudgeJson(content) {
   }
 }
 
-function isModelJudgeCandidate(assessment, config) {
-  if (assessment.blocked) return false;
-  if (assessment.directness >= 5) return true;
-  if (assessment.likedTopicScore >= 5) return true;
-  return assessment.score >= Math.max(1, Number(config.minRuleScore || 6));
-}
-
 function normalizeJudgeConfig(value = {}) {
   return {
-    enabled: value?.enabled === true,
+    enabled: value?.enabled !== false,
     provider: "openrouter",
     baseUrl: value?.baseUrl || defaultOpenRouterBaseUrl,
-    model: value?.model || "nousresearch/hermes-3-llama-3.1-405b:free",
+    model: value?.model || defaultOpenRouterJudgeModel,
     timeoutMs: Number(value?.timeoutMs || 6500),
-    minRuleScore: Number(value?.minRuleScore || 6),
-    minInterest: Number(value?.minInterest || 62),
+    minInterest: proactiveJudgeFinalMinInterest,
+    judgeEveryMessages: normalizeJudgeEveryMessages(value?.judgeEveryMessages),
     maxRecentMessages: Number(value?.maxRecentMessages || 8),
     preset: value?.preset
   };
+}
+
+function normalizeJudgeEveryMessages(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return defaultJudgeEveryMessages;
+  return Math.max(1, Math.min(1000, Math.floor(number)));
+}
+
+function incrementProactiveMessageCount(proactiveState = {}, groupId) {
+  if (!groupId) return 0;
+  if (!proactiveState.messageCountByGroupId || typeof proactiveState.messageCountByGroupId !== "object") {
+    proactiveState.messageCountByGroupId = {};
+  }
+  const key = String(groupId);
+  const next = Number(proactiveState.messageCountByGroupId[key] || 0) + 1;
+  proactiveState.messageCountByGroupId[key] = next;
+  return next;
 }
 
 function normalizePreset(value = {}) {
@@ -427,7 +431,7 @@ function normalizePreset(value = {}) {
   };
 }
 
-function buildDecision(reason, assessment, judge = null) {
+function buildDecision(reason, assessment, judge = null, meta = {}) {
   const topic = assessment.labels.slice(0, 3).join(" / ") || "偏好话题";
   const judgeHint = judge?.replyStyle ? `模型建议风格：${judge.replyStyle}。` : "";
   return {
@@ -435,6 +439,8 @@ function buildDecision(reason, assessment, judge = null) {
     reason,
     proactive: true,
     includeRecentContext: true,
+    messageCount: meta.messageCount,
+    judgeEveryMessages: meta.judgeEveryMessages,
     interestScore: assessment.score,
     interest: assessment,
     modelJudge: judge,

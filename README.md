@@ -159,7 +159,7 @@ Minimal example:
     },
     "proactive": {
       "enabled": false,
-      "minIntervalMs": 180000
+      "judgeEveryMessages": 20
     }
   },
   "imessage": {
@@ -307,12 +307,14 @@ Enable in `data/settings.json`:
     },
     "proactive": {
       "enabled": true,
-      "minIntervalMs": 180000,
+      "judgeEveryMessages": 20,
       "judge": {
         "enabled": true,
         "provider": "openrouter",
         "model": "nousresearch/hermes-3-llama-3.1-405b:free",
-        "minInterest": 62,
+        "minInterest": 20,
+        "timeoutMs": 6500,
+        "maxRecentMessages": 8,
         "preset": {
           "likes": ["AI, Codex, code debugging, QQ bot routing, images/stickers, safety risk checks"],
           "dislikes": ["small talk, short reactions, two-person side chats, unrelated life chatter"],
@@ -334,6 +336,18 @@ Proactive interest decisions are logged under the `interest` category. To inspec
 
 ```bash
 ncc logs --verbose --category interest
+```
+
+Owners can adjust proactive interest settings from QQ:
+
+```text
+/兴趣配置
+/兴趣 开启
+/兴趣间隔 20
+/兴趣模型 nousresearch/hermes-3-llama-3.1-405b:free
+/兴趣超时 6500
+/兴趣最近 8
+/兴趣重置
 ```
 
 Manual module path:

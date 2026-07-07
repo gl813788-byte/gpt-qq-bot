@@ -176,12 +176,15 @@ const qqEnhancerEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_ENHANCER !== "0";
 const qqMemoryLimit = Number(process.env.CODEX_REMOTE_CONTACT_QQ_MEMORY_LIMIT || 10);
 const qqGroupMemoryLimit = Number(process.env.CODEX_REMOTE_CONTACT_QQ_GROUP_MEMORY_LIMIT || 200);
 const qqProactiveReplyEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE !== "0";
-const qqProactiveMinIntervalMs = Number(process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_MIN_INTERVAL_MS || 3 * 60 * 1000);
-const qqProactiveJudgeEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE === "1";
-const qqProactiveJudgeModel = process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE_MODEL || "nousresearch/hermes-3-llama-3.1-405b:free";
+const qqProactiveJudgeEveryMessages = Math.max(1, Math.min(1000, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE_EVERY_MESSAGES || 20))));
+const qqProactiveJudgeEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE !== "0";
+const qqAccountStickersEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_ACCOUNT_STICKERS !== "0";
+const qqAccountStickerCount = Math.max(1, Number(process.env.CODEX_REMOTE_CONTACT_QQ_ACCOUNT_STICKER_COUNT || 80));
+const qqAccountStickerCacheMs = Math.max(30 * 1000, Number(process.env.CODEX_REMOTE_CONTACT_QQ_ACCOUNT_STICKER_CACHE_MS || 5 * 60 * 1000));
+const defaultQqProactiveJudgeModel = "nousresearch/hermes-3-llama-3.1-405b:free";
+const qqProactiveJudgeModel = process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE_MODEL || defaultQqProactiveJudgeModel;
 const qqProactiveJudgeTimeoutMs = Number(process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE_TIMEOUT_MS || 6500);
-const qqProactiveJudgeMinRuleScore = Number(process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE_MIN_RULE_SCORE || 6);
-const qqProactiveJudgeMinInterest = Number(process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE_MIN_INTEREST || 62);
+const qqProactiveJudgeMinInterest = 20;
 const openRouterApiKey = process.env.OPENROUTER_API_KEY || process.env.CODEX_REMOTE_CONTACT_OPENROUTER_API_KEY || "";
 const openRouterBaseUrl = process.env.OPENROUTER_BASE_URL || process.env.CODEX_REMOTE_CONTACT_OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
 const imessageMemoryLimit = Number(process.env.CODEX_REMOTE_CONTACT_IMESSAGE_MEMORY_LIMIT || 120);
@@ -209,6 +212,46 @@ const proxyShortcutName = process.env.CODEX_REMOTE_CONTACT_PROXY_TOGGLE_SHORTCUT
 const proxyConfirmTtlMs = Number(process.env.CODEX_REMOTE_CONTACT_PROXY_CONFIRM_TTL_MS || 3 * 60 * 1000);
 const imessageAttachmentSendingEnabled = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_ATTACHMENTS === "1";
 const imessageImageDelivery = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_IMAGE_DELIVERY || (imessageAttachmentSendingEnabled ? "attachment" : "photos");
+const baseBuildQqStickerCatalog = buildQqStickerCatalog;
+const baseFormatQqStickerCatalog = formatQqStickerCatalog;
+const baseResolveQqReplyMedia = resolveQqReplyMedia;
+let qqAccountStickerCatalogCache = {
+  expiresAt: 0,
+  catalog: []
+};
+
+buildQqStickerCatalog = async (stickerDir) => {
+  const [localCatalog, accountCatalog] = await Promise.all([
+    Promise.resolve(baseBuildQqStickerCatalog(stickerDir)).catch((error) => {
+      logger.warn("Unable to load local QQ sticker catalog", { error }, "qq");
+      return [];
+    }),
+    buildQqAccountStickerCatalog().catch((error) => {
+      logger.debug("Unable to load QQ account sticker catalog", { error }, "qq");
+      return [];
+    })
+  ]);
+  return mergeQqStickerCatalogs(accountCatalog, localCatalog);
+};
+
+formatQqStickerCatalog = (catalog = []) => {
+  const formatted = String(baseFormatQqStickerCatalog(catalog) || "").trim();
+  if (formatted) return formatted.replace("本地表情包库", "可用表情包库");
+  const list = Array.isArray(catalog) ? catalog : [];
+  if (!list.length) return "（可用表情包库为空）";
+  return list.slice(0, 80).map((item) => `- ${item.name}`).join("\n");
+};
+
+resolveQqReplyMedia = async (reply, options = {}) => {
+  const [baseMedia, accountMedia] = await Promise.all([
+    Promise.resolve(baseResolveQqReplyMedia(reply, options)).catch(() => []),
+    resolveQqAccountStickerMedia(reply).catch(() => [])
+  ]);
+  return uniqueQqMediaRefs([
+    ...normalizeMediaRefList(baseMedia),
+    ...normalizeMediaRefList(accountMedia)
+  ]);
+};
 // Deployment customization: set these in data/settings.json -> branding,
 // or via environment variables, to give the bot a public name and owner label.
 let assistantName = process.env.CODEX_REMOTE_CONTACT_ASSISTANT_NAME || "assistant";
@@ -286,8 +329,8 @@ const state = {
     },
     proactive: {
       enabled: qqEnhancerEnabled && qqProactiveReplyEnabled,
-      minIntervalMs: qqProactiveMinIntervalMs,
-      lastGroupReplyAt: {},
+      judgeEveryMessages: qqProactiveJudgeEveryMessages,
+      messageCountByGroupId: {},
       pendingImageRequests: {},
       judge: {
         enabled: qqProactiveJudgeEnabled,
@@ -295,7 +338,6 @@ const state = {
         model: qqProactiveJudgeModel,
         baseUrl: openRouterBaseUrl,
         timeoutMs: qqProactiveJudgeTimeoutMs,
-        minRuleScore: qqProactiveJudgeMinRuleScore,
         minInterest: qqProactiveJudgeMinInterest,
         maxRecentMessages: 8,
         apiKeyConfigured: Boolean(openRouterApiKey),
@@ -491,12 +533,15 @@ async function loadSettings() {
     }
     if (body.qq?.proactive && typeof body.qq.proactive === "object") {
       state.qq.proactive.enabled = state.qq.enhancer.enabled && body.qq.proactive.enabled !== false;
-      if (Number.isFinite(Number(body.qq.proactive.minIntervalMs))) {
-        state.qq.proactive.minIntervalMs = Math.max(0, Number(body.qq.proactive.minIntervalMs));
+      if (Number.isFinite(Number(body.qq.proactive.judgeEveryMessages))) {
+        state.qq.proactive.judgeEveryMessages = Math.max(1, Math.min(1000, Math.floor(Number(body.qq.proactive.judgeEveryMessages))));
+      }
+      if (body.qq.proactive.messageCountByGroupId && typeof body.qq.proactive.messageCountByGroupId === "object") {
+        state.qq.proactive.messageCountByGroupId = normalizeQqProactiveMessageCounts(body.qq.proactive.messageCountByGroupId);
       }
       if (body.qq.proactive.judge && typeof body.qq.proactive.judge === "object") {
         const judge = body.qq.proactive.judge;
-        state.qq.proactive.judge.enabled = judge.enabled === true;
+        state.qq.proactive.judge.enabled = judge.enabled !== false;
         if (typeof judge.model === "string" && judge.model.trim()) {
           state.qq.proactive.judge.model = judge.model.trim();
         }
@@ -506,12 +551,7 @@ async function loadSettings() {
         if (Number.isFinite(Number(judge.timeoutMs))) {
           state.qq.proactive.judge.timeoutMs = Math.max(1500, Math.min(20000, Number(judge.timeoutMs)));
         }
-        if (Number.isFinite(Number(judge.minRuleScore))) {
-          state.qq.proactive.judge.minRuleScore = Math.max(0, Math.min(50, Number(judge.minRuleScore)));
-        }
-        if (Number.isFinite(Number(judge.minInterest))) {
-          state.qq.proactive.judge.minInterest = Math.max(0, Math.min(100, Number(judge.minInterest)));
-        }
+        state.qq.proactive.judge.minInterest = 20;
         if (Number.isFinite(Number(judge.maxRecentMessages))) {
           state.qq.proactive.judge.maxRecentMessages = Math.max(1, Math.min(12, Number(judge.maxRecentMessages)));
         }
@@ -608,14 +648,14 @@ async function saveSettings() {
         },
         proactive: {
           enabled: state.qq.proactive.enabled,
-          minIntervalMs: state.qq.proactive.minIntervalMs,
+          judgeEveryMessages: state.qq.proactive.judgeEveryMessages,
+          messageCountByGroupId: state.qq.proactive.messageCountByGroupId,
           judge: {
             enabled: state.qq.proactive.judge.enabled,
             provider: state.qq.proactive.judge.provider,
             model: state.qq.proactive.judge.model,
             baseUrl: state.qq.proactive.judge.baseUrl,
             timeoutMs: state.qq.proactive.judge.timeoutMs,
-            minRuleScore: state.qq.proactive.judge.minRuleScore,
             minInterest: state.qq.proactive.judge.minInterest,
             maxRecentMessages: state.qq.proactive.judge.maxRecentMessages,
             apiKeyConfigured: Boolean(openRouterApiKey),
@@ -719,6 +759,28 @@ function normalizeQqBanExpiryMap(value) {
     if (Number.isFinite(until) && until > 0) output[id] = until;
   }
   return output;
+}
+
+function normalizeQqProactiveMessageCounts(value) {
+  const output = {};
+  for (const [rawGroupId, rawCount] of Object.entries(value || {})) {
+    const groupId = String(rawGroupId || "").trim();
+    const count = Number(rawCount);
+    if (!groupId || !Number.isFinite(count) || count < 0) continue;
+    output[groupId] = Math.floor(count);
+  }
+  return output;
+}
+
+function normalizeQqProactiveJudgeEveryMessages(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return 20;
+  return Math.max(1, Math.min(1000, Math.floor(number)));
+}
+
+function isValidOpenRouterModelId(value) {
+  const model = String(value || "").trim();
+  return Boolean(model && model.length <= 160 && /^[A-Za-z0-9][A-Za-z0-9._:/-]*$/.test(model));
 }
 
 function normalizeQqPublicMemoryEntries(entries) {
@@ -2088,6 +2150,8 @@ function logQqProactiveInterestDecision(event, decision = {}) {
     text: stripMentionText(event.text || "").slice(0, 500),
     shouldReply: Boolean(decision.ok),
     reason: decision.reason,
+    messageCount: decision.messageCount,
+    judgeEveryMessages: decision.judgeEveryMessages || state.qq.proactive.judgeEveryMessages,
     ruleScore: decision.interestScore ?? interest.score,
     directness: interest.directness,
     likedTopicScore: interest.likedTopicScore,
@@ -2115,11 +2179,6 @@ function hasUnhandledQqAudio(event) {
   return Boolean(event.hasAudioSegment)
     || /\[CQ:(?:record|voice|audio),/i.test(String(event.text || ""))
     || /\[CQ:(?:record|voice|audio),/i.test(String(event.replyContext?.text || ""));
-}
-
-function markQqProactiveCooldown(decision, event) {
-  if (!decision?.proactive || !event.groupId) return;
-  state.qq.proactive.lastGroupReplyAt[event.groupId] = Date.now();
 }
 
 function isBannedQqSender(event) {
@@ -2206,6 +2265,10 @@ async function buildQqCommandAction(event) {
 
   if (isQqCommandAllowedForEvent("config", event) && /^(详细配置|配置|config|settings|详细状态)$/i.test(compact)) {
     return { reply: buildQqOwnerConfigDetail() };
+  }
+
+  if (isQqCommandAllowedForEvent("interest", event) && isQqInterestConfigCommand(normalized, compact)) {
+    return buildQqInterestConfigAction(normalized, event);
   }
 
   if (event.isOwner) {
@@ -2354,6 +2417,7 @@ function isAllowedPublicQqCommand(normalized, compact, event) {
     || (isQqCommandAllowedForEvent("summary", event) && isPublicQqSummarizeContextCommand(normalized, compact))
     || (isQqCommandAllowedForEvent("status", event) && /^(状态|status|查看状态)$/i.test(compact))
     || (isQqCommandAllowedForEvent("config", event) && /^(详细配置|配置|config|settings|详细状态)$/i.test(compact))
+    || (isQqCommandAllowedForEvent("interest", event) && isQqInterestConfigCommand(normalized, compact))
     || (isQqCommandAllowedForEvent("shutdown", event) && /^(关闭qq|关掉qq|停止qq|切断qq|qq关闭|qq关掉)$/i.test(compact))
     || (isQqCommandAllowedForEvent("ban", event) && /^(ban|封禁|拉黑|unban|解禁|解除封禁|取消拉黑|banlist|封禁列表|ban列表)/i.test(normalized))
     || (isQqCommandAllowedForEvent("allowlist", event) && /^(白名单|群白名单|白名单列表|加群|添加群|加入群|群添加|群加入|白名单添加|添加白名单群|加入白名单群|删群|删除群|移除群|群删除|群移除|白名单删除|删除白名单群|移除白名单群)/i.test(normalized))
@@ -2387,6 +2451,86 @@ function isPublicQqSummarizeContextCommand(normalized, compact) {
     || /^(?:总结|概括|复盘|捋一下)\s*(?:最近|前文|上文|本群|群聊|私聊|聊天|聊天记录|对话)?\s*(?:上下文|内容|消息|记录)?$/i.test(normalized);
 }
 
+function isQqInterestConfigCommand(normalized, compact) {
+  return /^(兴趣|主动|兴趣配置|主动配置|主动响应配置|兴趣状态|主动状态|兴趣开关|主动开关|兴趣间隔|主动间隔|兴趣模型|主动模型|兴趣超时|主动超时|兴趣最近|主动最近|兴趣重置|主动重置|interest|proactive)(?:\s+.*)?$/i.test(normalized)
+    || /^(兴趣|主动|兴趣配置|主动配置|兴趣状态|主动状态|interest|proactive)$/i.test(compact);
+}
+
+function buildQqInterestConfigAction(normalized, event) {
+  const body = String(normalized || "").trim();
+  const compact = body.replace(/\s+/g, "").toLowerCase();
+  if (/^(兴趣|主动|兴趣配置|主动配置|兴趣状态|主动状态|interest|proactive)$/i.test(compact)) {
+    return { reply: buildQqInterestConfigDetail() };
+  }
+
+  const enableMatch = body.match(/^(?:兴趣|主动|兴趣配置|主动配置|兴趣开关|主动开关|interest|proactive)?\s*(开启|打开|启用|on|enable|关闭|关掉|停用|off|disable)$/i);
+  if (enableMatch) {
+    const enabled = /^(开启|打开|启用|on|enable)$/i.test(enableMatch[1]);
+    state.qq.proactive.enabled = state.qq.enhancer.enabled && enabled;
+    return {
+      reply: `主动兴趣判定已${state.qq.proactive.enabled ? "开启" : "关闭"}。`,
+      afterSend: saveSettings
+    };
+  }
+
+  const intervalMatch = body.match(/^(?:(?:兴趣|主动|兴趣配置|主动配置|interest|proactive)\s*)?(?:间隔|每|judgeEveryMessages)\s*([0-9]{1,4})\s*(?:条|消息)?$/i)
+    || body.match(/^(?:兴趣间隔|主动间隔)\s*([0-9]{1,4})\s*(?:条|消息)?$/i);
+  if (intervalMatch) {
+    const value = normalizeQqProactiveJudgeEveryMessages(intervalMatch[1]);
+    state.qq.proactive.judgeEveryMessages = value;
+    return {
+      reply: `主动兴趣判定间隔已改为：每 ${value} 条普通群消息判断一次。`,
+      afterSend: saveSettings
+    };
+  }
+
+  const modelMatch = body.match(/^(?:(?:兴趣|主动|兴趣配置|主动配置|interest|proactive)\s*)?(?:模型|model)\s+(\S+)$/i)
+    || body.match(/^(?:兴趣模型|主动模型)\s+(\S+)$/i);
+  if (modelMatch) {
+    const model = modelMatch[1].trim();
+    if (!isValidOpenRouterModelId(model)) {
+      return { reply: `${pickActionBeat(event)}这个兴趣判定模型名看起来不太对；示例：nousresearch/hermes-3-llama-3.1-405b:free。` };
+    }
+    state.qq.proactive.judge.model = model;
+    return {
+      reply: `主动兴趣判定模型已切换：${model}`,
+      afterSend: saveSettings
+    };
+  }
+
+  const timeoutMatch = body.match(/^(?:(?:兴趣|主动|兴趣配置|主动配置|interest|proactive)\s*)?(?:超时|timeout)\s*([0-9]{3,5})\s*(?:ms|毫秒)?$/i)
+    || body.match(/^(?:兴趣超时|主动超时)\s*([0-9]{3,5})\s*(?:ms|毫秒)?$/i);
+  if (timeoutMatch) {
+    const timeoutMs = Math.max(1500, Math.min(20000, Number(timeoutMatch[1])));
+    state.qq.proactive.judge.timeoutMs = timeoutMs;
+    return {
+      reply: `主动兴趣判定超时已改为：${timeoutMs}ms。`,
+      afterSend: saveSettings
+    };
+  }
+
+  const recentMatch = body.match(/^(?:(?:兴趣|主动|兴趣配置|主动配置|interest|proactive)\s*)?(?:最近|上下文|recent|maxRecentMessages)\s*([0-9]{1,2})\s*(?:条|消息)?$/i)
+    || body.match(/^(?:兴趣最近|主动最近)\s*([0-9]{1,2})\s*(?:条|消息)?$/i);
+  if (recentMatch) {
+    const maxRecentMessages = Math.max(1, Math.min(12, Number(recentMatch[1])));
+    state.qq.proactive.judge.maxRecentMessages = maxRecentMessages;
+    return {
+      reply: `主动兴趣判定上下文已改为：最近 ${maxRecentMessages} 条消息。`,
+      afterSend: saveSettings
+    };
+  }
+
+  if (/^(兴趣重置|主动重置|兴趣配置\s*重置|主动配置\s*重置|interest\s+reset|proactive\s+reset)$/i.test(body)) {
+    state.qq.proactive.messageCountByGroupId = {};
+    return {
+      reply: "主动兴趣判定计数已重置。",
+      afterSend: saveSettings
+    };
+  }
+
+  return { reply: buildQqInterestConfigHelp() };
+}
+
 function clearQqContextForEvent(event, { silent = false } = {}) {
   const scopeId = getQqMemoryScopeId(event);
   if (scopeId) delete state.qq.pendingReplies[scopeId];
@@ -2394,14 +2538,14 @@ function clearQqContextForEvent(event, { silent = false } = {}) {
     delete state.qq.memory.entries[event.groupId];
     delete state.qq.memory.recentMessages[event.groupId];
     delete state.qq.proactive.pendingImageRequests[event.groupId];
-    delete state.qq.proactive.lastGroupReplyAt[event.groupId];
+    delete state.qq.proactive.messageCountByGroupId[event.groupId];
     return silent ? "" : "已开启新对话。";
   }
   state.qq.memory.entries = {};
   state.qq.memory.recentMessages = {};
   state.qq.pendingReplies = {};
   state.qq.proactive.pendingImageRequests = {};
-  state.qq.proactive.lastGroupReplyAt = {};
+  state.qq.proactive.messageCountByGroupId = {};
   return silent ? "" : "已开启新对话。";
 }
 
@@ -2417,7 +2561,7 @@ function isProtectedQqOwnerTarget(targetId) {
 }
 
 function isOwnerOnlyQqCommand(normalized, compact) {
-  return /^(菜单权限|权限菜单|公开指令|指令权限|允许指令|开放指令|启用指令|禁用指令|关闭指令|禁止指令|状态|status|查看状态|详细配置|配置|config|settings|详细状态|ban|unban|封禁|拉黑|解禁|解除封禁|取消拉黑|banlist|封禁列表|ban列表|关闭qq|关掉qq|停止qq|切断qq|qq关闭|qq关掉|白名单|群白名单|白名单列表|加群|添加群|加入群|群添加|群加入|白名单添加|添加白名单群|加入白名单群|删群|删除群|移除群|群删除|群移除|白名单删除|删除白名单群|移除白名单群|模型|qq模型|切模型|切换模型|智能等级|智能|思考强度|qq智能等级|qq智能|qq思考强度)/i.test(normalized)
+  return /^(菜单权限|权限菜单|公开指令|指令权限|允许指令|开放指令|启用指令|禁用指令|关闭指令|禁止指令|状态|status|查看状态|详细配置|配置|config|settings|详细状态|兴趣|主动|兴趣配置|主动配置|主动响应配置|兴趣状态|主动状态|兴趣开关|主动开关|兴趣间隔|主动间隔|兴趣模型|主动模型|兴趣超时|主动超时|兴趣最近|主动最近|兴趣重置|主动重置|interest|proactive|ban|unban|封禁|拉黑|解禁|解除封禁|取消拉黑|banlist|封禁列表|ban列表|关闭qq|关掉qq|停止qq|切断qq|qq关闭|qq关掉|白名单|群白名单|白名单列表|加群|添加群|加入群|群添加|群加入|白名单添加|添加白名单群|加入白名单群|删群|删除群|移除群|群删除|群移除|白名单删除|删除白名单群|移除白名单群|模型|qq模型|切模型|切换模型|智能等级|智能|思考强度|qq智能等级|qq智能|qq思考强度)/i.test(normalized)
     || /^(5|5\.5|5\.4|5\.4mini|5\.4-mini|mini|5\.3|5\.3codex|5\.3-codex|codex)$/i.test(compact);
 }
 
@@ -2543,7 +2687,8 @@ function buildQqOwnerConfigDetail() {
     `白名单群：${state.qq.allowedGroups.length ? state.qq.allowedGroups.join(", ") : "无"}`,
     `ban 用户：${state.qq.bannedUserIds.length ? state.qq.bannedUserIds.map((id) => formatQqBanListEntry(id)).join(", ") : "无"}`,
     `QQ enhancer：${state.qq.enhancer.enabled ? "开启" : "关闭"}`,
-    `主动响应：${state.qq.proactive.enabled ? "开启" : "关闭"}，间隔 ${Math.round(state.qq.proactive.minIntervalMs / 1000)} 秒`,
+    `主动响应：${state.qq.proactive.enabled ? "开启" : "关闭"}，每 ${state.qq.proactive.judgeEveryMessages} 条普通群消息交给模型判断，最终阈值 ${state.qq.proactive.judge.minInterest}`,
+    `主动判定模型：${state.qq.proactive.judge.model}，Key：${state.qq.proactive.judge.apiKeyConfigured ? "已配置" : "未配置"}，超时 ${state.qq.proactive.judge.timeoutMs}ms`,
     `联网查询：${state.qq.webLookup.enabled ? "开启" : "关闭"}`,
     `主人文件/图片任务：${qqOwnerFileImageTasksEnabled ? "开启" : "关闭"}`,
     `公共长期记忆：${state.qq.publicMemory.entries.length} / ${state.qq.publicMemory.maxEntries}`,
@@ -2551,6 +2696,38 @@ function buildQqOwnerConfigDetail() {
     `最近消息群数：${Object.keys(state.qq.memory.recentMessages).length}`,
     `待看图请求：${Object.keys(state.qq.proactive.pendingImageRequests).length}`,
     `最近事件：${state.qq.events.length}`
+  ].join("\n");
+}
+
+function buildQqInterestConfigDetail() {
+  const counts = Object.entries(state.qq.proactive.messageCountByGroupId || {})
+    .map(([groupId, count]) => `${groupId}:${count}`)
+    .join(", ");
+  return [
+    "主动兴趣配置",
+    `主动响应：${state.qq.proactive.enabled ? "开启" : "关闭"}`,
+    `判断间隔：每 ${state.qq.proactive.judgeEveryMessages} 条普通群消息`,
+    `判定模型：${state.qq.proactive.judge.model}`,
+    `OpenRouter Key：${state.qq.proactive.judge.apiKeyConfigured ? "已配置" : "未配置"}`,
+    `超时：${state.qq.proactive.judge.timeoutMs}ms`,
+    `上下文：最近 ${state.qq.proactive.judge.maxRecentMessages} 条`,
+    `最终阈值：${state.qq.proactive.judge.minInterest}`,
+    `当前计数：${counts || "无"}`,
+    "",
+    buildQqInterestConfigHelp()
+  ].join("\n");
+}
+
+function buildQqInterestConfigHelp() {
+  return [
+    "可用命令：",
+    "/兴趣配置",
+    "/兴趣 开启 或 /兴趣 关闭",
+    "/兴趣间隔 20",
+    "/兴趣模型 nousresearch/hermes-3-llama-3.1-405b:free",
+    "/兴趣超时 6500",
+    "/兴趣最近 8",
+    "/兴趣重置"
   ].join("\n");
 }
 
@@ -3300,7 +3477,7 @@ async function buildAssistantInstructions(event) {
     "如果你需要通过 QQ 发出本机图片，在回复中单独写一行 [[qq_image:/absolute/path/to/image.png]]。不要解释这个标记。",
     "如果用户让你画图、生成图、做海报或生成表情包，优先使用 image 2 能力生成图片，再用 [[qq_image:/absolute/path/to/image.png]] 发出。",
     "如果你需要通过 QQ 发出本机普通文件，在回复中单独写一行 [[qq_file:/absolute/path/to/file]]；需要指定发送文件名时写 [[qq_file:/absolute/path/to/file|filename.ext]]。不要解释这个标记。",
-    "如果你想发本地表情包，优先使用 [[qq_sticker:表情包名]]，表情包名必须来自提示里列出的本地表情包库；不要编造不存在的表情包名。",
+    "如果你想发表情包，优先使用 [[qq_sticker:表情包名]]，表情包名必须来自提示里列出的可用表情包库（本地或账号收藏）；不要编造不存在的表情包名。",
     formatQqBubbleInstruction(),
     "如果提示里提供了“当前聊天记录”，并且用户问某人/群里在聊什么、在干什么、刚才什么情况、评价刚刚发生的事，必须优先根据这些上下文概括回答；不要再要求用户把上一句发来。如果上下文有限，就说“看起来是在……”并基于已有内容谨慎概括。",
     `只有在管理命令、权限动作、或需要区分身份时称呼“${ownerLabel}”；普通聊天即使发送者是${ownerLabel}也优先直接回答内容。其他群友绝不使用这个称呼。`,
@@ -3546,9 +3723,9 @@ async function buildModelReply(event) {
       imagePaths.length ? `可查看的本地图片数量：${imagePaths.length}` : null,
       imagePaths.length ? "你可以查看图片内容，但回复要像群聊自然接话：不必默认逐条解析图片。只有对方明确让你看图、判断内容、评价截图/表情包，或图片是回答关键时，才说明看到的主元素、文字、构图或梗图大意；完全无法辨认主体时才说看不清。" : null,
       hasAnyQqImageReference(event) ? "" : null,
-      state.qq.enhancer.enabled ? "本地表情包库：" : null,
+      state.qq.enhancer.enabled ? "可用表情包库（本地 + 账号收藏）：" : null,
       state.qq.enhancer.enabled ? formatQqStickerCatalog(stickerCatalog) : null,
-      state.qq.enhancer.enabled && stickerCatalog.length ? "表情包库可用时，部署者可以在自定义 profile 或 QQ enhancer 包中说明何时使用 [[qq_sticker:表情包名]]；只能选择提示里真实存在的表情包名。" : null,
+      state.qq.enhancer.enabled && stickerCatalog.length ? "表情包库可用时，部署者可以在自定义 profile 或 QQ enhancer 包中说明何时使用 [[qq_sticker:表情包名]]；只能选择提示里真实存在的表情包名。账号收藏表情会以“账号表情1”这类名称列出。" : null,
       "",
       isQqPrivateEvent(event) ? "收到的 QQ 私聊：" : "收到的群消息：",
       event.queuedAggregate ? `下面是你上一轮生成期间继续收到的 ${event.queuedMessageCount || "多"} 条消息，Hub 已按“消息一/消息二/...”标注；请把它们当作连续上下文一起回应，不要逐条机械复读标签，除非需要澄清。` : null,
@@ -5146,7 +5323,6 @@ async function processQqReplyEvent(event, options = {}) {
         queued = true;
         queuedCount = Array.isArray(pending?.events) ? pending.events.length : 0;
       } else {
-        markQqProactiveCooldown(decision, event);
         reply = commandAction?.reply || await buildModelReply(event);
       }
       if (reply) reply = normalizeVisibleQqReply(reply, event);
@@ -5172,7 +5348,9 @@ async function processQqReplyEvent(event, options = {}) {
   if (record.reply && source === "onebot") {
     if (isQqPrivateEvent(event)) {
       try {
-        record.send = await sendOneBotPrivateReply(event, record.reply);
+        record.send = await sendOneBotPrivateReply(event, record.reply, {
+          singleBubble: Boolean(commandAction)
+        });
       } catch (error) {
         record.send = { ok: false, error: error.message };
       }
@@ -8252,7 +8430,7 @@ async function ensureCodexReplyWorkspace() {
       "如果被要求画图、生成图、做海报或生成表情包，优先使用 image 2 能力生成图片，再用 [[qq_image:/absolute/path/to/image.png]] 发出。",
       "如果需要通过 QQ 发普通文件，单独输出一行 [[qq_file:/absolute/path/to/file]]；需要指定发送文件名时写 [[qq_file:/absolute/path/to/file|filename.ext]]。",
       "Hub 只会发送最终回复里显式写出的 QQ 图片/文件 marker；如果某次任务给了临时工作区，待发送文件在 QQ 发送完成前不要删除，Hub 会另开清理回合让你清理。",
-      state.qq.enhancer.enabled ? "如果要发表情包，优先输出 [[qq_sticker:表情包名]]；表情包名必须来自提示里的本地表情包库。" : null,
+      state.qq.enhancer.enabled ? "如果要发表情包，优先输出 [[qq_sticker:表情包名]]；表情包名必须来自提示里的可用表情包库（本地或账号收藏）。" : null,
       formatQqBubbleInstruction(),
       "群内 /stop 是强制停止当前回复并开启新对话，不是关闭 QQ 通道；关闭通道使用 /关闭QQ。",
       "非主人看到的 /菜单 是权限过滤后的菜单，能看到的指令就代表当前允许使用。",
@@ -8265,6 +8443,17 @@ async function ensureCodexReplyWorkspace() {
 async function sendOneBotGroupReply(event, reply, options = {}) {
   if (!event.groupId) return { ok: false, reason: "Missing group id" };
   try {
+    if (options.singleBubble) {
+      const result = await sendOneBotGroupMessage(event, reply, {
+        quoteSource: isExplicitQqAtEvent(event)
+      });
+      return {
+        ok: result?.ok !== false,
+        bubbles: [String(reply || "").trim()].filter(Boolean),
+        flattened: String(reply || "").trim(),
+        results: [result]
+      };
+    }
     return await sendQqGroupBubbles({
       event,
       reply,
@@ -8309,9 +8498,18 @@ async function sendOneBotGroupMessage(event, reply, options = {}) {
   return combineOneBotSendResults(messageResult, fileResults);
 }
 
-async function sendOneBotPrivateReply(event, reply) {
+async function sendOneBotPrivateReply(event, reply, options = {}) {
   if (!event.senderId) return { ok: false, reason: "Missing user id" };
   try {
+    if (options.singleBubble) {
+      const result = await sendOneBotPrivateMessage(event, reply);
+      return {
+        ok: result?.ok !== false,
+        bubbles: [String(reply || "").trim()].filter(Boolean),
+        flattened: String(reply || "").trim(),
+        results: [result]
+      };
+    }
     const plan = buildQqSendPlan(event, reply);
     const bubbles = plan.bubbles || [];
     if (bubbles.length === 0) return { ok: true, bubbles: [], results: [] };
@@ -8376,7 +8574,7 @@ async function buildOneBotPrivateReplyMessage(reply, resolvedImagePaths = null) 
     });
   }
   for (const imagePath of imagePaths) {
-    message.push(buildQqImageSegment(imagePath));
+    message.push(buildQqMediaSegment(imagePath));
   }
   if (hasMissingImageMarker) {
     message.push({
@@ -8387,7 +8585,7 @@ async function buildOneBotPrivateReplyMessage(reply, resolvedImagePaths = null) 
   if (message.length === 0 && extractQqFileMarkers(reply).length === 0) {
     message.push({
       type: "text",
-      data: { text: "这个表情包没找到，请先把素材放进表情包库。" }
+      data: { text: "这个表情包没找到，请确认表情包名来自可用表情包库。" }
     });
   }
   return message;
@@ -8412,7 +8610,7 @@ async function buildOneBotReplyMessage(event, reply, options = {}, resolvedImage
     });
   }
   for (const imagePath of imagePaths) {
-    message.push(buildQqImageSegment(imagePath));
+    message.push(buildQqMediaSegment(imagePath));
   }
   if (hasMissingImageMarker) {
     message.push({
@@ -8423,7 +8621,7 @@ async function buildOneBotReplyMessage(event, reply, options = {}, resolvedImage
   if (!hasSendableOneBotMessage(message) && extractQqFileMarkers(reply).length === 0) {
     message.push({
       type: "text",
-      data: { text: "这个表情包没找到，请先把素材放进表情包库。" }
+      data: { text: "这个表情包没找到，请确认表情包名来自可用表情包库。" }
     });
   }
   return message;
@@ -8595,9 +8793,184 @@ function resolveQqStickerMediaPath(name, { stickerDir } = {}) {
   return candidates.filter((candidate) => candidate && candidate.length > 0);
 }
 
+async function buildQqAccountStickerCatalog() {
+  if (!qqAccountStickersEnabled) return [];
+  const now = Date.now();
+  if (qqAccountStickerCatalogCache.expiresAt > now) {
+    return qqAccountStickerCatalogCache.catalog;
+  }
+  let result;
+  try {
+    result = await callOneBotAction("fetch_custom_face", { count: qqAccountStickerCount });
+  } catch (error) {
+    qqAccountStickerCatalogCache = {
+      expiresAt: now + Math.min(60 * 1000, qqAccountStickerCacheMs),
+      catalog: []
+    };
+    throw error;
+  }
+  if (!result.ok) {
+    qqAccountStickerCatalogCache = {
+      expiresAt: now + Math.min(60 * 1000, qqAccountStickerCacheMs),
+      catalog: []
+    };
+    throw new Error(result.error || `fetch_custom_face failed with status ${result.status}`);
+  }
+  const catalog = normalizeQqAccountStickerCatalog(result.body?.data);
+  qqAccountStickerCatalogCache = {
+    expiresAt: now + qqAccountStickerCacheMs,
+    catalog
+  };
+  return catalog;
+}
+
+function normalizeQqAccountStickerCatalog(data) {
+  const rawList = Array.isArray(data) ? data : extractQqStickerLikeValues(data);
+  const catalog = [];
+  const seen = new Set();
+  for (const [index, item] of rawList.entries()) {
+    const url = extractQqStickerUrl(item);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    const label = extractQqStickerLabel(item) || `账号表情${catalog.length + 1}`;
+    catalog.push({
+      name: label,
+      url,
+      source: "account",
+      index: index + 1
+    });
+  }
+  return catalog;
+}
+
+function extractQqStickerLikeValues(value) {
+  if (Array.isArray(value)) return value;
+  if (!value || typeof value !== "object") return [];
+  const keys = [
+    "customFaceList",
+    "faceList",
+    "faces",
+    "items",
+    "list",
+    "collectionItemList"
+  ];
+  for (const key of keys) {
+    if (Array.isArray(value[key])) return value[key];
+  }
+  for (const child of Object.values(value)) {
+    const list = extractQqStickerLikeValues(child);
+    if (list.length) return list;
+  }
+  return [];
+}
+
+function extractQqStickerUrl(item) {
+  if (typeof item === "string") return isHttpUrl(item) ? item : "";
+  if (!item || typeof item !== "object") return "";
+  const direct = [
+    item.url,
+    item.src,
+    item.uri,
+    item.downloadUrl,
+    item.originalUri,
+    item.originalUrl,
+    item.thumb,
+    item.thumbnail,
+    item.imageUrl,
+    item.fileUrl
+  ].find((value) => isHttpUrl(value));
+  if (direct) return String(direct);
+  const summary = item.summary && typeof item.summary === "object" ? item.summary : {};
+  const rich = summary.richMediaSummary && typeof summary.richMediaSummary === "object" ? summary.richMediaSummary : {};
+  const richDirect = [
+    rich.originalUri,
+    rich.originalUrl,
+    ...(Array.isArray(rich.picList) ? rich.picList : [])
+  ].find((value) => isHttpUrl(value));
+  return richDirect ? String(richDirect) : "";
+}
+
+function extractQqStickerLabel(item) {
+  if (!item || typeof item !== "object") return "";
+  const summary = item.summary && typeof item.summary === "object" ? item.summary : {};
+  const rich = summary.richMediaSummary && typeof summary.richMediaSummary === "object" ? summary.richMediaSummary : {};
+  return [
+    item.name,
+    item.title,
+    item.desc,
+    item.summary,
+    item.text,
+    summary.textSummary,
+    rich.title,
+    rich.brief,
+    item.cid ? `账号表情${item.cid}` : ""
+  ]
+    .map((value) => String(value || "").trim())
+    .find((value) => value && value !== "[object Object]");
+}
+
+function mergeQqStickerCatalogs(...catalogs) {
+  const output = [];
+  const seen = new Set();
+  for (const item of catalogs.flat()) {
+    if (!item?.name) continue;
+    const key = normalizeSemanticText(item.name);
+    const url = item.url ? `url:${item.url}` : "";
+    const file = item.file ? `file:${item.file}` : "";
+    const identity = key || url || file;
+    if (!identity || seen.has(identity)) continue;
+    seen.add(identity);
+    output.push(item);
+  }
+  return output;
+}
+
+async function resolveQqAccountStickerMedia(reply) {
+  const names = [...String(reply || "").matchAll(/\[\[qq_sticker:([^\]\n]+)\]\]/g)]
+    .map((match) => match[1].trim())
+    .filter(Boolean);
+  if (!names.length) return [];
+  const catalog = await buildQqAccountStickerCatalog();
+  return names.flatMap((name) => {
+    const normalized = normalizeSemanticText(name);
+    return catalog
+      .filter((item) => item.url && (
+        normalizeSemanticText(item.name) === normalized
+        || item.name.includes(name)
+      ))
+      .map((item) => item.url);
+  });
+}
+
+function buildQqMediaSegment(mediaRef) {
+  const value = String(mediaRef || "").trim();
+  if (isHttpUrl(value)) {
+    return {
+      type: "image",
+      data: {
+        file: value,
+        url: value
+      }
+    };
+  }
+  return buildQqImageSegment(value);
+}
+
+function isHttpUrl(value) {
+  return /^https?:\/\//i.test(String(value || "").trim());
+}
+
 function normalizeMediaPathList(paths) {
   if (!Array.isArray(paths)) return [];
   return paths.map((item) => String(item || "").trim()).filter(Boolean);
+}
+
+function normalizeMediaRefList(paths) {
+  return normalizeMediaPathList(paths);
+}
+
+function uniqueQqMediaRefs(paths) {
+  return [...new Set(normalizeMediaRefList(paths))];
 }
 
 async function resolveQqReplyFiles(reply) {

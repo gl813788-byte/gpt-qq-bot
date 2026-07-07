@@ -29,6 +29,14 @@ export const qqCommandCatalog = [
   },
   { key: "status", defaultPublic: false, configurable: true, menuLine: "/状态", aliases: ["状态", "status", "查看状态"] },
   { key: "config", defaultPublic: false, configurable: true, menuLine: "/详细配置", aliases: ["详细配置", "配置", "config", "settings", "详细状态"] },
+  {
+    key: "interest",
+    defaultPublic: false,
+    configurable: true,
+    menuLine: "/兴趣配置",
+    menuLines: ["/兴趣配置", "/兴趣间隔 20", "/兴趣模型 nousresearch/hermes-3-llama-3.1-405b:free"],
+    aliases: ["兴趣", "兴趣配置", "主动配置", "兴趣间隔", "兴趣模型", "interest", "proactive"]
+  },
   { key: "model", defaultPublic: false, configurable: true, menuLine: "/模型 5.5", aliases: ["模型", "qq模型", "切模型", "切换模型", "5.5", "5.4", "mini", "codex"] },
   { key: "reasoning", defaultPublic: false, configurable: true, menuLine: "/智能等级 low|medium|high|xhigh", aliases: ["智能等级", "智能", "思考强度", "qq智能等级"] },
   {

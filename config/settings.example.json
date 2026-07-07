@@ -11,15 +11,14 @@
     },
     "proactive": {
       "enabled": false,
-      "minIntervalMs": 180000,
+      "judgeEveryMessages": 20,
       "judge": {
-        "enabled": false,
+        "enabled": true,
         "provider": "openrouter",
         "model": "nousresearch/hermes-3-llama-3.1-405b:free",
         "baseUrl": "https://openrouter.ai/api/v1",
         "timeoutMs": 6500,
-        "minRuleScore": 6,
-        "minInterest": 62,
+        "minInterest": 20,
         "maxRecentMessages": 8,
         "apiKeyConfigured": false,
         "preset": {
