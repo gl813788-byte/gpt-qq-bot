@@ -2,6 +2,8 @@ import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, join } from "node:path";
 import crypto from "node:crypto";
 
+export { evaluateQqProactiveInterest, scoreQqTextInterest, shouldProactivelyReplyToQq } from "./proactive-interest.js";
+
 const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 
 export function buildQqChatStyleInstructions(event = {}) {
@@ -10,7 +12,14 @@ export function buildQqChatStyleInstructions(event = {}) {
     "- 回复尽量短，像群里自然接话；别写客服式长段落、总结标题或免责声明。",
     "- 不要复读群友昵称，不要解释自己是 AI，不要主动暴露后台工具或内部标记。",
     "- 能一句话说清就一句话；需要解释时先给结论，再补关键理由。",
-    "- 对主人可以自然亲近一点，称呼用“主人”；对其他群友正常聊天，不套用这个称呼。",
+    "- 对主人可以自然亲近一点，但不要每句都叫“主人”；只有直接回应主人、管理动作或需要区分权限时再叫。",
+    "- 主动插话时不要说“我刚探头”“我醒着”“我冒泡了”“我出来了”，也不要解释自己为什么触发。",
+    "- 不要自称“群里接活的 assistant”，不要反复玩“回声壁”梗，不要用“精神抗性训练/升维”这类套话。",
+    "- 被问是不是 AI/真人时，短答“我是接在 QQ 上的 AI 助手，不是真人在逐字打字”。",
+    "- 被问为什么没 @ 还回复时，只说配置已收紧或触发误判已修，不要继续把触发规则展开讲。",
+    "- 出错或误回时不要连续道歉复读；承认一句后直接收住或给出改法。",
+    "- 不要用客服式结尾，例如“还需要我帮忙吗”“我还能继续帮你”。",
+    "- 对其他群友正常聊天，不套用主人称呼；被群友调侃时可以短促接梗，不要把气氛弄正式。",
     "- 遇到需要上下文、聊天记录、记忆或管理动作的问题，先让内部工具查清楚再答，不要硬猜。",
     "- 遇到抽象玩笑、表情包、吐槽，可以轻微接梗；不要上升到现实攻击、歧视、性骚扰或隐私威胁。",
     event?.type === "private_message" ? "- 当前是私聊，可以比群聊稍微完整一点。" : "- 当前是群聊，避免刷屏。"
@@ -20,7 +29,12 @@ export function buildQqChatStyleInstructions(event = {}) {
 export function buildQqReplyWorkspaceStyleInstructions() {
   return [
     "QQ enhancer 内置规则：少用标题和列表，默认短句；群聊接梗可以轻微吐槽，但不要攻击现实身份。",
-    "对主人称呼用“主人”；对非主人不要这么称呼。",
+    "对主人可以称呼“主人”，但不要每条都叫；普通接话优先直接回答内容。",
+    "主动回复要像被感兴趣的话题吸引后顺口插一句，不要说自己刚探头、醒着、冒泡，也不要解释触发规则。",
+    "禁用近期尴尬句式：群里接活的 assistant、回声壁、精神抗性训练、升维、我理解错触发逻辑了、后面我闭嘴。",
+    "身份问题直接说接在 QQ 上的 AI 助手；触发问题直接说已收紧配置。",
+    "少道歉，少自我说明，少服务式追问；如果不是任务型请求，回复尽量一两句结束。",
+    "避免复读群友原话和模板句；根据最近上下文接具体内容。",
     "需要上下文、记忆或管理动作时，优先使用内部工具多轮确认，再输出最终群聊回复。",
     "如果回复超过 3 句，考虑用气泡分隔符拆成多条短消息。"
   ];
@@ -58,43 +72,6 @@ export async function sendQqGroupBubbles({ event, reply, sendGroupMessage, quote
     flattened: plan.flattened,
     results
   };
-}
-
-export function scoreQqTextInterest(text, event = {}) {
-  const normalized = String(text || "").trim();
-  if (!normalized) return 0;
-  let score = 0;
-  if (event.type === "private_message" || event.type === "group_at" || event.hasSelfAtSegment) score += 8;
-  if (event.isReplyToSelf) score += 6;
-  if (event.isOwner) score += 2;
-  if (/(看|看看|看下|识别|评价|锐评|这图|图片|截图|表情包|什么意思|什么梗|查一下|搜一下|联网|搜索|最新|新闻|攻略|推荐|总结|概括|记录|记忆|状态|ban|解禁)/i.test(normalized)) score += 5;
-  if (/(刚刚|刚才|前面|上面|之前|上下文|聊天记录|谁说的|在聊什么|什么情况|咋回事|怎么回事)/i.test(normalized)) score += 4;
-  if (/(怎么|为什么|咋|能不能|可以吗|有没有|是不是|对不对|哪[个些]|多少)/i.test(normalized)) score += 2;
-  if (/[?？]$/.test(normalized)) score += 1;
-  if (normalized.length > 80) score += 1;
-  if (/\[CQ:image,/i.test(normalized) || (Array.isArray(event.images) && event.images.length > 0)) score += 2;
-  return score;
-}
-
-export function shouldProactivelyReplyToQq(event = {}, state = {}, helpers = {}) {
-  if (!event.groupId) return { ok: false, reason: "not a group message" };
-  if (!state.proactive?.enabled) return { ok: false, reason: "proactive disabled" };
-  const minIntervalMs = Number(state.proactive.minIntervalMs || 180000);
-  const lastAt = Number(state.proactive.lastGroupReplyAt?.[event.groupId] || 0);
-  if (lastAt && Date.now() - lastAt < minIntervalMs) {
-    return { ok: false, reason: "proactive cooldown" };
-  }
-  const text = helpers.stripMentionText ? helpers.stripMentionText(event.text || "") : String(event.text || "");
-  const score = scoreQqTextInterest(text, event);
-  const recent = Array.isArray(helpers.recentMessages) ? helpers.recentMessages.slice(-8) : [];
-  const ownerContext = recent.some((item) => state.ownerUserIds?.includes?.(String(item.senderId || "")));
-  if (ownerContext && score >= 4) {
-    return { ok: true, reason: "owner context plus interesting message", proactive: true, ownerContext: true };
-  }
-  if (/(bot|机器人|GPT|assistant|你怎么看|来评价|锐评一下|帮忙看|查一下|搜一下|联网查|总结一下|看记录|查记录)/i.test(text) && score >= 5) {
-    return { ok: true, reason: "implicit bot request", proactive: true };
-  }
-  return { ok: false, reason: "interest score too low" };
 }
 
 export async function buildQqStickerCatalog(stickerDir) {

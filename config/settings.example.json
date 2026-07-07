@@ -11,7 +11,39 @@
     },
     "proactive": {
       "enabled": false,
-      "minIntervalMs": 180000
+      "minIntervalMs": 180000,
+      "judge": {
+        "enabled": false,
+        "provider": "openrouter",
+        "model": "nousresearch/hermes-3-llama-3.1-405b:free",
+        "baseUrl": "https://openrouter.ai/api/v1",
+        "timeoutMs": 6500,
+        "minRuleScore": 6,
+        "minInterest": 62,
+        "maxRecentMessages": 8,
+        "apiKeyConfigured": false,
+        "preset": {
+          "name": "default",
+          "likes": [
+            "QQ bot 的触发逻辑、权限、模型、记忆、联网、白名单、主动回复",
+            "AI、Codex、编程报错、脚本、接口、部署和本机排障",
+            "图片识别、截图、表情包、梗图、生成图",
+            "诈骗、盗号、钓鱼链接、安全风险判断"
+          ],
+          "dislikes": [
+            "普通寒暄和短反应",
+            "两个人互相聊天",
+            "没有明确问 bot 的生活碎碎念",
+            "重复道歉、解释自己为什么出现"
+          ],
+          "style": [
+            "像群友自然接话，默认一句话",
+            "少叫主人，除非正在直接回应主人或管理命令",
+            "不说自己刚探头、醒着、冒泡",
+            "不做客服式结尾，不问还能不能帮忙"
+          ]
+        }
+      }
     },
     "commandPermissions": {
       "publicCommands": {

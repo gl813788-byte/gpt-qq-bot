@@ -295,7 +295,7 @@ The hub uses the built-in `src/qq-enhancer/` and `src/unified-memory/` implement
 
 ### QQ Enhancer
 
-QQ enhancer is built into `src/qq-enhancer/` and works out of the box. It provides group-chat style guidance, conservative proactive reply decisions, image extraction and preparation, local sticker catalog loading, bubble splitting, and QQ media marker handling.
+QQ enhancer is built into `src/qq-enhancer/` and works out of the box. It provides group-chat style guidance, conservative proactive reply decisions, image extraction and preparation, local sticker catalog loading, bubble splitting, and QQ media marker handling. Proactive interest routing lives in `src/qq-enhancer/proactive-interest.js`, which controls whether the bot is genuinely interested enough to reply when it was not mentioned.
 
 Enable in `data/settings.json`:
 
@@ -307,10 +307,33 @@ Enable in `data/settings.json`:
     },
     "proactive": {
       "enabled": true,
-      "minIntervalMs": 180000
+      "minIntervalMs": 180000,
+      "judge": {
+        "enabled": true,
+        "provider": "openrouter",
+        "model": "nousresearch/hermes-3-llama-3.1-405b:free",
+        "minInterest": 62,
+        "preset": {
+          "likes": ["AI, Codex, code debugging, QQ bot routing, images/stickers, safety risk checks"],
+          "dislikes": ["small talk, short reactions, two-person side chats, unrelated life chatter"],
+          "style": ["reply like a natural group member", "use one short line by default", "do not explain trigger rules"]
+        }
+      }
     }
   }
 }
+```
+
+Provide the OpenRouter key through the environment, not `data/settings.json`:
+
+```bash
+export OPENROUTER_API_KEY="sk-or-..."
+```
+
+Proactive interest decisions are logged under the `interest` category. To inspect scores, matched labels, model reasons, and suggested reply style:
+
+```bash
+ncc logs --verbose --category interest
 ```
 
 Manual module path:

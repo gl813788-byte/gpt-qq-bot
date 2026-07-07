@@ -10,6 +10,7 @@ const categoryNames = {
   imessage: "iMessage",
   web: "接口",
   search: "搜索",
+  interest: "兴趣",
   memory: "记忆",
   command: "指令"
 };
@@ -153,6 +154,7 @@ function colorFor(level, category) {
   if (level === "success") return "green";
   if (level === "debug") return "gray";
   if (category === "search") return "brightCyan";
+  if (category === "interest") return "yellow";
   if (category === "qq") return "brightBlue";
   if (category === "onebot") return "cyan";
   if (category === "codex") return "brightMagenta";
@@ -173,6 +175,7 @@ function humanMessage(message) {
     "QQ web lookup provider attempt": "搜索厂商尝试完成",
     "QQ web lookup trigger matched": "QQ 消息触发联网搜索",
     "QQ web lookup results selected": "已选择联网搜索结果",
+    "QQ proactive interest decision": "QQ 主动兴趣判定",
     "QQ message details received": "收到 QQ 消息详情",
     "OneBot message received": "收到 OneBot 消息",
     "OneBot health check succeeded": "OneBot 健康检查成功",
@@ -189,6 +192,7 @@ function formatDetails(entry, options) {
   const details = entry.details || {};
   if (!details || Object.keys(details).length === 0) return "";
   if (entry.category === "search") return formatSearchDetails(details, options);
+  if (entry.category === "interest") return formatInterestDetails(details, options);
   return formatGenericDetails(details, options);
 }
 
@@ -219,6 +223,33 @@ function formatSearchDetails(details, options) {
   return parts.join(" · ");
 }
 
+function formatInterestDetails(details, options) {
+  const parts = [];
+  pushPart(parts, "是否回复", formatDetailValue(details.shouldReply));
+  pushPart(parts, "触发原因", details.reason);
+  pushPart(parts, "规则分", details.ruleScore);
+  if (options.verbose) {
+    pushPart(parts, "直呼", details.directness);
+    pushPart(parts, "偏好", details.likedTopicScore);
+    pushPart(parts, "上下文", details.contextScore);
+    pushPart(parts, "惩罚", details.penalty);
+  }
+  if (Array.isArray(details.labels) && details.labels.length > 0) pushPart(parts, "命中", details.labels.join(", "));
+  if (Array.isArray(details.blockers) && details.blockers.length > 0) pushPart(parts, "阻断", details.blockers.join(", "));
+  if (options.verbose) {
+    pushPart(parts, "消息", details.text);
+    pushPart(parts, "模型", details.judgeModel);
+    pushPart(parts, "模型可用", formatDetailValue(details.judgeApiKeyConfigured));
+    pushPart(parts, "模型判断", details.modelShouldReply == null ? "" : formatDetailValue(details.modelShouldReply));
+    pushPart(parts, "模型兴趣", details.modelInterest);
+    pushPart(parts, "模型理由", details.modelReason);
+    pushPart(parts, "回复风格", details.modelReplyStyle);
+    pushPart(parts, "模型用时", formatMs(details.modelDurationMs));
+    pushPart(parts, "模型错误", humanError(details.modelError));
+  }
+  return parts.join(" · ");
+}
+
 function formatGenericDetails(details) {
   const parts = [];
   for (const [key, value] of Object.entries(details)) {
@@ -239,6 +270,25 @@ function detailLabel(key) {
     timeoutMs: "总超时",
     attemptTimeoutMs: "单次超时",
     resultCount: "结果数",
+    shouldReply: "是否回复",
+    ruleScore: "规则分",
+    directness: "直呼",
+    likedTopicScore: "偏好分",
+    contextScore: "上下文分",
+    penalty: "惩罚分",
+    labels: "命中标签",
+    blockers: "阻断原因",
+    judgeEnabled: "模型判定",
+    judgeProvider: "判定厂商",
+    judgeModel: "判定模型",
+    judgeApiKeyConfigured: "模型 Key",
+    modelShouldReply: "模型是否回复",
+    modelInterest: "模型兴趣",
+    modelReason: "模型理由",
+    modelReplyStyle: "回复风格",
+    modelDurationMs: "模型用时",
+    modelStatus: "模型状态",
+    modelError: "模型错误",
     results: "结果详情",
     title: "标题",
     url: "链接",
