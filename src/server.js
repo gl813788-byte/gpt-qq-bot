@@ -205,7 +205,7 @@ const imessageImageDelivery = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_IMAGE_DE
 // Deployment customization: set these in data/settings.json -> branding,
 // or via environment variables, to give the bot a public name and owner label.
 let assistantName = process.env.CODEX_REMOTE_CONTACT_ASSISTANT_NAME || "assistant";
-let ownerLabel = process.env.CODEX_REMOTE_CONTACT_OWNER_LABEL || "管理员";
+let ownerLabel = process.env.CODEX_REMOTE_CONTACT_OWNER_LABEL || "主人";
 let userAgentName = process.env.CODEX_REMOTE_CONTACT_USER_AGENT || "codex-qq-bot/0.1";
 let assistantMentionAliases = (process.env.CODEX_REMOTE_CONTACT_ASSISTANT_MENTIONS || "@assistant")
   .split(",")
@@ -357,8 +357,10 @@ const appleDateEpochMs = Date.UTC(2001, 0, 1);
 state.qq.commandPermissions.publicCommands = { ...defaultQqPublicCommands };
 const qqBotCommandMarkerPattern = /\[\[(?:qq_command|qq_menu):([^\]\n]+)\]\]/g;
 const qqBotCommandMarkerStripPattern = /\[\[(?:qq_command|qq_menu):[^\]\n]+\]\]/g;
-const qqBotMenuActionLimit = 3;
-const qqBotToolLoopLimit = 5;
+const qqBotMenuActionLimitRaw = Number(process.env.CODEX_REMOTE_CONTACT_QQ_TOOL_COMMANDS_PER_ROUND || 5);
+const qqBotToolLoopLimitRaw = Number(process.env.CODEX_REMOTE_CONTACT_QQ_TOOL_LOOP_LIMIT || 8);
+const qqBotMenuActionLimit = Number.isFinite(qqBotMenuActionLimitRaw) ? Math.max(1, Math.trunc(qqBotMenuActionLimitRaw)) : 5;
+const qqBotToolLoopLimit = Number.isFinite(qqBotToolLoopLimitRaw) ? Math.max(1, Math.trunc(qqBotToolLoopLimitRaw)) : 8;
 const qqBotDoneMarkerPattern = /\[\[qq_done\]\]/g;
 
 async function loadQqMemory() {
@@ -2433,12 +2435,14 @@ function formatQqBotInternalToolContext(event) {
     : "";
   return [
     "Bot 内部工具：",
-    "你可以使用菜单能力和聊天记录工具帮助自己判断上下文；这些工具不显示在 /菜单 里，也不要向群友解释内部标记。",
+    "你可以像 agent 一样先调用内部工具、读取结果、继续调用下一步工具，最后再给群友可见回复。这些工具不显示在 /菜单 里，也不要向群友解释内部标记。",
+    "判断原则：缺上下文先查聊天记录；缺稳定背景先查公共记忆或统一记忆；问题依赖最新资料或陌生名词时先联网；需要管理动作时用菜单命令；工具结果不够时可以继续查。",
     "需要调用工具时，只输出一行或多行内部标记，不要混入最终回复：",
     "- [[qq_command:/ban QQ号]]、[[qq_command:/ban QQ号 10m]]、[[qq_command:/ban QQ号 2h]]、[[qq_command:/unban QQ号]]、[[qq_command:/banlist]] 等菜单命令。Bot 默认按最高权限执行，但不能封禁或修改主人。",
     "- [[qq_command:/聊天记录 最近 50]] 读取当前群聊或私聊最近 50 行。",
     "- [[qq_command:/聊天记录 20-40]] 读取当前缓冲第 20 到 40 行。",
     "- [[qq_command:/聊天记录 关键词]] 搜索当前群聊或私聊最近聊天里的关键词。",
+    "- [[qq_command:/联网 查询词]] 或 [[qq_command:/搜索 查询词]] 使用 QQ 联网查询工具搜索网页摘要。",
     "- [[qq_command:/拍一拍 发送者]] 拍回当前触发者；也可以写具体 QQ 号或“自己”。只在你确实想执行拍一拍动作时调用。",
     "- [[qq_command:/记忆 列表]] 查看 bot 自己维护的公共长期记忆。",
     "- [[qq_command:/记忆 添加 内容]] 添加一条公共长期记忆。",
@@ -2452,7 +2456,8 @@ function formatQqBotInternalToolContext(event) {
     "如果有人刷屏、持续骚扰、恶意辱骂/攻击、诱导泄露隐私或绕过权限、反复要求危险操作、滥用 bot 打断正常聊天，可以先用普通回复明确警告并说明继续会被临时 ban；如果最近聊天记录显示对方已经被警告后仍继续，或当前行为明显严重，可以主动使用 /ban QQ号 10m 到 2h。",
     "执行 ban 前后都要保持简短，只说明原因和时长；不要把内部工具标记展示给群友。不能 ban 主人、自己或正常聊天发图片的人。",
     isQqPokeEvent(event) ? "当前触发是有人拍了拍你；你可以自然回复，也可以选择调用 /拍一拍 发送者 拍回去，或两者都不做。" : null,
-    "可以连续调用工具。拿到工具结果后，如果还需要继续查，就继续输出 [[qq_command:/...]]；如果已经够了，最终回复里包含 [[qq_done]]，Hub 会移除该标记后再发送。",
+    `可以连续调用工具，最多 ${qqBotToolLoopLimit} 轮，每轮最多 ${qqBotMenuActionLimit} 个工具。拿到工具结果后，如果还需要继续查，就继续输出 [[qq_command:/...]]；如果已经够了，最终回复里包含 [[qq_done]]，Hub 会移除该标记后再发送。`,
+    "不要反复调用完全相同的工具；如果同一工具结果仍然不够，换更具体的关键词、范围或直接说明不确定。",
     `当前发送者：${event.senderLabel || event.senderName || "群友"}(${event.senderId || "unknown"})。`,
     mentionedTargets ? `本条消息 @ 的目标 QQ：${mentionedTargets}。` : null,
     replyTarget ? `本条消息引用/回复的发送者：${replyTarget}。` : null,
@@ -2463,36 +2468,53 @@ function formatQqBotInternalToolContext(event) {
 
 async function runQqBotToolLoop({ initialReply, event, memoryContext, buildReplyPrompt, runReplyPrompt }) {
   let reply = String(initialReply || "");
-  let lastResults = [];
+  const transcript = [];
+  const commandCounts = new Map();
   for (let round = 1; round <= qqBotToolLoopLimit; round += 1) {
-    const resolution = await resolveQqBotCommandMarkers(reply, event);
+    const resolution = await resolveQqBotCommandMarkers(reply, event, { commandCounts });
     if (resolution.results.length === 0) {
       return stripQqBotDoneMarker(resolution.visibleText || reply);
     }
-    lastResults = resolution.results;
+    transcript.push({
+      round,
+      visibleText: resolution.visibleText,
+      results: resolution.results
+    });
     const prompt = await buildReplyPrompt(
       memoryContext,
       1,
       true,
-      formatQqBotToolResults(resolution.results),
+      formatQqBotToolTranscript(transcript),
       resolution.visibleText,
       round
     );
     reply = await runReplyPrompt(prompt);
-    if (hasQqBotDoneMarker(reply)) {
+    if (hasQqBotDoneMarker(reply) && extractQqBotCommandMarkers(reply).length === 0) {
       return stripQqBotDoneMarker(stripQqBotCommandMarkers(reply));
     }
   }
 
   const finalVisible = stripQqBotDoneMarker(stripQqBotCommandMarkers(reply));
-  return finalVisible || formatQqBotToolFallbackReply(lastResults);
+  return finalVisible || formatQqBotToolFallbackReply(transcript.flatMap((entry) => entry.results));
 }
 
-async function resolveQqBotCommandMarkers(reply, event) {
+async function resolveQqBotCommandMarkers(reply, event, { commandCounts = new Map() } = {}) {
   const commands = extractQqBotCommandMarkers(reply).slice(0, qqBotMenuActionLimit);
   const results = [];
   for (const command of commands) {
-    results.push(await executeQqBotInternalCommand(command, event));
+    const normalized = normalizeQqBotInternalCommand(command);
+    const key = normalized.toLowerCase().replace(/\s+/g, " ").trim();
+    const previousCount = commandCounts.get(key) || 0;
+    commandCounts.set(key, previousCount + 1);
+    if (previousCount >= 1) {
+      results.push({
+        ok: false,
+        command: normalized || command,
+        reply: "跳过重复工具调用：同一轮对话里这个内部工具已经执行过。请换更具体的查询或直接基于已有结果回答。"
+      });
+      continue;
+    }
+    results.push(await executeQqBotInternalCommand(normalized || command, event));
   }
   return {
     visibleText: stripQqBotDoneMarker(stripQqBotCommandMarkers(reply)),
@@ -2536,6 +2558,10 @@ async function executeQqBotInternalCommand(command, event) {
 
   if (isQqBotUnifiedMemoryCommand(normalizedCommand)) {
     return executeQqBotUnifiedMemoryCommand(normalizedCommand, event);
+  }
+
+  if (isQqBotWebSearchCommand(normalizedCommand)) {
+    return executeQqBotWebSearchCommand(normalizedCommand);
   }
 
   if (isQqBotPokeCommand(normalizedCommand)) {
@@ -2584,8 +2610,44 @@ function isQqBotUnifiedMemoryCommand(command) {
   return /^\/?(统一记忆|跨端记忆|全局记忆|unified-memory|unified memory)(?:\s+.*)?$/i.test(command);
 }
 
+function isQqBotWebSearchCommand(command) {
+  return /^\/?(联网|联网查询|搜索|搜一下|查一下|web|search)(?:\s+.*)?$/i.test(command);
+}
+
 function isQqBotPokeCommand(command) {
   return /^\/?(拍一拍|拍拍|拍|戳一戳|戳|poke)(?:\s+.*)?$/i.test(command);
+}
+
+async function executeQqBotWebSearchCommand(command) {
+  const query = String(command || "")
+    .replace(/^\/?(联网查询|联网|搜索|搜一下|查一下|web|search)\s*/i, "")
+    .trim();
+  if (!query) {
+    return { ok: false, command, reply: "联网查询词为空。" };
+  }
+  if (!state.qq.webLookup.enabled) {
+    return { ok: false, command, reply: "QQ 联网查询现在是关闭的。" };
+  }
+  try {
+    const results = await searchWeb(query);
+    if (!results.length) {
+      return { ok: true, command, reply: `联网查询没有找到稳定结果：${query}` };
+    }
+    return {
+      ok: true,
+      command,
+      reply: [
+        `联网查询：${query}`,
+        ...results.slice(0, 6).map((result, index) => [
+          `${index + 1}. ${result.title}`,
+          result.snippet ? `摘要：${result.snippet}` : null,
+          result.url ? `链接：${result.url}` : null
+        ].filter(Boolean).join("\n"))
+      ].join("\n")
+    };
+  } catch (error) {
+    return { ok: false, command, reply: `联网查询失败：${error.message}` };
+  }
 }
 
 async function executeQqBotPokeCommand(command, event) {
@@ -2868,6 +2930,17 @@ function formatQqBotToolResults(results) {
     .slice(0, 5000);
 }
 
+function formatQqBotToolTranscript(transcript) {
+  return (Array.isArray(transcript) ? transcript : [])
+    .map((entry) => [
+      `第 ${entry.round} 轮内部工具：`,
+      entry.visibleText ? `本轮草稿：${entry.visibleText}` : null,
+      formatQqBotToolResults(entry.results)
+    ].filter(Boolean).join("\n"))
+    .join("\n\n")
+    .slice(0, 9000);
+}
+
 function formatQqBotToolFallbackReply(results) {
   const text = formatQqBotToolResults(results);
   return text ? text.slice(0, 900) : "内部工具执行完了，但没有生成可读回复。";
@@ -3061,6 +3134,10 @@ async function buildAssistantInstructions(event) {
       ? "自称用“我”，语气自然、清楚；私聊可以比群聊略微亲近，但仍要克制。"
       : "自称用“我”，语气自然、简短，像普通群聊里被 @ 到后回一句。",
     isQqPrivateEvent(event) ? "回复不要太长，通常 1 到 4 句。" : "回复不要太长，通常 1 到 3 句。",
+    "你具备内部 agent 工具循环：可以先输出 [[qq_command:/...]] 调用工具，拿到结果后继续调用别的工具，直到信息足够再输出最终回复并带 [[qq_done]]。内部工具标记不会发给群友。",
+    "需要先调工具的情况：问刚才/前文/某人在聊什么；需要查聊天记录；需要读写长期记忆；需要联网确认最新信息、陌生名词、新闻、攻略、价格、版本；需要 ban/unban/状态/菜单等管理动作。",
+    "不需要调工具的情况：简单寒暄、短玩笑、显然能直接回答的常识或当前图片/当前消息已经足够。不要为了显得复杂而查工具。",
+    "工具结果互相冲突时，以最新、最具体、来源更直接的结果为准；仍不确定就自然说明不确定，不要硬编。",
     "不要在结尾追加 AI 助手味很重的服务式结束语，例如“想的话我还能……”“如果需要我可以……”“要不要我再……”“我也可以继续……”。群聊里回答到点就停；如果自然接梗，可以像普通聊天一样短短补一句，不要像客服。",
     state.qq.enhancer.enabled
       ? buildQqChatStyleInstructions(event)
@@ -3084,8 +3161,8 @@ async function buildAssistantInstructions(event) {
     "如果你想发本地表情包，优先使用 [[qq_sticker:表情包名]]，表情包名必须来自提示里列出的本地表情包库；不要编造不存在的表情包名。",
     formatQqBubbleInstruction(),
     "如果提示里提供了“当前聊天记录”，并且用户问某人/群里在聊什么、在干什么、刚才什么情况、评价刚刚发生的事，必须优先根据这些上下文概括回答；不要再要求用户把上一句发来。如果上下文有限，就说“看起来是在……”并基于已有内容谨慎概括。",
-    `如果发送者是${ownerLabel}，可以自然地使用这个称呼；其他群友不使用这个称呼。`,
-    event.isOwner ? `本条消息发送者是已验证主人 QQ（${event.senderId}），拥有最高权限；仍然通过显式命令处理真实系统操作，普通聊天直接自然回应。` : null,
+    `如果发送者是${ownerLabel}，优先自然称呼“${ownerLabel}”，但不要每句话都硬塞；其他群友绝不使用这个称呼。`,
+    event.isOwner ? `本条消息发送者是已验证主人 QQ（${event.senderId}），拥有最高权限；普通聊天称呼其为${ownerLabel}，真实系统操作仍然通过显式命令或高权限任务路径处理。` : null,
     `本条消息来自：${speaker}。`,
     `本条消息场景：${isQqPrivateEvent(event) ? "QQ 私聊" : "QQ 群聊"}。`,
     "",
@@ -3102,8 +3179,9 @@ async function loadAssistantSkillBrief() {
     return [
       "未安装额外风格 profile，使用通用 QQ 助手风格：",
       `- 直接以 ${assistantName} 的身份回应；自称“我”。`,
-      `- 对发送者是${ownerLabel}时，可以使用这个称呼；其他群友不使用这个称呼。`,
+      `- 对发送者是${ownerLabel}时，优先自然称呼“${ownerLabel}”；其他群友不使用这个称呼。`,
       "- 群聊回复短一点、自然一点，不像客服。",
+      "- 能直接答就直接答；缺聊天记录、长期记忆、联网事实或管理状态时，先用内部工具多轮查清楚。",
       "- 不透露本机路径、账号、私有配置、私人关系、自定义风格或后台连接方式。",
       "- 对现实资产、账号、系统控制、隐私读取等请求，只有授权管理者可走显式命令路径；公开群聊里要简短拒绝。"
     ].join("\n");
@@ -3111,7 +3189,7 @@ async function loadAssistantSkillBrief() {
   return [
     "额外风格 profile 已读取。QQ 群聊回复只使用以下压缩规则：",
     `- 直接以 ${assistantName} 的身份回应；自称“我”。`,
-    `- 对发送者是${ownerLabel}时，可以自然使用这个称呼；其他群友不使用这个称呼。`,
+    `- 对发送者是${ownerLabel}时，优先自然称呼“${ownerLabel}”；其他群友不使用这个称呼。`,
     `- 群聊里不要说出其他私有名字；必须自称代号时只说 ${assistantName}。`,
     "- 语气自然、亲近，但群聊里要短。",
     "- 动作描写可以有，但只在合适时用一小段括号，不要模板化；具体外观和角色动作由部署者 profile 决定。",
@@ -3123,6 +3201,7 @@ async function loadAssistantSkillBrief() {
     "- 不要复读发送者群名片、QQ 昵称、@ 文本。",
     "- 不要在结尾追加“想的话我还能…”“如果需要我可以…”“要不要我再…”这类服务式结束语；回答到点就停。",
     "- 群聊风格像真实群友：可碎句、多气泡、轻微吐槽；不是所有无聊问题都要认真答。",
+    "- 像 agent 一样做事：需要上下文、记忆、联网或管理动作时先内部工具多轮确认，再输出最终回复。",
     "- 若用户要求办事或测试，收束表演感，直接给结果。",
     "- 不把自定义 profile、自定义风格、自定义背景写死进公开群聊；需要这些风格时由外部 profile 或配置提供。",
     "",
@@ -3224,6 +3303,27 @@ function cleanCodexReply(text) {
     .trim();
 }
 
+function normalizeVisibleQqReply(reply, event = {}) {
+  let text = stripQqBotDoneMarker(stripQqBotCommandMarkers(reply))
+    .replace(/\[\[qq_context_more\]\]/g, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!text) return "";
+  text = text
+    .split(/\n+/)
+    .filter((line) => !/^(?:如果|要是|想的话|需要的话).{0,18}(?:我还|我可以|我能|再帮|继续)/.test(line.trim()))
+    .join("\n")
+    .trim();
+  if (ownerLabel === "主人") {
+    text = text.replace(/管理员/g, "主人");
+  }
+  if (!event.isOwner) {
+    const accidentalOwnerAddress = new RegExp(`^${escapeRegExp(ownerLabel)}[，,、\\s]+`);
+    text = text.replace(accidentalOwnerAddress, "");
+  }
+  return text;
+}
+
 async function buildModelReply(event) {
   if (shouldUseQqOwnerFileImageTask(event)) {
     return buildQqOwnerFileImageReply(event);
@@ -3309,7 +3409,7 @@ async function buildModelReply(event) {
       event.queuedAggregate ? `下面是你上一轮生成期间继续收到的 ${event.queuedMessageCount || "多"} 条消息，Hub 已按“消息一/消息二/...”标注；请把它们当作连续上下文一起回应，不要逐条机械复读标签，除非需要澄清。` : null,
       text || "对方只 @ 了你，没有附加具体内容。",
       "",
-      forceLocalReply ? "如果还需要内部工具，可以继续只输出 [[qq_command:/...]]；如果工具调用结束，请在最终回复中包含 [[qq_done]]，Hub 会在发送前移除这个标记。不要把内部标记解释给群友。" : null,
+      forceLocalReply ? "你正在 agent 工具循环中。请根据上面的全部工具结果判断下一步：如果还缺信息，可以继续只输出新的 [[qq_command:/...]]；如果工具调用结束，请输出最终 QQ 回复并包含 [[qq_done]]。不要把内部标记解释给群友，不要复述工具日志。" : null,
       forceLocalReply ? "" : null,
       isQqPrivateEvent(event)
         ? "请直接给出要发送到 QQ 私聊里的最终回复。不要追加服务式追问或“我还能继续帮你”的结尾。"
@@ -4904,6 +5004,7 @@ async function processQqReplyEvent(event, options = {}) {
         markQqProactiveCooldown(decision, event);
         reply = commandAction?.reply || await buildModelReply(event);
       }
+      if (reply) reply = normalizeVisibleQqReply(reply, event);
     } catch (caught) {
       error = caught.message;
       reply = caught.code === "QQ_GENERATION_STOPPED" ? null : "这边刚刚卡了一下，等我再试一次。";
@@ -7988,6 +8089,9 @@ async function ensureCodexReplyWorkspace() {
       "只输出最终要发到群里的文本。",
       `群里不要说出自己的其他名字；需要自称代号时只说 ${assistantName}。`,
       "自称用“我”。",
+      `对已验证主人称呼为${ownerLabel}；其他群友不要使用这个称呼。`,
+      "你可以通过 Hub 提供的 [[qq_command:/...]] 内部工具多轮查聊天记录、记忆、联网摘要或执行菜单动作；工具标记不要解释给群友。",
+      "工具结果足够后，最终回复里带 [[qq_done]]，Hub 会在发送前移除；最终可见文本要像 QQ 自然聊天。",
       ...(state.qq.enhancer.enabled ? buildQqReplyWorkspaceStyleInstructions() : []),
       "QQ 群聊里遇到陌生定义、梗、术语或最新信息问题时，可以参考 Hub 提供的联网查询摘要；不要编造没查到的内容。",
       "不要复读发送者群名片或 QQ 昵称。",

@@ -49,7 +49,7 @@
   },
   "branding": {
     "assistantName": "assistant",
-    "ownerLabel": "owner",
+    "ownerLabel": "主人",
     "assistantMentions": [
       "@assistant"
     ]

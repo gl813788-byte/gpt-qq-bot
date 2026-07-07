@@ -7,9 +7,11 @@ const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 export function buildQqChatStyleInstructions(event = {}) {
   return [
     "QQ 群聊风格：",
-    "- 回复尽量短，像群里自然接话，不要写客服式长段落。",
-    "- 不要复读群友昵称，不要解释自己是 AI，不要主动暴露后台工具。",
-    "- 能一句话说清就一句话；需要解释时也先给结论。",
+    "- 回复尽量短，像群里自然接话；别写客服式长段落、总结标题或免责声明。",
+    "- 不要复读群友昵称，不要解释自己是 AI，不要主动暴露后台工具或内部标记。",
+    "- 能一句话说清就一句话；需要解释时先给结论，再补关键理由。",
+    "- 对主人可以自然亲近一点，称呼用“主人”；对其他群友正常聊天，不套用这个称呼。",
+    "- 遇到需要上下文、聊天记录、记忆或管理动作的问题，先让内部工具查清楚再答，不要硬猜。",
     "- 遇到抽象玩笑、表情包、吐槽，可以轻微接梗；不要上升到现实攻击、歧视、性骚扰或隐私威胁。",
     event?.type === "private_message" ? "- 当前是私聊，可以比群聊稍微完整一点。" : "- 当前是群聊，避免刷屏。"
   ].join("\n");
@@ -18,6 +20,8 @@ export function buildQqChatStyleInstructions(event = {}) {
 export function buildQqReplyWorkspaceStyleInstructions() {
   return [
     "QQ enhancer 内置规则：少用标题和列表，默认短句；群聊接梗可以轻微吐槽，但不要攻击现实身份。",
+    "对主人称呼用“主人”；对非主人不要这么称呼。",
+    "需要上下文、记忆或管理动作时，优先使用内部工具多轮确认，再输出最终群聊回复。",
     "如果回复超过 3 句，考虑用气泡分隔符拆成多条短消息。"
   ];
 }
@@ -62,7 +66,9 @@ export function scoreQqTextInterest(text, event = {}) {
   let score = 0;
   if (event.type === "private_message" || event.type === "group_at" || event.hasSelfAtSegment) score += 8;
   if (event.isReplyToSelf) score += 6;
-  if (/(看|看看|看下|识别|评价|锐评|这图|图片|截图|表情包|什么意思|什么梗|查一下|搜一下|最新|新闻|攻略|推荐)/i.test(normalized)) score += 5;
+  if (event.isOwner) score += 2;
+  if (/(看|看看|看下|识别|评价|锐评|这图|图片|截图|表情包|什么意思|什么梗|查一下|搜一下|联网|搜索|最新|新闻|攻略|推荐|总结|概括|记录|记忆|状态|ban|解禁)/i.test(normalized)) score += 5;
+  if (/(刚刚|刚才|前面|上面|之前|上下文|聊天记录|谁说的|在聊什么|什么情况|咋回事|怎么回事)/i.test(normalized)) score += 4;
   if (/(怎么|为什么|咋|能不能|可以吗|有没有|是不是|对不对|哪[个些]|多少)/i.test(normalized)) score += 2;
   if (/[?？]$/.test(normalized)) score += 1;
   if (normalized.length > 80) score += 1;
@@ -85,7 +91,7 @@ export function shouldProactivelyReplyToQq(event = {}, state = {}, helpers = {})
   if (ownerContext && score >= 4) {
     return { ok: true, reason: "owner context plus interesting message", proactive: true, ownerContext: true };
   }
-  if (/(bot|机器人|GPT|assistant|你怎么看|来评价|锐评一下|帮忙看|查一下|搜一下)/i.test(text) && score >= 5) {
+  if (/(bot|机器人|GPT|assistant|你怎么看|来评价|锐评一下|帮忙看|查一下|搜一下|联网查|总结一下|看记录|查记录)/i.test(text) && score >= 5) {
     return { ok: true, reason: "implicit bot request", proactive: true };
   }
   return { ok: false, reason: "interest score too low" };

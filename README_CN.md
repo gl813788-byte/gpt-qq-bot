@@ -173,7 +173,7 @@ open -e "$PROJECT_DIR/data/settings.json"
   },
   "branding": {
     "assistantName": "assistant",
-    "ownerLabel": "owner",
+    "ownerLabel": "主人",
     "assistantMentions": ["@assistant"]
   }
 }
@@ -321,8 +321,12 @@ export CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE="/absolute/path/to/qq-enhancer/sr
 
 ### Unified Memory
 
-统一记忆和最近 Codex 上下文检索已内置在 `src/unified-memory/`，默认安装即可使用。QQ bot 也可以通过内部工具调用统一记忆：
+统一记忆和最近 Codex 上下文检索已内置在 `src/unified-memory/`，默认安装即可使用。QQ bot 现在带 agent 式内部工具循环：可以先看聊天记录、联网搜索、读写记忆、执行允许的管理动作，再根据工具结果继续调用下一轮工具，最后发出 QQ 可见回复。
 
+- `[[qq_command:/聊天记录 最近 50]]`
+- `[[qq_command:/聊天记录 关键词]]`
+- `[[qq_command:/联网 查询词]]`
+- `[[qq_command:/搜索 查询词]]`
 - `[[qq_command:/统一记忆 列表]]`
 - `[[qq_command:/统一记忆 搜索 关键词]]`
 - `[[qq_command:/统一记忆 添加 内容]]`

@@ -173,7 +173,7 @@ Minimal example:
   },
   "branding": {
     "assistantName": "assistant",
-    "ownerLabel": "owner",
+    "ownerLabel": "主人",
     "assistantMentions": ["@assistant"]
   }
 }
@@ -321,8 +321,12 @@ export CODEX_REMOTE_CONTACT_QQ_ENHANCER_MODULE="/absolute/path/to/qq-enhancer/sr
 
 ### Unified Memory
 
-Unified memory and recent Codex context search are built into `src/unified-memory/` and work out of the box. The QQ bot can also call unified memory through internal tools:
+Unified memory and recent Codex context search are built into `src/unified-memory/` and work out of the box. The QQ bot has an agent-style internal tool loop: it can inspect chat history, search the web, read/write memory, execute allowed management actions, then continue with more tool calls before sending the final QQ reply.
 
+- `[[qq_command:/聊天记录 最近 50]]`
+- `[[qq_command:/聊天记录 关键词]]`
+- `[[qq_command:/联网 查询词]]`
+- `[[qq_command:/搜索 查询词]]`
 - `[[qq_command:/统一记忆 列表]]`
 - `[[qq_command:/统一记忆 搜索 关键词]]`
 - `[[qq_command:/统一记忆 添加 内容]]`
