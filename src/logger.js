@@ -2,29 +2,38 @@ import { appendFile, mkdir, open, readdir, rename, stat, unlink } from "node:fs/
 import { basename, dirname, join } from "node:path";
 
 const defaultLevels = new Set(["debug", "info", "success", "warn", "error"]);
+const levelWeights = { debug: 10, info: 20, success: 25, warn: 30, error: 40 };
+const defaultConsoleLevels = new Set(["success", "warn", "error"]);
 const sensitiveKeyPattern = /(?:token|secret|password|passwd|authorization|api[_-]?key|credential)/i;
 
 export function createLogger({
   filePath,
   maxBytes = 5 * 1024 * 1024,
   maxFiles = 5,
-  consoleOutput = true
+  minLevel = "info",
+  consoleOutput = true,
+  consoleLevels = defaultConsoleLevels
 } = {}) {
   if (!filePath) throw new Error("Logger filePath is required");
-  const writes = [];
-  let rotating = false;
+  const normalizedMaxBytes = normalizePositiveInteger(maxBytes, 5 * 1024 * 1024);
+  const normalizedMaxFiles = normalizePositiveInteger(maxFiles, 5);
+  const minimumLevel = normalizeLevel(minLevel, "info");
+  const enabledConsoleLevels = normalizeLevelSet(consoleLevels, defaultConsoleLevels);
+  let writeChain = Promise.resolve();
 
   async function write(entry) {
     const normalized = normalizeEntry(entry);
-    const line = `${JSON.stringify(normalized)}\n`;
-    writes.push(
-      appendLogLine(filePath, line, { maxBytes, maxFiles, rotatingRef: () => rotating, setRotating: (value) => { rotating = value; } })
-        .catch((error) => {
-          if (consoleOutput) console.warn(`Unable to write structured log: ${error.message}`);
-        })
-    );
-    if (writes.length > 50) writes.splice(0, writes.length - 50);
-    if (consoleOutput) writeConsole(normalized);
+    if (shouldPersist(normalized.level, minimumLevel)) {
+      const line = `${JSON.stringify(normalized)}\n`;
+      const append = writeChain.then(() => appendLogLine(filePath, line, {
+        maxBytes: normalizedMaxBytes,
+        maxFiles: normalizedMaxFiles
+      }));
+      writeChain = append.catch((error) => {
+        if (consoleOutput) console.warn(`Unable to write structured log: ${error.message}`);
+      });
+    }
+    if (consoleOutput && enabledConsoleLevels.has(normalized.level)) writeConsole(normalized);
     return normalized;
   }
 
@@ -47,9 +56,31 @@ export function createLogger({
     },
     write,
     async flush() {
-      await Promise.allSettled(writes.splice(0));
+      await writeChain;
     }
   };
+}
+
+function normalizeLevel(value, fallback) {
+  const normalized = String(value || "").trim().toLowerCase();
+  return defaultLevels.has(normalized) ? normalized : fallback;
+}
+
+function normalizeLevelSet(value, fallback) {
+  const source = value instanceof Set || Array.isArray(value)
+    ? [...value]
+    : String(value || "").split(/[\s,|]+/g);
+  const levels = new Set(source.map((item) => normalizeLevel(item, "")).filter(Boolean));
+  return levels.size > 0 ? levels : new Set(fallback);
+}
+
+function normalizePositiveInteger(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? Math.floor(number) : fallback;
+}
+
+function shouldPersist(level, minimumLevel) {
+  return levelWeights[level] >= levelWeights[minimumLevel];
 }
 
 export async function readLogEntries(filePath, {
@@ -115,7 +146,7 @@ function sanitizeDetails(value, depth = 0) {
   if (value instanceof Error) {
     return {
       name: value.name,
-      message: value.message,
+      message: redactString(String(value.message || "")).slice(0, 4000),
       code: value.code || null
     };
   }
@@ -123,7 +154,8 @@ function sanitizeDetails(value, depth = 0) {
   if (typeof value === "object") {
     const output = {};
     for (const [key, item] of Object.entries(value).slice(0, 80)) {
-      output[key] = sensitiveKeyPattern.test(key) ? "[redacted]" : sanitizeDetails(item, depth + 1);
+      const isSafeStatusFlag = typeof item === "boolean" && /(?:configured|enabled|available|present)$/i.test(key);
+      output[key] = sensitiveKeyPattern.test(key) && !isSafeStatusFlag ? "[redacted]" : sanitizeDetails(item, depth + 1);
     }
     return output;
   }
@@ -135,31 +167,26 @@ function sanitizeDetails(value, depth = 0) {
 function redactString(value) {
   return value
     .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
-    .replace(/\b(?:sk|gho|ghp|github_pat)_[A-Za-z0-9_]{12,}\b/g, "[redacted-token]");
+    .replace(/\b(?:sk|gho|ghp|github_pat)_[A-Za-z0-9_]{12,}\b/g, "[redacted-token]")
+    .replace(/([?&](?:access_token|api[_-]?key|auth(?:orization)?|key|rkey|sig(?:nature)?|token)=)[^&#\s]+/gi, "$1[redacted]");
 }
 
-async function appendLogLine(filePath, line, { maxBytes, maxFiles, rotatingRef, setRotating }) {
+async function appendLogLine(filePath, line, { maxBytes, maxFiles }) {
   await mkdir(dirname(filePath), { recursive: true });
-  await rotateIfNeeded(filePath, line.length, { maxBytes, maxFiles, rotatingRef, setRotating });
+  await rotateIfNeeded(filePath, Buffer.byteLength(line), { maxBytes, maxFiles });
   await appendFile(filePath, line, "utf8");
 }
 
-async function rotateIfNeeded(filePath, incomingBytes, { maxBytes, maxFiles, rotatingRef, setRotating }) {
-  if (rotatingRef()) return;
+async function rotateIfNeeded(filePath, incomingBytes, { maxBytes, maxFiles }) {
   const current = await stat(filePath).catch(() => null);
   if (!current || current.size + incomingBytes <= maxBytes) return;
-  setRotating(true);
-  try {
-    const dir = dirname(filePath);
-    const base = basename(filePath);
-    await unlink(join(dir, `${base}.${maxFiles}`)).catch(() => null);
-    for (let index = maxFiles - 1; index >= 1; index -= 1) {
-      await rename(join(dir, `${base}.${index}`), join(dir, `${base}.${index + 1}`)).catch(() => null);
-    }
-    await rename(filePath, join(dir, `${base}.1`)).catch(() => null);
-  } finally {
-    setRotating(false);
+  const dir = dirname(filePath);
+  const base = basename(filePath);
+  await unlink(join(dir, `${base}.${maxFiles}`)).catch(() => null);
+  for (let index = maxFiles - 1; index >= 1; index -= 1) {
+    await rename(join(dir, `${base}.${index}`), join(dir, `${base}.${index + 1}`)).catch(() => null);
   }
+  await rename(filePath, join(dir, `${base}.1`)).catch(() => null);
 }
 
 async function listExistingLogFiles(filePath) {

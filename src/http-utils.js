@@ -14,9 +14,40 @@ export function corsHeaders() {
   };
 }
 
-export async function readBody(req) {
+export class HttpError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.statusCode = statusCode;
+  }
+}
+
+export async function readBody(req, { maxBytes = 1024 * 1024 } = {}) {
+  const contentLength = Number(req.headers?.["content-length"] || 0);
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new HttpError(413, "Request body is too large");
+  }
+
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let receivedBytes = 0;
+  for await (const chunk of req) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    receivedBytes += buffer.length;
+    if (receivedBytes > maxBytes) {
+      throw new HttpError(413, "Request body is too large");
+    }
+    chunks.push(buffer);
+  }
   if (chunks.length === 0) return {};
-  return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  const text = Buffer.concat(chunks).toString("utf8").trim();
+  if (!text) return {};
+  try {
+    const body = JSON.parse(text);
+    if (!body || Array.isArray(body) || typeof body !== "object") {
+      throw new HttpError(400, "Request body must be a JSON object");
+    }
+    return body;
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    throw new HttpError(400, "Request body must be valid JSON");
+  }
 }

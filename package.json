@@ -6,7 +6,9 @@
   "scripts": {
     "start": "node src/server.js",
     "deploy": "zsh scripts/deploy.command",
-    "ncc": "zsh scripts/ncc.command"
+    "ncc": "zsh scripts/ncc.command",
+    "check": "node --check src/server.js",
+    "test": "node --test"
   },
   "engines": {
     "node": ">=20"

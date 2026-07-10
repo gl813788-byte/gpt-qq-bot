@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile } from "node:fs/promises";
 import crypto from "node:crypto";
+import { serializeFileOperation, writeJsonAtomically } from "../file-store.js";
 
 const maxEntries = 600;
 
@@ -31,31 +31,35 @@ export function createUnifiedMemory({ memoryPath } = {}) {
       };
     },
     async write(entry = {}) {
-      const store = await readStore(memoryPath);
-      const normalized = normalizeEntry(entry);
-      if (!normalized.summary) return { ok: false, skipped: true, reason: "empty summary" };
-      const duplicateIndex = store.entries.findIndex((item) => memoryDedupeKey(item) === memoryDedupeKey(normalized));
-      if (duplicateIndex >= 0) {
-        store.entries[duplicateIndex] = {
-          ...store.entries[duplicateIndex],
-          ...normalized,
-          id: store.entries[duplicateIndex].id,
-          createdAt: store.entries[duplicateIndex].createdAt,
-          updatedAt: new Date().toISOString()
-        };
-      } else {
-        store.entries.push(normalized);
-      }
-      store.entries = store.entries.slice(-maxEntries);
-      store.updatedAt = new Date().toISOString();
-      await writeStore(memoryPath, store);
-      return { ok: true, entry: normalized, count: store.entries.length };
+      return serializeFileOperation(memoryPath, async () => {
+        const store = await readStore(memoryPath);
+        const normalized = normalizeEntry(entry);
+        if (!normalized.summary) return { ok: false, skipped: true, reason: "empty summary" };
+        const duplicateIndex = store.entries.findIndex((item) => memoryDedupeKey(item) === memoryDedupeKey(normalized));
+        if (duplicateIndex >= 0) {
+          store.entries[duplicateIndex] = {
+            ...store.entries[duplicateIndex],
+            ...normalized,
+            id: store.entries[duplicateIndex].id,
+            createdAt: store.entries[duplicateIndex].createdAt,
+            updatedAt: new Date().toISOString()
+          };
+        } else {
+          store.entries.push(normalized);
+        }
+        store.entries = store.entries.slice(-maxEntries);
+        store.updatedAt = new Date().toISOString();
+        await writeStore(memoryPath, store);
+        return { ok: true, entry: normalized, count: store.entries.length };
+      });
     },
     async clear() {
-      const store = emptyStore();
-      store.updatedAt = new Date().toISOString();
-      await writeStore(memoryPath, store);
-      return { ok: true };
+      return serializeFileOperation(memoryPath, async () => {
+        const store = emptyStore();
+        store.updatedAt = new Date().toISOString();
+        await writeStore(memoryPath, store);
+        return { ok: true };
+      });
     },
     async formatForPrompt({ query = "", limit = 8 } = {}) {
       const snapshot = await this.read({ query, limit });
@@ -132,14 +136,14 @@ async function readStore(memoryPath) {
       updatedAt: parsed.updatedAt || null,
       entries: Array.isArray(parsed.entries) ? parsed.entries.map(normalizeStoredEntry).filter(Boolean) : []
     };
-  } catch {
-    return emptyStore();
+  } catch (error) {
+    if (error?.code === "ENOENT") return emptyStore();
+    throw new Error(`Unable to read unified memory: ${error.message}`);
   }
 }
 
 async function writeStore(memoryPath, store) {
-  await mkdir(dirname(memoryPath), { recursive: true });
-  await writeFile(memoryPath, `${JSON.stringify(store, null, 2)}\n`, "utf8");
+  await writeJsonAtomically(memoryPath, store);
 }
 
 function emptyStore() {

@@ -59,7 +59,6 @@ async function listRecentJsonlFiles(baseDirs, maxFiles) {
 }
 
 async function collectJsonlFiles(dir, output, cap) {
-  if (output.length >= cap) return;
   const entries = await readdir(dir, { withFileTypes: true }).catch(() => []);
   for (const entry of entries) {
     const path = join(dir, entry.name);
@@ -67,10 +66,15 @@ async function collectJsonlFiles(dir, output, cap) {
       await collectJsonlFiles(path, output, cap);
     } else if (entry.isFile() && entry.name.endsWith(".jsonl")) {
       const info = await stat(path).catch(() => null);
-      if (info) output.push({ path, mtimeMs: info.mtimeMs });
+      if (info) retainMostRecentFile(output, { path, mtimeMs: info.mtimeMs }, cap);
     }
-    if (output.length >= cap) return;
   }
+}
+
+function retainMostRecentFile(files, candidate, cap) {
+  files.push(candidate);
+  files.sort((left, right) => right.mtimeMs - left.mtimeMs);
+  if (files.length > cap) files.length = cap;
 }
 
 function parseCodexJsonlLine(line, file) {

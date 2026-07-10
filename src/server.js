@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
-import { access, copyFile, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { brotliDecompressSync } from "node:zlib";
@@ -10,7 +10,11 @@ import { createLogger } from "./logger.js";
 import { buildLogsResponse } from "./log-api.js";
 import { importOptionalModule } from "./optional-modules.js";
 import { defaultQqPublicCommands, qqCommandCatalog } from "./qq-command-catalog.js";
+import { createConcurrencyLimiter } from "./concurrency-limiter.js";
+import { resolveAllowedQqMarkerPath, resolveQqMarkerPath } from "./qq-output-policy.js";
 import { createRuntimePaths } from "./runtime-paths.js";
+import { createScopedReplyScheduler } from "./scoped-reply-scheduler.js";
+import { serializeFileOperation, writeJsonAtomically } from "./file-store.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const projectDir = join(__dirname, "..");
@@ -45,7 +49,9 @@ const logger = createLogger({
   filePath: logFilePath,
   maxBytes: Number(process.env.CODEX_REMOTE_CONTACT_LOG_MAX_BYTES || 5 * 1024 * 1024),
   maxFiles: Number(process.env.CODEX_REMOTE_CONTACT_LOG_MAX_FILES || 5),
-  consoleOutput: process.env.CODEX_REMOTE_CONTACT_LOG_CONSOLE !== "0"
+  minLevel: process.env.CODEX_REMOTE_CONTACT_LOG_LEVEL || "info",
+  consoleOutput: process.env.CODEX_REMOTE_CONTACT_LOG_CONSOLE !== "0",
+  consoleLevels: process.env.CODEX_REMOTE_CONTACT_LOG_CONSOLE_LEVELS || "success,warn,error"
 });
 
 function fallbackMemoryStore() {
@@ -167,9 +173,14 @@ if (qqEnhancerModule) {
 }
 
 const oneBotApiBase = process.env.ONEBOT_API_BASE || "http://127.0.0.1:3000";
+const oneBotRequestTimeoutMs = Math.max(1000, Math.min(30000, Number(process.env.CODEX_REMOTE_CONTACT_ONEBOT_TIMEOUT_MS || 10000) || 10000));
 const codexCliPath = process.env.CODEX_CLI_PATH || "/Applications/Codex.app/Contents/Resources/codex";
 const codexModel = process.env.CODEX_REMOTE_CONTACT_CODEX_MODEL || "gpt-5.4-mini";
 const codexReasoningEffort = process.env.CODEX_REMOTE_CONTACT_REASONING_EFFORT || "low";
+const codexMaxConcurrencyRaw = Number(process.env.CODEX_REMOTE_CONTACT_CODEX_MAX_CONCURRENCY || 2);
+const codexMaxConcurrency = Number.isFinite(codexMaxConcurrencyRaw)
+  ? Math.max(1, Math.min(8, Math.floor(codexMaxConcurrencyRaw)))
+  : 2;
 const imessageCodexModel = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_CODEX_MODEL || "gpt-5.4";
 const imessageCodexReasoningEffort = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_REASONING_EFFORT || "medium";
 const qqEnhancerEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_ENHANCER !== "0";
@@ -208,6 +219,9 @@ const qqOwnerFileImageTasksEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_OWNER_F
 const qqBubbleSeparator = normalizeQqBubbleSeparator(process.env.CODEX_REMOTE_CONTACT_QQ_BUBBLE_SEPARATOR || "|||");
 const qqBubbleSendDelayMs = Math.max(0, Number(process.env.CODEX_REMOTE_CONTACT_QQ_BUBBLE_SEND_DELAY_MS || 650));
 const qqBubbleMaxCount = Math.max(1, Number(process.env.CODEX_REMOTE_CONTACT_QQ_BUBBLE_MAX_COUNT || 6));
+const hubPortRaw = Number(process.env.CODEX_REMOTE_CONTACT_PORT || 3789);
+const hubPort = Number.isInteger(hubPortRaw) && hubPortRaw > 0 && hubPortRaw <= 65535 ? hubPortRaw : 3789;
+const hubHost = process.env.CODEX_REMOTE_CONTACT_HOST || "127.0.0.1";
 const proxyShortcutName = process.env.CODEX_REMOTE_CONTACT_PROXY_TOGGLE_SHORTCUT || "切换VPN";
 const proxyConfirmTtlMs = Number(process.env.CODEX_REMOTE_CONTACT_PROXY_CONFIRM_TTL_MS || 3 * 60 * 1000);
 const imessageAttachmentSendingEnabled = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_ATTACHMENTS === "1";
@@ -247,10 +261,27 @@ resolveQqReplyMedia = async (reply, options = {}) => {
     Promise.resolve(baseResolveQqReplyMedia(reply, options)).catch(() => []),
     resolveQqAccountStickerMedia(reply).catch(() => [])
   ]);
-  return uniqueQqMediaRefs([
+  const accountMediaSet = new Set(normalizeMediaRefList(accountMedia));
+  const candidates = uniqueQqMediaRefs([
     ...normalizeMediaRefList(baseMedia),
-    ...normalizeMediaRefList(accountMedia)
+    ...accountMediaSet
   ]);
+  const allowed = [];
+  for (const candidate of candidates) {
+    if (isHttpUrl(candidate)) {
+      if (accountMediaSet.has(candidate)) allowed.push(candidate);
+      continue;
+    }
+    const filePath = await resolveAllowedQqMarkerPath(candidate, {
+      kind: "image",
+      event: options.event,
+      projectDir,
+      qqOutputImagesDir,
+      qqStickerDir: options.stickerDir || qqStickerDir
+    });
+    if (filePath) allowed.push(filePath);
+  }
+  return uniqueQqMediaRefs(allowed);
 };
 // Deployment customization: set these in data/settings.json -> branding,
 // or via environment variables, to give the bot a public name and owner label.
@@ -441,6 +472,8 @@ const state = {
 const seenOneBotMessageIds = new Map();
 const seenMessageTtlMs = 10 * 60 * 1000;
 const stoppedQqGenerationIds = new Set();
+const qqReplyScheduler = createScopedReplyScheduler();
+const codexRunLimiter = createConcurrencyLimiter(codexMaxConcurrency);
 const qqPendingReplyLimit = 8;
 const qqPendingReplyMaxTextLength = 1200;
 let imessagePollTimer = null;
@@ -626,10 +659,8 @@ async function loadSettings() {
 }
 
 async function saveSettings() {
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(
-    settingsPath,
-    JSON.stringify({
+  return serializeFileOperation(settingsPath, async () => {
+    await writeJsonAtomically(settingsPath, {
       version: 1,
       updatedAt: new Date().toISOString(),
       ai: {
@@ -687,8 +718,8 @@ async function saveSettings() {
         userAgent: userAgentName,
         assistantMentions: assistantMentionAliases
       }
-    }, null, 2)
-  );
+    });
+  });
 }
 
 function isValidReasoningEffort(value) {
@@ -876,10 +907,39 @@ function getActiveQqGenerationForEvent(event) {
   return isSameQqGenerationScope(state.qq.activeGeneration, event) ? state.qq.activeGeneration : null;
 }
 
+function getActiveQqReplyScopeForEvent(event) {
+  return qqReplyScheduler.get(getQqMemoryScopeId(event));
+}
+
+function startQqReplyScope(event) {
+  const scopeId = getQqMemoryScopeId(event);
+  return qqReplyScheduler.start(scopeId, {
+    groupId: event?.groupId || null,
+    senderId: event?.senderId || null
+  });
+}
+
+function finishQqReplyScope(scope) {
+  qqReplyScheduler.finish(scope);
+}
+
+function cancelQqReplyScopeForEvent(event) {
+  return qqReplyScheduler.cancel(getQqMemoryScopeId(event));
+}
+
+function createQqReplyStoppedError() {
+  const error = new Error("QQ reply stopped by /stop or /newdialog");
+  error.code = "QQ_REPLY_STOPPED";
+  return error;
+}
+
+function assertQqReplyScopeActive(scope) {
+  if (scope?.cancelled) throw createQqReplyStoppedError();
+}
+
 function shouldQueueQqEventDuringGeneration(event, decision, commandAction) {
   if (!decision?.ok || commandAction) return false;
-  if (!getActiveQqGenerationForEvent(event)) return false;
-  return true;
+  return Boolean(getActiveQqReplyScopeForEvent(event) || getActiveQqGenerationForEvent(event));
 }
 
 function queueQqPendingReplyEvent(event, source, decision) {
@@ -1004,43 +1064,37 @@ async function processQueuedQqRepliesForScope(scopeId, source = "queued") {
 }
 
 async function saveQqMemory() {
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(
-    qqMemoryPath,
-    JSON.stringify({
+  return serializeFileOperation(qqMemoryPath, async () => {
+    await writeJsonAtomically(qqMemoryPath, {
       version: 1,
       updatedAt: new Date().toISOString(),
       perGroupLimit: state.qq.memory.perGroupLimit,
       groupRecentLimit: state.qq.memory.groupRecentLimit,
       entries: state.qq.memory.entries,
       recentMessages: state.qq.memory.recentMessages
-    }, null, 2)
-  );
+    });
+  });
 }
 
 async function saveQqPublicMemory() {
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(
-    qqPublicMemoryPath,
-    JSON.stringify({
+  return serializeFileOperation(qqPublicMemoryPath, async () => {
+    await writeJsonAtomically(qqPublicMemoryPath, {
       version: 1,
       updatedAt: new Date().toISOString(),
       maxEntries: state.qq.publicMemory.maxEntries,
       entries: state.qq.publicMemory.entries
-    }, null, 2)
-  );
+    });
+  });
 }
 
 async function saveQqPersonas() {
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(
-    qqPersonasPath,
-    JSON.stringify({
+  return serializeFileOperation(qqPersonasPath, async () => {
+    await writeJsonAtomically(qqPersonasPath, {
       version: 1,
       updatedAt: new Date().toISOString(),
       groups: state.qq.personas.groups
-    }, null, 2)
-  );
+    });
+  });
 }
 
 async function loadIMessageMemory() {
@@ -1058,16 +1112,14 @@ async function loadIMessageMemory() {
 }
 
 async function saveIMessageMemory() {
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(
-    imessageMemoryPath,
-    JSON.stringify({
+  return serializeFileOperation(imessageMemoryPath, async () => {
+    await writeJsonAtomically(imessageMemoryPath, {
       version: 1,
       updatedAt: new Date().toISOString(),
       perHandleLimit: state.imessage.memory.perHandleLimit,
       entries: state.imessage.memory.entries
-    }, null, 2)
-  );
+    });
+  });
 }
 
 async function loadRemoteExecutionMemory() {
@@ -1085,16 +1137,14 @@ async function loadRemoteExecutionMemory() {
 }
 
 async function saveRemoteExecutionMemory() {
-  await mkdir(dataDir, { recursive: true });
-  await writeFile(
-    remoteExecutionMemoryPath,
-    JSON.stringify({
+  return serializeFileOperation(remoteExecutionMemoryPath, async () => {
+    await writeJsonAtomically(remoteExecutionMemoryPath, {
       version: 1,
       updatedAt: new Date().toISOString(),
       limit: state.remoteExecution.memory.limit,
       entries: state.remoteExecution.memory.entries
-    }, null, 2)
-  );
+    });
+  });
 }
 
 function buildPublicState() {
@@ -1822,7 +1872,7 @@ async function checkOneBotHealth() {
 }
 
 async function fetchOneBotImage(file) {
-  const response = await fetch(`${oneBotApiBase}/get_image`, {
+  const response = await oneBotFetch("get_image", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ file: String(file || ""), download: true })
@@ -1832,6 +1882,32 @@ async function fetchOneBotImage(file) {
     throw new Error(`Unable to fetch QQ image ${file}`);
   }
   return body.data || body;
+}
+
+function oneBotFetch(endpoint, options = {}) {
+  const { signal, ...requestOptions } = options;
+  const timeoutSignal = AbortSignal.timeout(oneBotRequestTimeoutMs);
+  return fetch(`${oneBotApiBase}/${String(endpoint || "").replace(/^\/+/, "")}`, {
+    ...requestOptions,
+    signal: mergeAbortSignals(signal, timeoutSignal)
+  });
+}
+
+function mergeAbortSignals(...signals) {
+  const activeSignals = signals.filter(Boolean);
+  if (activeSignals.length <= 1) return activeSignals[0];
+  if (typeof AbortSignal.any === "function") return AbortSignal.any(activeSignals);
+
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  for (const signal of activeSignals) {
+    if (signal.aborted) {
+      controller.abort();
+      break;
+    }
+    signal.addEventListener("abort", abort, { once: true });
+  }
+  return controller.signal;
 }
 
 function extractOneBotImageInputsFallback(payload) {
@@ -1911,53 +1987,13 @@ async function cleanupQqEventTaskWorkspaceByBot(event, reason = "QQ send finishe
   const workspace = event.qqTaskWorkspace;
   event.qqTaskWorkspace = null;
   event.imagePaths = [];
-  await askCodexToCleanupQqTaskWorkspace(workspace, reason).catch((error) => {
-    logger.warn("Unable to cleanup QQ task workspace", { workspace: workspace.root, reason, error }, "qq");
-  });
-}
-
-async function askCodexToCleanupQqTaskWorkspace(workspace, reason = "QQ send finished") {
   const root = workspace?.root ? String(workspace.root) : "";
-  if (!root || !isPathUnderAnyDir(root, [qqTaskWorkspacesDir])) return;
-  if (!await pathExists(root)) return;
-  await ensureCodexReplyWorkspace();
-  const outputPath = join(codexTmpDir, `${crypto.randomUUID()}.qq-task-cleanup.txt`);
-  const prompt = [
-    "你刚完成一个 QQ 图片/文件任务，现在只做清理。",
-    "目标：删除本次任务的临时工作区及其中所有文件。",
-    "严格限制：只能删除下面这个目录本身以及它下面的内容；不能删除其他路径。",
-    "如果路径不存在，直接输出已清理。",
-    "",
-    `清理原因：${reason}`,
-    `本次任务工作区：${root}`,
-    "",
-    "请执行清理，并只输出一句简短结果。"
-  ].join("\n");
-  const args = [
-    "exec",
-    "--ephemeral",
-    "--skip-git-repo-check",
-    "--ignore-rules",
-    "-s",
-    "danger-full-access",
-    "-m",
-    state.ai.model,
-    "-c",
-    `model_reasoning_effort="${state.ai.reasoningEffort}"`,
-    "-C",
-    projectDir,
-    "-o",
-    outputPath,
-    "-"
-  ];
-  await runCodexCli(args, prompt, {
-    cwd: projectDir,
-    timeout: 60000,
-    env: {
-      ...process.env,
-      CODEX_REMOTE_CONTACT_QQ_TASK_CLEANUP: "1",
-      CODEX_REMOTE_CONTACT_QQ_TASK_WORKSPACE_DIR: root
-    }
+  if (!root || !isPathUnderAnyDir(root, [qqTaskWorkspacesDir])) {
+    logger.warn("Refused to cleanup QQ task workspace outside the task root", { root, reason }, "qq");
+    return;
+  }
+  await rm(root, { recursive: true, force: true }).catch((error) => {
+    logger.warn("Unable to cleanup QQ task workspace", { workspace: workspace.root, reason, error }, "qq");
   });
 }
 
@@ -2230,6 +2266,9 @@ async function buildQqCommandAction(event) {
   }
 
   if (isQqCommandAllowedForEvent("newDialog", event) && isPublicQqClearContextCommand(normalized, compact)) {
+    cancelQqReplyScopeForEvent(event);
+    const active = getActiveQqGenerationForEvent(event);
+    if (active) stopActiveQqGeneration(active.id);
     return {
       reply: clearQqContextForEvent(event),
       skipMemory: true,
@@ -2404,7 +2443,7 @@ function isAllowedQqCommandEvent(event) {
 }
 
 function isQqCommandAllowedForEvent(key, event) {
-  if (event?.isOwner || event?.isBotMenuAction) return true;
+  if (event?.isOwner) return true;
   if (state.qq.commandPermissions.publicCommands[key] === true) return true;
   const senderId = event?.senderId == null ? "" : String(event.senderId);
   return Boolean(senderId && state.qq.commandPermissions.userCommands[key]?.includes(senderId));
@@ -2550,10 +2589,13 @@ function clearQqContextForEvent(event, { silent = false } = {}) {
 }
 
 function stopQqGenerationForEvent(event) {
+  const cancelledScope = cancelQqReplyScopeForEvent(event);
   const active = getActiveQqGenerationForEvent(event);
   const stopped = active ? stopActiveQqGeneration(active.id) : false;
   clearQqContextForEvent(event, { silent: true });
-  return stopped ? "已停止当前回复，并开启新对话。" : "当前没有正在生成的回复，已开启新对话。";
+  return stopped || cancelledScope
+    ? "已停止当前回复，并开启新对话。"
+    : "当前没有正在生成的回复，已开启新对话。";
 }
 
 function isProtectedQqOwnerTarget(targetId) {
@@ -2753,7 +2795,7 @@ function formatQqBotInternalToolContext(event) {
     "你可以像 agent 一样先调用内部工具、读取结果、继续调用下一步工具，最后再给群友可见回复。这些工具不显示在 /菜单 里，也不要向群友解释内部标记。",
     "判断原则：缺上下文先查聊天记录；缺稳定背景先查公共记忆或统一记忆；问题依赖最新资料或陌生名词时先联网；需要管理动作时用菜单命令；工具结果不够时可以继续查。",
     "需要调用工具时，只输出一行或多行内部标记，不要混入最终回复：",
-    "- [[qq_command:/ban QQ号]]、[[qq_command:/ban QQ号 10m]]、[[qq_command:/ban QQ号 2h]]、[[qq_command:/unban QQ号]]、[[qq_command:/banlist]] 等菜单命令。Bot 默认按最高权限执行，但不能封禁或修改主人。",
+    "- [[qq_command:/ban QQ号]]、[[qq_command:/ban QQ号 10m]]、[[qq_command:/ban QQ号 2h]]、[[qq_command:/unban QQ号]]、[[qq_command:/banlist]] 等菜单命令。内部工具严格沿用当前发送者的菜单权限，不能借工具提升为主人权限。",
     "- [[qq_command:/聊天记录 最近 50]] 读取当前群聊或私聊最近 50 行。",
     "- [[qq_command:/聊天记录 20-40]] 读取当前缓冲第 20 到 40 行。",
     "- [[qq_command:/聊天记录 关键词]] 搜索当前群聊或私聊最近聊天里的关键词。",
@@ -2781,11 +2823,12 @@ function formatQqBotInternalToolContext(event) {
   ].filter(Boolean).join("\n");
 }
 
-async function runQqBotToolLoop({ initialReply, event, memoryContext, buildReplyPrompt, runReplyPrompt }) {
+async function runQqBotToolLoop({ initialReply, event, memoryContext, buildReplyPrompt, runReplyPrompt, replyScope = null }) {
   let reply = String(initialReply || "");
   const transcript = [];
   const commandCounts = new Map();
   for (let round = 1; round <= qqBotToolLoopLimit; round += 1) {
+    assertQqReplyScopeActive(replyScope);
     const resolution = await resolveQqBotCommandMarkers(reply, event, { commandCounts });
     if (resolution.results.length === 0) {
       return stripQqBotDoneMarker(resolution.visibleText || reply);
@@ -2804,6 +2847,7 @@ async function runQqBotToolLoop({ initialReply, event, memoryContext, buildReply
       round
     );
     reply = await runReplyPrompt(prompt);
+    assertQqReplyScopeActive(replyScope);
     if (hasQqBotDoneMarker(reply) && extractQqBotCommandMarkers(reply).length === 0) {
       return stripQqBotDoneMarker(stripQqBotCommandMarkers(reply));
     }
@@ -2894,7 +2938,7 @@ async function executeQqBotInternalCommand(command, event) {
   const action = await buildQqCommandAction({
     ...event,
     text: normalizedCommand.startsWith("/") ? normalizedCommand : `/${normalizedCommand}`,
-    isOwner: true,
+    isOwner: Boolean(event.isOwner),
     isBotMenuAction: true
   });
   if (!action) {
@@ -3646,9 +3690,10 @@ function normalizeVisibleQqReply(reply, event = {}) {
   return text;
 }
 
-async function buildModelReply(event) {
+async function buildModelReply(event, { replyScope = null } = {}) {
+  assertQqReplyScopeActive(replyScope);
   if (shouldUseQqOwnerFileImageTask(event)) {
-    return buildQqOwnerFileImageReply(event);
+    return buildQqOwnerFileImageReply(event, { replyScope });
   }
 
   const text = stripMentionText(event.text);
@@ -3661,6 +3706,7 @@ async function buildModelReply(event) {
   const repetitionGuard = state.qq.enhancer.enabled ? buildQqRepetitionGuard(event) : "";
   const webContext = await buildWebLookupContext(event);
   const stickerCatalog = state.qq.enhancer.enabled ? await buildQqStickerCatalog(qqStickerDir) : [];
+  assertQqReplyScopeActive(replyScope);
   const qqModelImages = getQqModelImageInputs(event, text);
   const shouldInspectImages = qqModelImages.length > 0;
   const taskWorkspace = shouldInspectImages ? await createQqTaskWorkspace("qq-reply", id) : null;
@@ -3674,6 +3720,7 @@ async function buildModelReply(event) {
   event.imagePaths = imagePaths;
   const botToolContext = formatQqBotInternalToolContext(event);
   const runReplyPrompt = async (prompt) => {
+    assertQqReplyScopeActive(replyScope);
     await runCodexCli(args, prompt, {
       cwd: codexWorkspaceDir,
       timeout: 120000,
@@ -3683,6 +3730,7 @@ async function buildModelReply(event) {
       },
       qqEvent: event
     });
+    assertQqReplyScopeActive(replyScope);
     return cleanCodexReply(await readFile(outputPath, "utf8"));
   };
   const buildReplyPrompt = async (memoryBlock, expandLevel = 0, forceLocalReply = false, botToolResults = "", priorDraft = "", toolRound = 0) => {
@@ -3779,8 +3827,10 @@ async function buildModelReply(event) {
       event,
       memoryContext,
       buildReplyPrompt,
-      runReplyPrompt
+      runReplyPrompt,
+      replyScope
     });
+    assertQqReplyScopeActive(replyScope);
     const reply = state.qq.enhancer.enabled
       ? encourageQqStickerReply(
         deRepeatQqReply(deTemplateQqReply(baseReply, event), event),
@@ -3915,7 +3965,8 @@ function hasAbsoluteLocalPath(text) {
   return /(?:^|\s)(?:\/[^\s"'，。！？]+|~\/[^\s"'，。！？]+)/.test(String(text || ""));
 }
 
-async function buildQqOwnerFileImageReply(event) {
+async function buildQqOwnerFileImageReply(event, { replyScope = null } = {}) {
+  assertQqReplyScopeActive(replyScope);
   const text = stripMentionText(event.text);
   const isOwnerTask = Boolean(event.isOwner);
   const isImageGeneration = isQqImageOutputRequest(text);
@@ -3949,9 +4000,9 @@ async function buildQqOwnerFileImageReply(event) {
     "- 不要输出 token、密钥、密码、cookie、私钥或完整敏感配置。遇到敏感内容只做脱敏摘要。",
     "- 如果用户让你画图、生成图、做海报或生成表情包，优先使用 image 2 能力生成图片，把图片保存为 png/jpg/webp 到下面的本次任务输出目录，并在最终回复单独写一行 [[qq_image:/absolute/path/to/image.png]]。",
     "- 如果 image 2/API 被当前账号或网关拒绝，直接说明“图片接口被拒绝/不可用”，不要假装已经画好，也不要只给空回复。",
-    "- 如果用户要你发普通文件，在最终回复单独写一行 [[qq_file:/absolute/path/to/file]]；需要指定发送文件名时写 [[qq_file:/absolute/path/to/file|filename.ext]]。如果你为发送而新建、转换或复制文件，必须写到本次任务输出目录。",
+    "- 如果用户要你发普通文件，在最终回复单独写一行 [[qq_file:/absolute/path/to/file]]；需要指定发送文件名时写 [[qq_file:/absolute/path/to/file|filename.ext]]。无论文件是新建还是本机已有，都必须先复制到本次任务输出目录，再让 marker 指向输出目录中的副本。",
     "- 由你决定最终要发哪些图片或文件：只有你在最终回复里显式写出的 [[qq_image:...]] / [[qq_file:...]] 会被 Hub 发送。",
-    "- 本次任务临时工作区只服务这一次 QQ 请求。不要把新生成的图片、中间文件或待发送副本写到项目其他目录；最终回复前不要删除待发送文件，Hub 会在 QQ 发送完成后再让你单独清理这个工作区。",
+    "- 本次任务临时工作区只服务这一次 QQ 请求。Hub 只会发送本次输出目录中的 marker，不会发送其他目录；不要把新生成的图片、中间文件或待发送副本写到项目其他目录；最终回复前不要删除待发送文件，Hub 会在 QQ 发送完成后再让你单独清理这个工作区。",
     "- 如果只是分析图片或文件，直接给结论；不要把大文件全文贴到 QQ。",
     "- 如果路径不存在或权限不足，说明具体失败原因。",
     "",
@@ -3991,6 +4042,7 @@ async function buildQqOwnerFileImageReply(event) {
     "-"
   ];
   try {
+    assertQqReplyScopeActive(replyScope);
     await runCodexCli(args, prompt, {
       cwd: projectDir,
       timeout: 5 * 60 * 1000,
@@ -4002,8 +4054,9 @@ async function buildQqOwnerFileImageReply(event) {
       },
       qqEvent: event
     });
+    assertQqReplyScopeActive(replyScope);
     let reply = cleanCodexReply(await readFile(outputPath, "utf8"));
-    if (await shouldRetryQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt, outputDir: taskWorkspace.outputDir })) {
+    if (await shouldRetryQqImageGenerationReply(reply, { event, isImageGeneration, taskStartedAt, outputDir: taskWorkspace.outputDir })) {
       const retryStartedAt = Date.now();
       const retryOutputPath = join(codexTmpDir, `${id}.qq-owner-file-image-retry.txt`);
       const retryArgs = withCodexOutputPath(args, retryOutputPath);
@@ -4013,6 +4066,7 @@ async function buildQqOwnerFileImageReply(event) {
         previousReply: reply,
         outputDir: taskWorkspace.outputDir
       });
+      assertQqReplyScopeActive(replyScope);
       await runCodexCli(retryArgs, retryPrompt, {
         cwd: projectDir,
         timeout: 5 * 60 * 1000,
@@ -4024,20 +4078,21 @@ async function buildQqOwnerFileImageReply(event) {
         },
         qqEvent: event
       });
+      assertQqReplyScopeActive(replyScope);
       reply = cleanCodexReply(await readFile(retryOutputPath, "utf8"));
-      const retryNormalizedReply = await normalizeQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt: retryStartedAt, outputDir: taskWorkspace.outputDir });
+      const retryNormalizedReply = await normalizeQqImageGenerationReply(reply, { event, isImageGeneration, taskStartedAt: retryStartedAt, outputDir: taskWorkspace.outputDir });
       return (retryNormalizedReply || "执行完了，但没有生成可读回复。").slice(0, 1800);
     }
-    const normalizedReply = await normalizeQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt, outputDir: taskWorkspace.outputDir });
+    const normalizedReply = await normalizeQqImageGenerationReply(reply, { event, isImageGeneration, taskStartedAt, outputDir: taskWorkspace.outputDir });
     return (normalizedReply || "执行完了，但没有生成可读回复。").slice(0, 1800);
   } finally {
     event.imagePaths = imagePaths;
   }
 }
 
-async function shouldRetryQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt, outputDir } = {}) {
+async function shouldRetryQqImageGenerationReply(reply, { event, isImageGeneration, taskStartedAt, outputDir } = {}) {
   if (!isImageGeneration) return false;
-  if ((await getExistingQqImageMarkerPaths(reply)).length > 0) return false;
+  if ((await getExistingQqImageMarkerPaths(reply, event)).length > 0) return false;
   if ((await findRecentQqOutputImages(taskStartedAt, { outputDir })).length > 0) return false;
   return true;
 }
@@ -4069,11 +4124,11 @@ function buildQqImageGenerationRetryPrompt({ isOwnerTask, text, previousReply, o
   ].join("\n");
 }
 
-async function normalizeQqImageGenerationReply(reply, { isImageGeneration, taskStartedAt, outputDir } = {}) {
+async function normalizeQqImageGenerationReply(reply, { event, isImageGeneration, taskStartedAt, outputDir } = {}) {
   const text = String(reply || "").trim();
   if (!isImageGeneration) return text;
 
-  const existingMarkerPaths = await getExistingQqImageMarkerPaths(text);
+  const existingMarkerPaths = await getExistingQqImageMarkerPaths(text, event);
   if (existingMarkerPaths.length > 0) return text;
 
   const recentImages = await findRecentQqOutputImages(taskStartedAt, { outputDir });
@@ -4094,12 +4149,16 @@ async function normalizeQqImageGenerationReply(reply, { isImageGeneration, taskS
   return text || "图片生成失败：没有找到可发送的图片文件。";
 }
 
-async function getExistingQqImageMarkerPaths(reply) {
-  const paths = extractQqImageMarkers(reply)
-    .map((filePath) => resolveLocalQqMediaPath(filePath))
-    .filter((filePath) => filePath && isSendableQqImagePath(filePath));
+async function getExistingQqImageMarkerPaths(reply, event) {
+  const paths = await Promise.all(extractQqImageMarkers(reply).map((filePath) => resolveAllowedQqMarkerPath(filePath, {
+    kind: "image",
+    event,
+    projectDir,
+    qqOutputImagesDir,
+    qqStickerDir
+  })));
   const existing = [];
-  for (const filePath of [...new Set(paths)]) {
+  for (const filePath of [...new Set(paths.filter(Boolean))]) {
     if (await fileExists(filePath)) existing.push(filePath);
   }
   return existing;
@@ -5313,6 +5372,7 @@ async function processQqReplyEvent(event, options = {}) {
   let commandAction = null;
   let queued = false;
   let queuedCount = 0;
+  let replyScope = null;
 
   if (decision.ok) {
     try {
@@ -5322,13 +5382,25 @@ async function processQqReplyEvent(event, options = {}) {
         const pending = queueQqPendingReplyEvent(event, source, decision);
         queued = true;
         queuedCount = Array.isArray(pending?.events) ? pending.events.length : 0;
+      } else if (commandAction) {
+        reply = commandAction.reply;
       } else {
-        reply = commandAction?.reply || await buildModelReply(event);
+        replyScope = startQqReplyScope(event);
+        if (!replyScope) {
+          const pending = queueQqPendingReplyEvent(event, source, decision);
+          queued = true;
+          queuedCount = Array.isArray(pending?.events) ? pending.events.length : 0;
+        } else {
+          reply = await buildModelReply(event, { replyScope });
+          assertQqReplyScopeActive(replyScope);
+        }
       }
       if (reply) reply = normalizeVisibleQqReply(reply, event);
     } catch (caught) {
       error = caught.message;
-      reply = caught.code === "QQ_GENERATION_STOPPED" ? null : "这边刚刚卡了一下，等我再试一次。";
+      reply = ["QQ_GENERATION_STOPPED", "QQ_REPLY_STOPPED"].includes(caught.code)
+        ? null
+        : "这边刚刚卡了一下，等我再试一次。";
     }
   }
 
@@ -5345,38 +5417,61 @@ async function processQqReplyEvent(event, options = {}) {
     send: null
   };
 
-  if (record.reply && source === "onebot") {
-    if (isQqPrivateEvent(event)) {
-      try {
-        record.send = await sendOneBotPrivateReply(event, record.reply, {
-          singleBubble: Boolean(commandAction)
-        });
-      } catch (error) {
-        record.send = { ok: false, error: error.message };
+  try {
+    if (record.reply && source === "onebot") {
+      if (isQqPrivateEvent(event)) {
+        try {
+          assertQqReplyScopeActive(replyScope);
+          record.send = await sendOneBotPrivateReply(event, record.reply, {
+            singleBubble: Boolean(commandAction),
+            replyScope
+          });
+        } catch (sendError) {
+          record.send = { ok: false, error: sendError.message };
+        }
+      } else {
+        try {
+          assertQqReplyScopeActive(replyScope);
+          record.send = await sendOneBotGroupReply(event, record.reply, {
+            singleBubble: Boolean(commandAction),
+            replyScope
+          });
+        } catch (sendError) {
+          record.send = { ok: false, error: sendError.message };
+        }
       }
     } else {
-      try {
-        record.send = await sendOneBotGroupReply(event, record.reply, {
-          singleBubble: Boolean(commandAction)
-        });
-      } catch (error) {
-        record.send = { ok: false, error: error.message };
-      }
+      if (record.reply) record.send = { ok: true, skipped: true };
     }
-  }
 
-  if (record.reply && source !== "onebot") {
-    record.send = { ok: true, skipped: true };
+    assertQqReplyScopeActive(replyScope);
+    if (record.reply && record.send?.ok !== false && commandAction?.afterSend) await commandAction.afterSend();
+    if (record.reply && record.send?.ok !== false && !commandAction?.skipMemory) await rememberQqExchange(event, record.reply);
+  } catch (caught) {
+    record.error ||= caught.message;
+    logger.error("QQ reply post-processing failed", {
+      groupId: event.groupId || null,
+      senderId: event.senderId || null,
+      error: caught
+    }, "qq");
+  } finally {
+    if (event.qqTaskWorkspace) {
+      await cleanupQqEventTaskWorkspaceByBot(event, record.send?.skipped ? "QQ send skipped" : "QQ reply processing finished");
+    }
+    recordQqEvent(record);
+    if (replyScope) finishQqReplyScope(replyScope);
   }
-
-  if (record.reply && record.send?.ok !== false && commandAction?.afterSend) await commandAction.afterSend();
-  if (record.reply && record.send?.ok !== false && !commandAction?.skipMemory) await rememberQqExchange(event, record.reply);
-  if (event.qqTaskWorkspace) await cleanupQqEventTaskWorkspaceByBot(event, record.send?.skipped ? "QQ send skipped" : "QQ reply processing finished");
-  recordQqEvent(record);
 
   const scopeId = getQqMemoryScopeId(event);
-  if (record.reply) {
-    await processQueuedQqRepliesForScope(scopeId, source === "onebot" ? "onebot" : "qq");
+  if (replyScope || record.reply) {
+    try {
+      await processQueuedQqRepliesForScope(scopeId, source === "onebot" ? "onebot" : "qq");
+    } catch (caught) {
+      logger.error("Unable to process queued QQ replies", {
+        scopeId,
+        error: caught
+      }, "qq");
+    }
   }
 
   return record;
@@ -8283,17 +8378,33 @@ function stopActiveQqGeneration(id = null) {
   if (!active || (id && active.id !== id)) return false;
   try {
     stoppedQqGenerationIds.add(active.id);
+    active.stopping = true;
     active.child?.kill?.("SIGTERM");
+    const forceKillTimer = setTimeout(() => {
+      try {
+        active.child?.kill?.("SIGKILL");
+      } catch {
+        // The child process has already exited.
+      }
+    }, 5000);
+    forceKillTimer.unref?.();
   } catch {
     return false;
   }
-  clearTrackedQqGeneration(active.id);
   state.maintenance.codex.lastOk = false;
   state.maintenance.codex.lastError = "QQ generation stopped by /stop";
   return true;
 }
 
-function runCodexCli(args, input, options) {
+function runCodexCli(args, input, options = {}) {
+  return codexRunLimiter.run(() => {
+    const replyScope = options.qqEvent ? getActiveQqReplyScopeForEvent(options.qqEvent) : null;
+    if (replyScope?.cancelled) return Promise.reject(createQqReplyStoppedError());
+    return runCodexCliProcess(args, input, options);
+  });
+}
+
+function runCodexCliProcess(args, input, options) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     const previousQuota = state.maintenance.codex.quota;
@@ -8309,9 +8420,25 @@ function runCodexCli(args, input, options) {
     let stdout = "";
     let stderr = "";
     let settled = false;
+    let timedOutError = null;
+    let forceKillTimer = null;
+    const terminateChild = () => {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        return;
+      }
+      forceKillTimer = setTimeout(() => {
+        try {
+          child.kill("SIGKILL");
+        } catch {
+          // The process exited during the graceful shutdown window.
+        }
+      }, 5000);
+      forceKillTimer.unref?.();
+    };
     const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
+      if (settled || timedOutError) return;
       state.maintenance.codex.lastOk = false;
       state.maintenance.codex.lastError = "Codex CLI timed out while generating a reply";
       state.maintenance.codex.lastDurationMs = Date.now() - startedAt;
@@ -8320,9 +8447,8 @@ function runCodexCli(args, input, options) {
         durationMs: state.maintenance.codex.lastDurationMs,
         qqGenerationId
       }, "codex");
-      child.kill("SIGTERM");
-      clearTrackedQqGeneration(qqGenerationId);
-      reject(new Error("Codex CLI timed out while generating a reply"));
+      timedOutError = new Error("Codex CLI timed out while generating a reply");
+      terminateChild();
     }, options.timeout);
 
     child.stdout.setEncoding("utf8");
@@ -8335,6 +8461,7 @@ function runCodexCli(args, input, options) {
     });
     child.on("error", (error) => {
       if (settled) return;
+      if (timedOutError) return;
       settled = true;
       clearTimeout(timeout);
       state.maintenance.codex.lastOk = false;
@@ -8349,10 +8476,15 @@ function runCodexCli(args, input, options) {
       reject(error);
     });
     child.on("close", (code) => {
+      clearTimeout(timeout);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      clearTrackedQqGeneration(qqGenerationId);
       if (settled) return;
       settled = true;
-      clearTimeout(timeout);
-      clearTrackedQqGeneration(qqGenerationId);
+      if (timedOutError) {
+        reject(timedOutError);
+        return;
+      }
       const finishedAt = Date.now();
       state.maintenance.codex.lastRunAt = new Date(finishedAt).toISOString();
       state.maintenance.codex.lastDurationMs = finishedAt - startedAt;
@@ -8443,9 +8575,11 @@ async function ensureCodexReplyWorkspace() {
 async function sendOneBotGroupReply(event, reply, options = {}) {
   if (!event.groupId) return { ok: false, reason: "Missing group id" };
   try {
+    assertQqReplyScopeActive(options.replyScope);
     if (options.singleBubble) {
       const result = await sendOneBotGroupMessage(event, reply, {
-        quoteSource: isExplicitQqAtEvent(event)
+        quoteSource: isExplicitQqAtEvent(event),
+        replyScope: options.replyScope
       });
       return {
         ok: result?.ok !== false,
@@ -8458,7 +8592,10 @@ async function sendOneBotGroupReply(event, reply, options = {}) {
       event,
       reply,
       quoteFirstBubble: isExplicitQqAtEvent(event),
-      sendGroupMessage: (bubble, options) => sendOneBotGroupMessage(event, bubble, options)
+      sendGroupMessage: (bubble, bubbleOptions) => sendOneBotGroupMessage(event, bubble, {
+        ...bubbleOptions,
+        replyScope: options.replyScope
+      })
     });
   } finally {
     await cleanupQqEventTaskWorkspaceByBot(event);
@@ -8467,15 +8604,19 @@ async function sendOneBotGroupReply(event, reply, options = {}) {
 
 async function sendOneBotGroupMessage(event, reply, options = {}) {
   if (!event.groupId) return { ok: false, reason: "Missing group id" };
-  const mediaPaths = await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir });
-  const fileAttachments = await resolveQqReplyFiles(reply);
-  const message = await buildOneBotReplyMessage(event, reply, options, mediaPaths);
+  assertQqReplyScopeActive(options.replyScope);
+  const mediaPaths = await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir, event });
+  const fileAttachments = await resolveQqReplyFiles(reply, event);
+  assertQqReplyScopeActive(options.replyScope);
+  const message = await buildOneBotReplyMessage(event, reply, options, mediaPaths, { fileAttachments });
   let messageResult = { ok: true, skipped: true };
 
   if (hasSendableOneBotMessage(message)) {
-    const response = await fetch(`${oneBotApiBase}/send_group_msg`, {
+    assertQqReplyScopeActive(options.replyScope);
+    const response = await oneBotFetch("send_group_msg", {
       method: "POST",
       headers: { "content-type": "application/json" },
+      signal: options.replyScope?.signal,
       body: JSON.stringify({
         group_id: Number(event.groupId),
         message
@@ -8492,7 +8633,8 @@ async function sendOneBotGroupMessage(event, reply, options = {}) {
 
   const fileResults = [];
   for (const attachment of fileAttachments) {
-    fileResults.push(await uploadOneBotGroupFile(event.groupId, attachment));
+    assertQqReplyScopeActive(options.replyScope);
+    fileResults.push(await uploadOneBotGroupFile(event.groupId, attachment, { signal: options.replyScope?.signal }));
   }
 
   return combineOneBotSendResults(messageResult, fileResults);
@@ -8501,8 +8643,9 @@ async function sendOneBotGroupMessage(event, reply, options = {}) {
 async function sendOneBotPrivateReply(event, reply, options = {}) {
   if (!event.senderId) return { ok: false, reason: "Missing user id" };
   try {
+    assertQqReplyScopeActive(options.replyScope);
     if (options.singleBubble) {
-      const result = await sendOneBotPrivateMessage(event, reply);
+      const result = await sendOneBotPrivateMessage(event, reply, { replyScope: options.replyScope });
       return {
         ok: result?.ok !== false,
         bubbles: [String(reply || "").trim()].filter(Boolean),
@@ -8516,7 +8659,8 @@ async function sendOneBotPrivateReply(event, reply, options = {}) {
     const results = [];
     for (const [index, bubble] of bubbles.entries()) {
       if (index > 0) await sleep(qqBubbleSendDelayMs);
-      results.push(await sendOneBotPrivateMessage(event, bubble));
+      assertQqReplyScopeActive(options.replyScope);
+      results.push(await sendOneBotPrivateMessage(event, bubble, { replyScope: options.replyScope }));
     }
     return {
       ok: results.every((result) => result?.ok !== false),
@@ -8529,17 +8673,21 @@ async function sendOneBotPrivateReply(event, reply, options = {}) {
   }
 }
 
-async function sendOneBotPrivateMessage(event, reply) {
+async function sendOneBotPrivateMessage(event, reply, options = {}) {
   if (!event.senderId) return { ok: false, reason: "Missing user id" };
-  const mediaPaths = await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir });
-  const fileAttachments = await resolveQqReplyFiles(reply);
-  const message = await buildOneBotPrivateReplyMessage(reply, mediaPaths);
+  assertQqReplyScopeActive(options.replyScope);
+  const mediaPaths = await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir, event });
+  const fileAttachments = await resolveQqReplyFiles(reply, event);
+  assertQqReplyScopeActive(options.replyScope);
+  const message = await buildOneBotPrivateReplyMessage(reply, mediaPaths, { event, fileAttachments });
   let messageResult = { ok: true, skipped: true };
 
   if (hasSendableOneBotMessage(message)) {
-    const response = await fetch(`${oneBotApiBase}/send_private_msg`, {
+    assertQqReplyScopeActive(options.replyScope);
+    const response = await oneBotFetch("send_private_msg", {
       method: "POST",
       headers: { "content-type": "application/json" },
+      signal: options.replyScope?.signal,
       body: JSON.stringify({
         user_id: Number(event.senderId),
         message
@@ -8556,17 +8704,19 @@ async function sendOneBotPrivateMessage(event, reply) {
 
   const fileResults = [];
   for (const attachment of fileAttachments) {
-    fileResults.push(await uploadOneBotPrivateFile(event.senderId, attachment));
+    assertQqReplyScopeActive(options.replyScope);
+    fileResults.push(await uploadOneBotPrivateFile(event.senderId, attachment, { signal: options.replyScope?.signal }));
   }
 
   return combineOneBotSendResults(messageResult, fileResults);
 }
 
-async function buildOneBotPrivateReplyMessage(reply, resolvedImagePaths = null) {
+async function buildOneBotPrivateReplyMessage(reply, resolvedImagePaths = null, { event, fileAttachments = [] } = {}) {
   const message = [];
-  const imagePaths = resolvedImagePaths || await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir });
+  const imagePaths = resolvedImagePaths || await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir, event });
   const text = stripQqImageAttachmentMarkers(reply);
   const hasMissingImageMarker = extractQqImageMarkers(reply).length > 0 && imagePaths.length === 0;
+  const hasBlockedFileMarker = extractQqFileMarkers(reply).length > fileAttachments.length;
   if (text) {
     message.push({
       type: "text",
@@ -8582,7 +8732,13 @@ async function buildOneBotPrivateReplyMessage(reply, resolvedImagePaths = null) 
       data: { text: "图片文件没有生成成功或已经不可读，QQ 端无法发送。" }
     });
   }
-  if (message.length === 0 && extractQqFileMarkers(reply).length === 0) {
+  if (hasBlockedFileMarker) {
+    message.push({
+      type: "text",
+      data: { text: "文件不在本次任务可发送目录中或已经不可读，QQ 端没有发送该文件。" }
+    });
+  }
+  if (message.length === 0 && fileAttachments.length === 0) {
     message.push({
       type: "text",
       data: { text: "这个表情包没找到，请确认表情包名来自可用表情包库。" }
@@ -8591,7 +8747,7 @@ async function buildOneBotPrivateReplyMessage(reply, resolvedImagePaths = null) 
   return message;
 }
 
-async function buildOneBotReplyMessage(event, reply, options = {}, resolvedImagePaths = null) {
+async function buildOneBotReplyMessage(event, reply, options = {}, resolvedImagePaths = null, { fileAttachments = [] } = {}) {
   const message = [];
   const sourceMessageId = event.raw?.message_id;
   if (options.quoteSource !== false && sourceMessageId != null) {
@@ -8600,9 +8756,10 @@ async function buildOneBotReplyMessage(event, reply, options = {}, resolvedImage
       data: { id: String(sourceMessageId) }
     });
   }
-  const imagePaths = resolvedImagePaths || await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir });
+  const imagePaths = resolvedImagePaths || await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir, event });
   const text = stripQqImageAttachmentMarkers(reply);
   const hasMissingImageMarker = extractQqImageMarkers(reply).length > 0 && imagePaths.length === 0;
+  const hasBlockedFileMarker = extractQqFileMarkers(reply).length > fileAttachments.length;
   if (text) {
     message.push({
       type: "text",
@@ -8618,7 +8775,13 @@ async function buildOneBotReplyMessage(event, reply, options = {}, resolvedImage
       data: { text: "图片文件没有生成成功或已经不可读，QQ 端无法发送。" }
     });
   }
-  if (!hasSendableOneBotMessage(message) && extractQqFileMarkers(reply).length === 0) {
+  if (hasBlockedFileMarker) {
+    message.push({
+      type: "text",
+      data: { text: "文件不在本次任务可发送目录中或已经不可读，QQ 端没有发送该文件。" }
+    });
+  }
+  if (!hasSendableOneBotMessage(message) && fileAttachments.length === 0) {
     message.push({
       type: "text",
       data: { text: "这个表情包没找到，请确认表情包名来自可用表情包库。" }
@@ -8629,7 +8792,7 @@ async function buildOneBotReplyMessage(event, reply, options = {}, resolvedImage
 
 async function fetchOneBotMessage(messageId, selfId) {
   if (!messageId) return null;
-  const response = await fetch(`${oneBotApiBase}/get_msg`, {
+  const response = await oneBotFetch("get_msg", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ message_id: Number(messageId) })
@@ -8669,7 +8832,7 @@ async function fetchOneBotMessage(messageId, selfId) {
 }
 
 async function fetchOneBotForwardContent(forwardId) {
-  const response = await fetch(`${oneBotApiBase}/get_forward_msg`, {
+  const response = await oneBotFetch("get_forward_msg", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ id: String(forwardId) })
@@ -8769,10 +8932,7 @@ function extractQqFileMarkers(text) {
 }
 
 function resolveLocalQqMediaPath(filePath) {
-  if (!filePath) return "";
-  const normalized = String(filePath).trim().replace(/^file:\/\//, "");
-  const resolvedPath = isAbsolute(normalized) ? normalized : resolve(projectDir, normalized);
-  return resolvedPath;
+  return resolveQqMarkerPath(filePath, { projectDir });
 }
 
 function isSendableQqImagePath(filePath) {
@@ -8973,13 +9133,19 @@ function uniqueQqMediaRefs(paths) {
   return [...new Set(normalizeMediaRefList(paths))];
 }
 
-async function resolveQqReplyFiles(reply) {
+async function resolveQqReplyFiles(reply, event) {
   const markers = extractQqFileMarkers(reply);
   const attachments = [];
   const seen = new Set();
   for (const marker of markers) {
-    const filePath = resolveLocalQqMediaPath(marker.path);
-    if (!filePath || seen.has(filePath) || !await fileExists(filePath)) continue;
+    const filePath = await resolveAllowedQqMarkerPath(marker.path, {
+      kind: "file",
+      event,
+      projectDir,
+      qqOutputImagesDir,
+      qqStickerDir
+    });
+    if (!filePath || seen.has(filePath)) continue;
     seen.add(filePath);
     attachments.push({
       path: filePath,
@@ -8998,26 +9164,27 @@ function hasSendableOneBotMessage(message) {
   return (Array.isArray(message) ? message : []).some((segment) => segment?.type !== "reply");
 }
 
-async function uploadOneBotGroupFile(groupId, attachment) {
+async function uploadOneBotGroupFile(groupId, attachment, options = {}) {
   return uploadOneBotFile("upload_group_file", {
     group_id: Number(groupId),
     file: attachment.path,
     name: attachment.name || basename(attachment.path)
-  });
+  }, options);
 }
 
-async function uploadOneBotPrivateFile(userId, attachment) {
+async function uploadOneBotPrivateFile(userId, attachment, options = {}) {
   return uploadOneBotFile("upload_private_file", {
     user_id: Number(userId),
     file: attachment.path,
     name: attachment.name || basename(attachment.path)
-  });
+  }, options);
 }
 
-async function uploadOneBotFile(endpoint, payload) {
-  const response = await fetch(`${oneBotApiBase}/${endpoint}`, {
+async function uploadOneBotFile(endpoint, payload, { signal } = {}) {
+  const response = await oneBotFetch(endpoint, {
     method: "POST",
     headers: { "content-type": "application/json" },
+    signal,
     body: JSON.stringify(payload)
   });
   const body = await response.json().catch(() => ({}));
@@ -9048,7 +9215,7 @@ async function sendOneBotPoke({ groupId, userId }) {
 }
 
 async function callOneBotAction(endpoint, payload) {
-  const response = await fetch(`${oneBotApiBase}/${endpoint}`, {
+  const response = await oneBotFetch(endpoint, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload)
@@ -9380,7 +9547,7 @@ async function handleApi(req, res) {
 
   if (req.method === "POST" && req.url === "/api/qq/event") {
     const event = enrichQqEvent(await readBody(req));
-    logger.info("QQ event received", {
+    logger.debug("QQ event received", {
       source: "qq",
       type: event.type,
       groupId: event.groupId || null,
@@ -9419,7 +9586,7 @@ async function handleApi(req, res) {
         logger.debug("Duplicate OneBot poke ignored", { dedupeKey, groupId: event.groupId || null, senderId: event.senderId || null }, "onebot");
         return sendJson(res, 200, { status: "ok", duplicate: true });
       }
-      logger.info("OneBot poke received", { groupId: event.groupId || null, senderId: event.senderId || null }, "onebot");
+      logger.debug("OneBot poke received", { groupId: event.groupId || null, senderId: event.senderId || null }, "onebot");
       await processQqReplyEvent(event, { source: "onebot" });
       return sendJson(res, 200, { status: "ok" });
     }
@@ -9451,7 +9618,7 @@ async function handleApi(req, res) {
       return sendJson(res, 200, { status: "ok", duplicate: true });
     }
 
-    logger.info("OneBot message received", {
+    logger.debug("OneBot message received", {
       messageType: payload.message_type,
       groupId: event.groupId || null,
       senderId: event.senderId || null,
@@ -9498,13 +9665,16 @@ const server = createServer(async (req, res) => {
       url: req.url,
       error
     }, "web");
-    sendJson(res, 500, { error: error.message });
+    const statusCode = Number.isInteger(error.statusCode) && error.statusCode >= 400 && error.statusCode < 500
+      ? error.statusCode
+      : 500;
+    sendJson(res, statusCode, { error: statusCode === 500 ? "Internal server error" : error.message });
   }
 });
 
-server.listen(3789, () => {
+server.listen(hubPort, hubHost, () => {
   logger.success("Codex QQ Bot hub started", {
-    url: "http://localhost:3789",
+    url: `http://${hubHost}:${hubPort}`,
     logFile: logFilePath
   }, "system");
 });

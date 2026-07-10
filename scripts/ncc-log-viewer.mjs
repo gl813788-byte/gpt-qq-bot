@@ -42,11 +42,12 @@ if (options.follow) await followFile(options);
 function parseArgs(args) {
   const output = {
     file: "",
-    tail: 120,
+    tail: 80,
     follow: false,
     level: "",
     category: "",
     plain: !process.stdout.isTTY,
+    all: false,
     verbose: false
   };
   for (let index = 0; index < args.length; index += 1) {
@@ -54,7 +55,7 @@ function parseArgs(args) {
     if (!output.file && !arg.startsWith("-")) {
       output.file = arg;
     } else if (arg === "-n" || arg === "--tail") {
-      output.tail = Math.max(1, Math.min(1000, Number(args[++index] || 120) || 120));
+      output.tail = Math.max(1, Math.min(1000, Number(args[++index] || 80) || 80));
     } else if (arg === "-f" || arg === "--follow") {
       output.follow = true;
     } else if (arg === "--level") {
@@ -63,6 +64,8 @@ function parseArgs(args) {
       output.category = String(args[++index] || "").toLowerCase();
     } else if (arg === "--plain") {
       output.plain = true;
+    } else if (arg === "--all") {
+      output.all = true;
     } else if (arg === "--verbose" || arg === "--detail" || arg === "--details") {
       output.verbose = true;
     } else {
@@ -73,7 +76,7 @@ function parseArgs(args) {
 }
 
 async function printExisting(options) {
-  const body = await readTail(options.file, Math.max(64 * 1024, options.tail * 2048)).catch((error) => {
+  const body = await readTail(options.file, Math.max(256 * 1024, options.tail * 8192)).catch((error) => {
     if (error.code === "ENOENT") return "";
     throw error;
   });
@@ -87,28 +90,56 @@ async function printExisting(options) {
 }
 
 async function followFile(options) {
-  let offset = await stat(options.file).then((entry) => entry.size).catch(() => 0);
+  const initial = await stat(options.file).catch(() => null);
+  let offset = initial?.size || 0;
+  let fileIdentity = initial ? getFileIdentity(initial) : "";
+  let reading = false;
   process.stdout.write(color(`正在跟随日志: ${options.file}\n`, "dim", options));
   setInterval(async () => {
-    const current = await stat(options.file).catch(() => null);
-    if (!current) return;
-    if (current.size < offset) offset = 0;
-    if (current.size === offset) return;
-    const handle = await open(options.file, "r");
+    if (reading) return;
+    reading = true;
     try {
-      const size = current.size - offset;
-      const buffer = Buffer.alloc(size);
-      await handle.read(buffer, 0, size, offset);
-      offset = current.size;
-      for (const line of buffer.toString("utf8").split("\n").filter(Boolean)) {
-        const rendered = renderLine(line, options);
-        if (rendered) process.stdout.write(`${rendered}\n`);
+      const current = await stat(options.file).catch(() => null);
+      if (!current) return;
+      const currentIdentity = getFileIdentity(current);
+      if (currentIdentity !== fileIdentity || current.size < offset) {
+        offset = 0;
+        fileIdentity = currentIdentity;
+      }
+      if (current.size === offset) return;
+      const handle = await open(options.file, "r");
+      try {
+        const opened = await handle.stat();
+        const openedIdentity = getFileIdentity(opened);
+        if (openedIdentity !== fileIdentity || opened.size < offset) {
+          offset = 0;
+          fileIdentity = openedIdentity;
+        }
+        if (opened.size === offset) return;
+        const size = opened.size - offset;
+        const buffer = Buffer.alloc(size);
+        const { bytesRead } = await handle.read(buffer, 0, size, offset);
+        offset += bytesRead;
+        for (const line of buffer.subarray(0, bytesRead).toString("utf8").split("\n").filter(Boolean)) {
+          const rendered = renderLine(line, options);
+          if (rendered) process.stdout.write(`${rendered}\n`);
+        }
+      } finally {
+        await handle.close().catch(() => null);
+      }
+    } catch (error) {
+      if (error?.code !== "ENOENT") {
+        process.stderr.write(`日志跟随读取失败: ${error.message}\n`);
       }
     } finally {
-      await handle.close().catch(() => null);
+      reading = false;
     }
   }, 1000);
   await new Promise(() => {});
+}
+
+function getFileIdentity(entry) {
+  return `${entry.dev ?? ""}:${entry.ino ?? ""}:${entry.birthtimeMs ?? ""}`;
 }
 
 async function readTail(file, bytes) {
@@ -133,8 +164,9 @@ function renderLine(line, options) {
   }
   if (options.level && String(entry.level || "").toLowerCase() !== options.level) return null;
   if (options.category && String(entry.category || "").toLowerCase() !== options.category) return null;
-  if (!options.verbose && String(entry.level || "").toLowerCase() === "debug") return null;
   const level = String(entry.level || "info").toLowerCase();
+  if (!options.verbose && level === "debug" && options.level !== "debug") return null;
+  if (!options.verbose && !options.all && !options.level && !options.category && !isDefaultVisible(entry, level)) return null;
   const category = String(entry.category || "system").toLowerCase();
   const ts = String(entry.ts || "").replace("T", " ").replace(/\.\d+Z$/, "");
   const colorName = colorFor(level, category);
@@ -146,6 +178,11 @@ function renderLine(line, options) {
   const message = humanMessage(entry.message || "");
   const details = formatDetails(entry, options);
   return `${header} ${message}${details ? ` ${color(details, "gray", options)}` : ""}`;
+}
+
+function isDefaultVisible(entry, level) {
+  return ["success", "warn", "error"].includes(level)
+    || ["Codex QQ Bot hub started", "QQ web lookup started"].includes(String(entry.message || ""));
 }
 
 function colorFor(level, category) {
@@ -198,7 +235,7 @@ function formatDetails(entry, options) {
 
 function formatSearchDetails(details, options) {
   const parts = [];
-  pushPart(parts, "查询", details.query);
+  pushPart(parts, "查询", options.verbose ? details.query : compactText(details.query, 80));
   pushPart(parts, "触发原因", details.reason);
   pushPart(parts, "厂商", details.provider);
   if (options.verbose && details.rawProvider) pushPart(parts, "厂商代码", details.rawProvider);
@@ -213,11 +250,11 @@ function formatSearchDetails(details, options) {
     pushPart(parts, "单次超时", formatMs(details.attemptTimeoutMs));
   }
   if (details.resultCount != null) pushPart(parts, "结果", `${details.resultCount} 条`);
-  if (Array.isArray(details.results) && details.results.length > 0) {
+  if (options.verbose && Array.isArray(details.results) && details.results.length > 0) {
     pushPart(parts, "结果详情", details.results.map(formatSearchResult).join("；"));
   }
   pushPart(parts, "错误", humanError(details.error));
-  if (Array.isArray(details.providerErrors) && details.providerErrors.length > 0) {
+  if (options.verbose && Array.isArray(details.providerErrors) && details.providerErrors.length > 0) {
     pushPart(parts, "厂商错误", details.providerErrors.map(humanError).join("；"));
   }
   return parts.join(" · ");
@@ -250,14 +287,21 @@ function formatInterestDetails(details, options) {
   return parts.join(" · ");
 }
 
-function formatGenericDetails(details) {
+function formatGenericDetails(details, options) {
+  const compactKeys = new Set(["durationMs", "resultCount", "status", "code", "error", "reason", "url"]);
   const parts = [];
   for (const [key, value] of Object.entries(details)) {
     if (value == null || value === "") continue;
     if (Array.isArray(value) && value.length === 0) continue;
+    if (!options.verbose && !compactKeys.has(key)) continue;
     parts.push(`${detailLabel(key)}: ${formatDetailValue(value, key)}`);
   }
   return parts.join(" · ");
+}
+
+function compactText(value, maxLength) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}...` : text;
 }
 
 function detailLabel(key) {
@@ -416,5 +460,5 @@ function color(text, colorName, options) {
 }
 
 function usage() {
-  process.stderr.write("用法: ncc-log-viewer.mjs LOG_FILE [--tail N] [-f] [--level LEVEL] [--category CATEGORY] [--plain] [--verbose]\n");
+  process.stderr.write("用法: ncc-log-viewer.mjs LOG_FILE [--tail N] [-f] [--level LEVEL] [--category CATEGORY] [--all] [--plain] [--verbose]\n");
 }
