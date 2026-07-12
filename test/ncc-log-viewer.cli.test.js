@@ -51,6 +51,42 @@ test("ncc log viewer is detailed by default and compacts only when requested", a
   assert.match(verbose.stdout, /private message|result title|internal detail/);
 });
 
+test("ncc log viewer highlights at-bot QQ entries separately", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "codex-qq-log-color-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const filePath = join(directory, "hub.jsonl");
+  const entries = [
+    {
+      ts: "2026-01-01T00:00:00.000Z",
+      level: "debug",
+      category: "qq",
+      message: "QQ message details received",
+      details: { messageType: "group", text: "ordinary group message", isAt: false }
+    },
+    {
+      ts: "2026-01-01T00:00:01.000Z",
+      level: "debug",
+      category: "qq",
+      message: "QQ message details received",
+      details: { messageType: "group", text: "at bot message", isAt: true, atTargets: ["12345"] }
+    },
+    {
+      ts: "2026-01-01T00:00:02.000Z",
+      level: "debug",
+      category: "search",
+      message: "QQ web lookup trigger matched",
+      details: { messageType: "group_at", query: "at bot search", isAt: true }
+    }
+  ];
+  await writeFile(filePath, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
+
+  const result = await execFileAsync(process.execPath, [viewerPath.pathname, filePath, "--color", "--tail", "20"]);
+
+  assert.match(result.stdout, /\x1b\[94mQQ\s+\x1b\[0m \x1b\[94m收到 QQ 消息详情\x1b\[0m/);
+  assert.match(result.stdout, /\x1b\[93mQQ\s+\x1b\[0m \x1b\[93m收到 QQ 消息详情\x1b\[0m/);
+  assert.match(result.stdout, /\x1b\[93m搜索\s+\x1b\[0m \x1b\[93mQQ 消息触发联网搜索\x1b\[0m/);
+});
+
 test("ncc log follower resets its offset after rotation", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "codex-qq-log-follow-"));
   t.after(() => rm(directory, { recursive: true, force: true }));

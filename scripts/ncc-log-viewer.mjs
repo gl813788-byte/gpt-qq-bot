@@ -25,6 +25,7 @@ const colors = {
   magenta: "\x1b[35m",
   gray: "\x1b[90m",
   white: "\x1b[37m",
+  brightYellow: "\x1b[93m",
   brightBlue: "\x1b[94m",
   brightCyan: "\x1b[96m",
   brightMagenta: "\x1b[95m"
@@ -64,6 +65,8 @@ function parseArgs(args) {
       output.category = String(args[++index] || "").toLowerCase();
     } else if (arg === "--plain") {
       output.plain = true;
+    } else if (arg === "--color" || arg === "--colour") {
+      output.plain = false;
     } else if (arg === "--all") {
       output.all = true;
     } else if (arg === "--verbose" || arg === "--detail" || arg === "--details") {
@@ -171,13 +174,13 @@ function renderLine(line, options) {
   if (!options.verbose && !options.all && !options.level && !options.category && !isDefaultVisible(entry, level)) return null;
   const category = String(entry.category || "system").toLowerCase();
   const ts = String(entry.ts || "").replace("T", " ").replace(/\.\d+Z$/, "");
-  const colorName = colorFor(level, category);
+  const colorName = colorFor(entry, level, category);
   const header = [
     color(ts.padEnd(19, " "), "dim", options),
     color((levelNames[level] || level).padEnd(2, " "), colorName, options),
     color((categoryNames[category] || category).padEnd(7, " "), colorName, options)
   ].join(" ");
-  const message = humanMessage(entry.message || "");
+  const message = color(humanMessage(entry.message || ""), colorName, options);
   const details = formatDetails(entry, options);
   return `${header} ${message}${details ? ` ${color(details, "gray", options)}` : ""}`;
 }
@@ -187,11 +190,11 @@ function isDefaultVisible(entry, level) {
     || ["Codex QQ Bot hub started", "QQ web lookup started"].includes(String(entry.message || ""));
 }
 
-function colorFor(level, category) {
+function colorFor(entry, level, category) {
   if (level === "error") return "red";
   if (level === "warn") return "yellow";
   if (level === "success") return "green";
-  if (level === "debug") return "gray";
+  if (isAtBotEntry(entry)) return "brightYellow";
   if (category === "search") return "brightCyan";
   if (category === "interest") return "yellow";
   if (category === "qq") return "brightBlue";
@@ -201,7 +204,16 @@ function colorFor(level, category) {
   if (category === "web") return "blue";
   if (category === "memory") return "green";
   if (category === "command") return "yellow";
+  if (level === "debug") return "gray";
   return "gray";
+}
+
+function isAtBotEntry(entry) {
+  const details = entry?.details || {};
+  const messageType = String(details.messageType || details.type || "").toLowerCase();
+  return messageType === "group_at"
+    || details.isAt === true
+    || details.hasSelfAtSegment === true;
 }
 
 function humanMessage(message) {
@@ -468,5 +480,5 @@ function color(text, colorName, options) {
 }
 
 function usage() {
-  process.stderr.write("用法: ncc-log-viewer.mjs LOG_FILE [--tail N] [-f] [--level LEVEL] [--category CATEGORY] [--all] [--plain] [--verbose|--compact]\n");
+  process.stderr.write("用法: ncc-log-viewer.mjs LOG_FILE [--tail N] [-f] [--level LEVEL] [--category CATEGORY] [--all] [--plain|--color] [--verbose|--compact]\n");
 }

@@ -75,12 +75,20 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
 
   const result = await shouldProactivelyReplyToQq(event, proactiveState(), {
     openRouterApiKey: "configured-for-test",
-    fetch
+    fetch,
+    recentMessages: [
+      { senderId: "100", text: "前面在讨论 Node 部署" },
+      { senderId: "assistant", isAssistant: true, text: "可以看日志定位" }
+    ]
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.modelJudge.interest, 88);
   assert.equal(result.modelJudge.finishReason, "stop");
+  assert.deepEqual(result.replyContext, [
+    { sender: "member", text: "前面在讨论 Node 部署", replyToBot: false },
+    { sender: "bot", text: "可以看日志定位", replyToBot: false }
+  ]);
   assert.ok(result.modelJudge.durationMs >= 2500);
   assert.equal(requestBody.stream, true);
   assert.equal(requestBody.max_tokens, 2048);

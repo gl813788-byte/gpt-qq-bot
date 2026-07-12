@@ -34,6 +34,7 @@ data/settings.json
 data/qq-memory.json
 data/qq-personas.json
 data/qq-public-memory.json
+data/qq-sticker-labels.json
 data/keep-awake.pid
 data/previous-brightness.txt
 modules/system-control/bin/

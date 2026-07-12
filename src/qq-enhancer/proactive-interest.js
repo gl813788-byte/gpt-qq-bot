@@ -89,7 +89,11 @@ export async function shouldProactivelyReplyToQq(event = {}, state = {}, helpers
     ownerLabel: helpers.ownerLabel || "主人"
   });
   if (judge.ok && judge.shouldReply && judge.interest >= judgeConfig.minInterest) {
-    return buildDecision("model final decision", assessment, judge, { messageCount: currentCount, judgeEveryMessages });
+    return buildDecision("model final decision", assessment, judge, {
+      messageCount: currentCount,
+      judgeEveryMessages,
+      replyContext: formatRecentMessages(helpers.recentMessages || [], judgeConfig.maxRecentMessages)
+    });
   }
   return {
     ok: false,
@@ -545,6 +549,7 @@ function buildDecision(reason, assessment, judge = null, meta = {}) {
     interestScore: assessment.score,
     interest: assessment,
     modelJudge: judge,
+    replyContext: meta.replyContext || [],
     promptHint: `触发原因：这条群聊命中了你的主动回复兴趣（${topic}，规则分 ${assessment.score}${judge ? `，模型兴趣 ${judge.interest}` : ""}）。${judgeHint}请像自然被喜欢的话题吸引一样短促接话，不要假装对方直接 @ 了你，不要解释触发规则，也不要连续刷屏。`
   };
 }
