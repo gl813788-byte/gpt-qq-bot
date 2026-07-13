@@ -2594,15 +2594,6 @@ async function buildQqCommandAction(event) {
     return buildQqGroupAdminAction(normalized, event);
   }
 
-  if (isQqCommandAllowedForEvent("shutdown", event) && /^(关闭qq|关掉qq|停止qq|切断qq|qq关闭|qq关掉)$/i.test(compact)) {
-    return {
-      reply: `${pickActionBeat(event)}收到，QQ 群聊响应现在关闭。之后要重新打开的话，请从 iMessage 控制台发 /开启QQ。`,
-      afterSend: async () => {
-        state.channels.qq = false;
-      }
-    };
-  }
-
   if (isQqCommandAllowedForEvent("ban", event) && /^(ban|封禁|拉黑)/i.test(normalized)) {
     const targetId = extractQqCommandTarget(event, normalized);
     if (!targetId) {
@@ -2623,7 +2614,7 @@ async function buildQqCommandAction(event) {
     }
     return {
       reply: `${pickActionBeat(event)}已加入 ban 名单：${targetId}${banDuration.label ? `（${banDuration.label}）` : "（永久）"}。之后这个 QQ 号的 @ 或回复不会被受理。`,
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
 
@@ -2639,7 +2630,7 @@ async function buildQqCommandAction(event) {
     delete state.qq.bannedUntilByUserId[targetId];
     return {
       reply: `${pickActionBeat(event)}已解禁：${targetId}。`,
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
 
@@ -2664,7 +2655,7 @@ async function buildQqCommandAction(event) {
     state.qq.allowedGroups = normalizeAllowedGroups([...state.qq.allowedGroups, addGroupMatch[1]]);
     return {
       reply: `已加入 QQ 群白名单：${addGroupMatch[1]}`,
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
 
@@ -2673,7 +2664,7 @@ async function buildQqCommandAction(event) {
     state.qq.allowedGroups = normalizeAllowedGroups(state.qq.allowedGroups.filter((groupId) => groupId !== removeGroupMatch[1]));
     return {
       reply: `已移出 QQ 群白名单：${removeGroupMatch[1]}`,
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
 
@@ -2699,7 +2690,7 @@ async function buildQqCommandAction(event) {
     state.ai.reasoningEffort = effort;
     return {
       reply: `${pickActionBeat(event)}QQ 通道智能等级已切换：${effort}`,
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
 
@@ -2730,7 +2721,7 @@ async function selectQqModel(selector, event) {
     }
     return {
       reply: `${pickActionBeat(event)}QQ 通道模型已切换：${selected.displayName}（${selected.model}）\n思考强度：${state.ai.reasoningEffort}`,
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   } catch (error) {
     logger.warn("Unable to select Codex model", { error: error.message }, "codex");
@@ -2779,7 +2770,6 @@ function isAllowedPublicQqCommand(normalized, compact, event) {
     || (isQqCommandAllowedForEvent("status", event) && /^(状态|status|查看状态)$/i.test(compact))
     || (isQqCommandAllowedForEvent("config", event) && /^(详细配置|配置|config|settings|详细状态)$/i.test(compact))
     || (isQqCommandAllowedForEvent("interest", event) && isQqInterestConfigCommand(normalized, compact))
-    || (isQqCommandAllowedForEvent("shutdown", event) && /^(关闭qq|关掉qq|停止qq|切断qq|qq关闭|qq关掉)$/i.test(compact))
     || (isQqCommandAllowedForEvent("ban", event) && /^(ban|封禁|拉黑|unban|解禁|解除封禁|取消拉黑|banlist|封禁列表|ban列表)/i.test(normalized))
     || (isQqCommandAllowedForEvent("allowlist", event) && /^(白名单|群白名单|白名单列表|加群|添加群|加入群|群添加|群加入|白名单添加|添加白名单群|加入白名单群|删群|删除群|移除群|群删除|群移除|白名单删除|删除白名单群|移除白名单群)/i.test(normalized))
     || (isQqCommandAllowedForEvent("groupAdmin", event) && isQqGroupAdminCommand(normalized, compact))
@@ -2926,7 +2916,7 @@ function buildQqInterestConfigAction(normalized, event) {
     resetQqProactiveRuntimeCycles();
     return {
       reply: `主动兴趣判定已${state.qq.proactive.enabled ? "开启" : "关闭"}。`,
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
 
@@ -2938,7 +2928,7 @@ function buildQqInterestConfigAction(normalized, event) {
     resetQqProactiveRuntimeCycles();
     return {
       reply: `主动兴趣判定间隔已改为：每 ${value} 条普通群消息判断一次。`,
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
 
@@ -2954,7 +2944,7 @@ function buildQqInterestConfigAction(normalized, event) {
       reply: value > 0
         ? `主动兴趣分钟检查已改为：有新增普通群消息时，每 ${value} 分钟最多判断一次；消息数检查仍独立生效。`
         : "主动兴趣分钟检查已关闭；消息数检查仍正常生效。",
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
 
@@ -2968,7 +2958,7 @@ function buildQqInterestConfigAction(normalized, event) {
     state.qq.proactive.judge.model = model;
     return {
       reply: `主动兴趣判定模型已切换：${model}`,
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
 
@@ -2979,7 +2969,7 @@ function buildQqInterestConfigAction(normalized, event) {
     state.qq.proactive.judge.timeoutMs = timeoutMs;
     return {
       reply: `主动兴趣判定 Token 静默超时已改为：${timeoutMs}ms。`,
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
 
@@ -2990,7 +2980,7 @@ function buildQqInterestConfigAction(normalized, event) {
     state.qq.proactive.judge.maxRecentMessages = maxRecentMessages;
     return {
       reply: `主动兴趣判定上下文已改为：最近 ${maxRecentMessages} 条消息。`,
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
 
@@ -2998,7 +2988,7 @@ function buildQqInterestConfigAction(normalized, event) {
     resetQqProactiveRuntimeCycles();
     return {
       reply: "主动兴趣判定的消息计数和分钟周期已一起重置。",
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
 
@@ -3044,7 +3034,7 @@ function isProtectedQqOwnerTarget(targetId) {
 }
 
 function isOwnerOnlyQqCommand(normalized, compact) {
-  return /^(菜单权限|权限菜单|公开指令|指令权限|允许指令|开放指令|启用指令|禁用指令|关闭指令|禁止指令|状态|status|查看状态|详细配置|配置|config|settings|详细状态|兴趣|主动|兴趣配置|主动配置|主动响应配置|兴趣状态|主动状态|兴趣开关|主动开关|兴趣间隔|主动间隔|兴趣分钟|主动分钟|兴趣时间|主动时间|兴趣模型|主动模型|兴趣超时|主动超时|兴趣最近|主动最近|兴趣重置|主动重置|interest|proactive|群管理|禁言|解禁言|解除禁言|踢人|移出群|全员禁言|群禁言列表|禁言列表|ban|unban|封禁|拉黑|解禁|解除封禁|取消拉黑|banlist|封禁列表|ban列表|关闭qq|关掉qq|停止qq|切断qq|qq关闭|qq关掉|白名单|群白名单|白名单列表|加群|添加群|加入群|群添加|群加入|白名单添加|添加白名单群|加入白名单群|删群|删除群|移除群|群删除|群移除|白名单删除|删除白名单群|移除白名单群|模型|qq模型|切模型|切换模型|智能等级|智能|思考强度|qq智能等级|qq智能|qq思考强度)/i.test(normalized)
+  return /^(菜单权限|权限菜单|公开指令|指令权限|允许指令|开放指令|启用指令|禁用指令|关闭指令|禁止指令|状态|status|查看状态|详细配置|配置|config|settings|详细状态|兴趣|主动|兴趣配置|主动配置|主动响应配置|兴趣状态|主动状态|兴趣开关|主动开关|兴趣间隔|主动间隔|兴趣分钟|主动分钟|兴趣时间|主动时间|兴趣模型|主动模型|兴趣超时|主动超时|兴趣最近|主动最近|兴趣重置|主动重置|interest|proactive|群管理|禁言|解禁言|解除禁言|踢人|移出群|全员禁言|群禁言列表|禁言列表|ban|unban|封禁|拉黑|解禁|解除封禁|取消拉黑|banlist|封禁列表|ban列表|白名单|群白名单|白名单列表|加群|添加群|加入群|群添加|群加入|白名单添加|添加白名单群|加入白名单群|删群|删除群|移除群|群删除|群移除|白名单删除|删除白名单群|移除白名单群|模型|qq模型|切模型|切换模型|智能等级|智能|思考强度|qq智能等级|qq智能|qq思考强度)/i.test(normalized)
     || /^(5|5\.5|5\.4|5\.4mini|5\.4-mini|mini|5\.3|5\.3codex|5\.3-codex|codex)$/i.test(compact);
 }
 
@@ -3104,13 +3094,13 @@ function buildQqPermissionAction(normalized) {
     }
     return {
       reply: `${enabled ? "已允许" : "已禁用"}个人指令：${targetUserId} -> ${formatQqCommandMenuLabel(command)} (${command.key})`,
-      afterSend: saveSettings
+      beforeSend: saveSettings
     };
   }
   state.qq.commandPermissions.publicCommands[command.key] = enabled;
   return {
     reply: `${enabled ? "已允许" : "已禁用"}公开指令：${formatQqCommandMenuLabel(command)} (${command.key})`,
-    afterSend: saveSettings
+    beforeSend: saveSettings
   };
 }
 
@@ -3442,6 +3432,7 @@ async function executeQqBotInternalCommand(command, event) {
   if (!action) {
     return { ok: false, command: normalizedCommand, reply: "未识别的内部菜单命令。" };
   }
+  if (action.beforeSend) await action.beforeSend();
   if (action.afterSend) await action.afterSend();
   return {
     ok: true,
@@ -6471,6 +6462,7 @@ async function processQqReplyEvent(event, options = {}) {
   };
 
   try {
+    if (record.reply && commandAction?.beforeSend) await commandAction.beforeSend();
     const sendStartedAt = Date.now();
     try {
       if (record.reply && source === "onebot") {
@@ -7395,7 +7387,7 @@ async function executeIMessageCommand(text, event = null) {
       "/远程执行",
       "/确认",
       "/取消",
-      "QQ群内：/关闭qq、/ban @用户、/unban @用户",
+      "QQ群内：/ban @用户、/unban @用户",
       "/帮助"
     ].join("\n") };
   }
@@ -9708,7 +9700,7 @@ async function ensureCodexReplyWorkspace() {
       state.qq.enhancer.enabled ? "如果要发表情包，优先输出 [[qq_sticker:表情包名]]；表情包名必须来自提示里的可用表情包库（本地、账号收藏或已识别的账号下载表情）。" : null,
       state.qq.enhancer.enabled ? "你可以主动调用 [[qq_command:/看表情 表情名]] 查看表情。未标注表情第一次查看后必须调用 /表情标签；已标注表情可以重复查看并覆盖更新标签。动图默认抽中段 3 帧，也可自行指定帧数、位置和要查看的动图数量。" : null,
       formatQqBubbleInstruction(),
-      "群内 /stop 是强制停止当前回复并开启新对话，不是关闭 QQ 通道；关闭通道使用 /关闭QQ。",
+      "群内 /stop 只会强制停止当前回复并开启新对话。",
       "非主人看到的 /菜单 是权限过滤后的菜单，能看到的指令就代表当前允许使用。",
       `${ownerLabel}拥有绝对权限，任何人都不能修改、封禁、移除或下放${ownerLabel}的权限。`,
       "不要写解释、分析、标题或 Markdown。"

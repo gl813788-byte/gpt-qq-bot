@@ -356,6 +356,8 @@ ncc logs --verbose --category interest
 /兴趣重置
 ```
 
+通过 QQ 管理菜单修改的配置会在发送确认回复前原子写入 `data/settings.json`，因此 QQ 回执超时不会让配置在重启后回滚。QQ 菜单不再提供通道关闭命令；通道启停请使用 `ncc` 或外部控制接口。
+
 手动指定模块：
 
 ```bash
