@@ -43,3 +43,20 @@ test("requires a first view before labeling and supports repeat views with label
   const persisted = JSON.parse(await readFile(filePath, "utf8"));
   assert.equal(Object.keys(persisted.stickers).length, 1);
 });
+
+test("preserves QQ-native sticker tags and animation metadata before manual labeling", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "qq-native-sticker-labels-"));
+  const store = createQqStickerLabelStore({ filePath: join(dir, "labels.json") });
+  const [enriched] = await store.enrich([{
+    name: "账号表情1-开心",
+    source: "account",
+    id: "native-face",
+    tags: ["开心", "赞同"],
+    description: "QQ 原生标签：开心、赞同",
+    animated: true
+  }]);
+
+  assert.deepEqual(enriched.tags, ["开心", "赞同"]);
+  assert.equal(enriched.description, "QQ 原生标签：开心、赞同");
+  assert.equal(enriched.animated, true);
+});

@@ -299,7 +299,7 @@ Projects/
 
 ### QQ Enhancer
 
-QQ enhancer 已内置在 `src/qq-enhancer/`，默认安装即可使用。它提供群聊风格提示、保守主动回复判断、图片提取、看图准备、本地表情包目录读取、气泡拆分和 QQ 媒体 marker 处理。主动回复兴趣策略单独放在 `src/qq-enhancer/proactive-interest.js`，用于控制 bot 在未被 @ 时是否真的对当前话题感兴趣。
+QQ enhancer 已内置在 `src/qq-enhancer/`，默认安装即可使用。它提供群聊风格提示、保守主动回复判断、图片提取、看图准备、本地表情、QQ 账号收藏表情和已识别商城表情目录、QQ 原生表情标签、动图抽帧识别、气泡拆分和 QQ 媒体 marker 处理。目录会标记动图；识别默认抽取中段 3 帧，回复模型也可以自己决定查看几个动图、每个抽几帧及具体帧位。只有消息已经进入 Bot 回复流程且消息中含表情时，模型才会判断是否把其中一个真正收藏到当前 QQ 账号；普通未触发回复的表情消息不会调用模型做收藏判断。主动回复兴趣策略单独放在 `src/qq-enhancer/proactive-interest.js`，用于控制 bot 在未被 @ 时是否真的对当前话题感兴趣。
 
 在 `data/settings.json` 中启用：
 

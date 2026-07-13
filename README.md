@@ -299,7 +299,7 @@ The hub uses the built-in `src/qq-enhancer/` and `src/unified-memory/` implement
 
 ### QQ Enhancer
 
-QQ enhancer is built into `src/qq-enhancer/` and works out of the box. It provides group-chat style guidance, conservative proactive reply decisions, image extraction and preparation, local sticker catalog loading, bubble splitting, and QQ media marker handling. Proactive interest routing lives in `src/qq-enhancer/proactive-interest.js`, which controls whether the bot is genuinely interested enough to reply when it was not mentioned.
+QQ enhancer is built into `src/qq-enhancer/` and works out of the box. It provides group-chat style guidance, conservative proactive reply decisions, image extraction and preparation, local, QQ-favorite, and observed marketplace sticker catalogs, native QQ sticker labels, animated-sticker frame inspection, bubble splitting, and QQ media marker handling. Animated stickers are marked in the catalog; inspection defaults to three middle frames, while the reply model may choose the number of animations, frame count, or exact positions. Only a message already selected for a Bot reply can trigger the model's optional decision to save one of that message's stickers into the real QQ account favorites. Proactive interest routing lives in `src/qq-enhancer/proactive-interest.js`, which controls whether the bot is genuinely interested enough to reply when it was not mentioned.
 
 Enable in `data/settings.json`:
 

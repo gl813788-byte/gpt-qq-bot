@@ -31,8 +31,9 @@ export function createQqStickerLabelStore({ filePath, now = () => new Date() } =
         return {
           ...item,
           identity,
-          tags: label?.tags || [],
-          description: label?.description || "",
+          tags: label?.tags?.length ? label.tags : normalizeTags(item?.tags),
+          description: label?.description || normalizeDescription(item?.description),
+          animated: label?.animated ?? Boolean(item?.animated),
           viewedAt: label?.viewedAt || null,
           viewCount: label?.viewCount || 0,
           labeledAt: label?.labeledAt || null
@@ -50,6 +51,7 @@ export function createQqStickerLabelStore({ filePath, now = () => new Date() } =
           identity,
           name: String(item?.name || previous.name || "表情"),
           source: String(item?.source || previous.source || (item?.url ? "account" : "local")),
+          animated: previous.animated ?? Boolean(item?.animated),
           tags: normalizeTags(previous.tags),
           description: normalizeDescription(previous.description),
           viewedAt,
