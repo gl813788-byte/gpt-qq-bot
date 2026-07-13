@@ -76,15 +76,36 @@ test("ncc log viewer highlights at-bot QQ entries separately", async (t) => {
       category: "search",
       message: "QQ web lookup trigger matched",
       details: { messageType: "group_at", query: "at bot search", isAt: true }
+    },
+    {
+      ts: "2026-01-01T00:00:03.000Z",
+      level: "success",
+      category: "lifecycle",
+      message: "QQ reply lifecycle completed",
+      traceId: "trace-colored-success",
+      details: { outcome: "sent", totalDurationMs: 2300 }
+    },
+    {
+      ts: "2026-01-01T00:00:04.000Z",
+      level: "warn",
+      category: "search",
+      message: "QQ web lookup failed",
+      details: { error: "search timeout" }
     }
   ];
   await writeFile(filePath, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
 
-  const result = await execFileAsync(process.execPath, [viewerPath.pathname, filePath, "--color", "--tail", "20"]);
+  const result = await execFileAsync(process.execPath, [viewerPath.pathname, filePath, "--color", "--tail", "20", "--summary"]);
 
   assert.match(result.stdout, /\x1b\[94mQQ\s+\x1b\[0m \x1b\[94m收到 QQ 消息详情\x1b\[0m/);
   assert.match(result.stdout, /\x1b\[93mQQ\s+\x1b\[0m \x1b\[93m收到 QQ 消息详情\x1b\[0m/);
   assert.match(result.stdout, /\x1b\[93m搜索\s+\x1b\[0m \x1b\[93mQQ 消息触发联网搜索\x1b\[0m/);
+  assert.match(result.stdout, /\x1b\[92m成功\x1b\[0m \x1b\[97m流程\s+\x1b\[0m/);
+  assert.match(result.stdout, /\x1b\[92mQQ 回复流程完成\x1b\[0m \x1b\[2m结果:\x1b\[0m \x1b\[92m已发送\x1b\[0m/);
+  assert.match(result.stdout, /\x1b\[2m总用时:\x1b\[0m \x1b\[93m2\.30s\x1b\[0m/);
+  assert.match(result.stdout, /\x1b\[93m警告\x1b\[0m \x1b\[96m搜索\s+\x1b\[0m \x1b\[93mQQ 联网搜索失败\x1b\[0m/);
+  assert.match(result.stdout, /\x1b\[2m错误:\x1b\[0m \x1b\[91msearch timeout\x1b\[0m/);
+  assert.match(result.stdout, /\x1b\[97m日志摘要\x1b\[0m/);
 });
 
 test("ncc log follower resets its offset after rotation", async (t) => {

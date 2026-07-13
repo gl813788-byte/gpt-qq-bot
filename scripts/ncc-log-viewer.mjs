@@ -27,11 +27,35 @@ const colors = {
   magenta: "\x1b[35m",
   gray: "\x1b[90m",
   white: "\x1b[37m",
+  brightRed: "\x1b[91m",
+  brightGreen: "\x1b[92m",
   brightYellow: "\x1b[93m",
   brightBlue: "\x1b[94m",
   brightCyan: "\x1b[96m",
-  brightMagenta: "\x1b[95m"
+  brightMagenta: "\x1b[95m",
+  brightWhite: "\x1b[97m"
 };
+const levelColors = {
+  debug: "gray",
+  info: "brightBlue",
+  success: "brightGreen",
+  warn: "brightYellow",
+  error: "brightRed"
+};
+const categoryColors = {
+  system: "white",
+  qq: "brightBlue",
+  onebot: "cyan",
+  codex: "brightMagenta",
+  imessage: "magenta",
+  web: "blue",
+  search: "brightCyan",
+  interest: "yellow",
+  memory: "green",
+  command: "brightYellow",
+  lifecycle: "brightWhite"
+};
+const traceColors = ["brightBlue", "brightCyan", "brightMagenta", "brightYellow", "green", "magenta"];
 
 const options = parseArgs(process.argv.slice(2));
 if (!options.file) {
@@ -268,16 +292,18 @@ function renderEntry(entry, options) {
   const level = String(entry.level || "info").toLowerCase();
   const category = String(entry.category || "system").toLowerCase();
   const ts = String(entry.ts || "").replace("T", " ").replace(/\.\d+Z$/, "");
-  const colorName = colorFor(entry, level, category);
+  const levelColor = colorForLevel(level);
+  const categoryColor = colorForCategory(entry, category);
+  const messageColor = colorForMessage(entry, level, category);
   const header = [
     color(ts.padEnd(19, " "), "dim", options),
-    color((levelNames[level] || level).padEnd(2, " "), colorName, options),
-    color((categoryNames[category] || category).padEnd(7, " "), colorName, options)
+    color((levelNames[level] || level).padEnd(2, " "), levelColor, options),
+    color((categoryNames[category] || category).padEnd(7, " "), categoryColor, options)
   ].join(" ");
-  const message = color(humanMessage(entry.message || ""), colorName, options);
-  const trace = entry.traceId ? color(`[${shortTraceId(entry.traceId)}]`, "dim", options) : "";
+  const message = color(humanMessage(entry.message || ""), messageColor, options);
+  const trace = entry.traceId ? color(`[${shortTraceId(entry.traceId)}]`, colorForTrace(entry.traceId), options) : "";
   const details = formatDetails(entry, options);
-  return `${header}${trace ? ` ${trace}` : ""} ${message}${details ? ` ${color(details, "gray", options)}` : ""}`;
+  return `${header}${trace ? ` ${trace}` : ""} ${message}${details ? ` ${colorDetails(details, entry, options)}` : ""}`;
 }
 
 function isDefaultVisible(entry, level) {
@@ -285,23 +311,24 @@ function isDefaultVisible(entry, level) {
     || ["Codex QQ Bot hub started", "QQ web lookup started"].includes(String(entry.message || ""));
 }
 
-function colorFor(entry, level, category) {
-  if (level === "error") return "red";
-  if (level === "warn") return "yellow";
-  if (level === "success") return "green";
+function colorForLevel(level) {
+  return levelColors[level] || "white";
+}
+
+function colorForCategory(entry, category) {
   if (isAtBotEntry(entry)) return "brightYellow";
-  if (category === "search") return "brightCyan";
-  if (category === "interest") return "yellow";
-  if (category === "qq") return "brightBlue";
-  if (category === "onebot") return "cyan";
-  if (category === "codex") return "brightMagenta";
-  if (category === "imessage") return "magenta";
-  if (category === "web") return "blue";
-  if (category === "memory") return "green";
-  if (category === "command") return "yellow";
-  if (category === "lifecycle") return "white";
-  if (level === "debug") return "gray";
-  return "gray";
+  return categoryColors[category] || "white";
+}
+
+function colorForMessage(entry, level, category) {
+  if (["error", "warn", "success"].includes(level)) return colorForLevel(level);
+  return colorForCategory(entry, category);
+}
+
+function colorForTrace(traceId) {
+  let hash = 0;
+  for (const character of String(traceId || "")) hash = ((hash * 31) + character.charCodeAt(0)) >>> 0;
+  return traceColors[hash % traceColors.length];
 }
 
 function isAtBotEntry(entry) {
@@ -442,6 +469,57 @@ function formatGenericDetails(details, options) {
     parts.push(`${detailLabel(key)}: ${formatDetailValue(value, key)}`);
   }
   return parts.join(" · ");
+}
+
+function colorDetails(details, entry, options) {
+  if (options.plain) return details;
+  const separator = color(" · ", "dim", options);
+  return String(details).split(" · ").map((part) => {
+    const separatorIndex = part.indexOf(": ");
+    if (separatorIndex < 0) return color(part, "gray", options);
+    const label = part.slice(0, separatorIndex);
+    const value = part.slice(separatorIndex + 2);
+    return `${color(`${label}:`, "dim", options)} ${color(value, colorForDetailValue(label, value, entry), options)}`;
+  }).join(separator);
+}
+
+function colorForDetailValue(label, value, entry) {
+  const normalized = String(value || "").toLowerCase();
+  if (/错误|厂商错误|阻断/.test(label) || /失败|error|timeout|超时/.test(normalized)) return "brightRed";
+  if (/惩罚|触发原因|模型理由/.test(label)) return "yellow";
+  if (/用时|间隔|^(记忆|路由|生成|发送|落盘)$/.test(label)) return colorForDuration(value);
+  if (/链接|地址/.test(label)) return "brightBlue";
+  if (/结果|状态|是否|开启|可用/.test(label)) return colorForStateValue(normalized);
+  if (/厂商|模型|预设/.test(label)) return "brightMagenta";
+  if (/群|发送者|消息$|机器人 QQ|去重标识|链路/.test(label)) return "brightCyan";
+  if (/查询|消息内容|标题|摘要|回复风格/.test(label)) return "brightWhite";
+  if (/触发|场景|来源|通道|消息类型|事件类型|通知类型/.test(label)) return "brightYellow";
+  if (/数|长度|字符|气泡|排队|规则分|直呼|偏好|上下文|推理/.test(label)) return "cyan";
+  if (entry?.level === "error") return "brightRed";
+  return "gray";
+}
+
+function colorForStateValue(value) {
+  if (/失败|错误|不可用|未开启/.test(value)) return "brightRed";
+  if (/已发送|成功|找到了结果|命令已处理|^是$|开启|正常/.test(value)) return "brightGreen";
+  if (/已排队|处理中|运行中/.test(value)) return "brightBlue";
+  if (/警告|跳过/.test(value)) return "brightYellow";
+  return "gray";
+}
+
+function colorForDuration(value) {
+  const milliseconds = parseFormattedDurationMs(value);
+  if (milliseconds == null) return "cyan";
+  if (milliseconds >= 10_000) return "brightRed";
+  if (milliseconds >= 2_000) return "brightYellow";
+  return "cyan";
+}
+
+function parseFormattedDurationMs(value) {
+  const match = String(value || "").trim().match(/^(\d+(?:\.\d+)?)(ms|s|m)$/i);
+  if (!match) return null;
+  const multiplier = { ms: 1, s: 1000, m: 60_000 }[match[2].toLowerCase()];
+  return Number(match[1]) * multiplier;
 }
 
 function compactText(value, maxLength) {
@@ -680,7 +758,18 @@ function renderSummary(entries, options) {
   const categories = Object.entries(byCategory).map(([key, count]) => `${categoryNames[key] || key} ${count}`).join(" / ") || "无";
   const durationText = durations.length ? `；耗时样本 ${durations.length}，P95 ${formatMs(p95)}，最慢 ${formatMs(durations.at(-1))}` : "";
   const summary = `日志摘要：${entries.length} 条，${traces.size} 条链路；级别 ${levels}；分类 ${categories}${durationText}`;
-  return options.json ? JSON.stringify({ summary, total: entries.length, traces: traces.size, byLevel, byCategory, p95Ms: p95 || null }) : color(summary, "brightCyan", options);
+  if (options.json) return JSON.stringify({ summary, total: entries.length, traces: traces.size, byLevel, byCategory, p95Ms: p95 || null });
+  if (options.plain) return summary;
+  const coloredLevels = Object.entries(byLevel)
+    .map(([key, count]) => color(`${levelNames[key] || key} ${count}`, colorForLevel(key), options))
+    .join(color(" / ", "dim", options)) || color("无", "gray", options);
+  const coloredCategories = Object.entries(byCategory)
+    .map(([key, count]) => color(`${categoryNames[key] || key} ${count}`, categoryColors[key] || "white", options))
+    .join(color(" / ", "dim", options)) || color("无", "gray", options);
+  const coloredDuration = durations.length
+    ? `；${color(`耗时样本 ${durations.length}`, "cyan", options)}，P95 ${color(formatMs(p95), colorForDuration(formatMs(p95)), options)}，最慢 ${color(formatMs(durations.at(-1)), colorForDuration(formatMs(durations.at(-1))), options)}`
+    : "";
+  return `${color("日志摘要", "brightWhite", options)}：${color(`${entries.length} 条`, "brightCyan", options)}，${color(`${traces.size} 条链路`, "brightMagenta", options)}；级别 ${coloredLevels}；分类 ${coloredCategories}${coloredDuration}`;
 }
 
 function pushPart(parts, label, value) {

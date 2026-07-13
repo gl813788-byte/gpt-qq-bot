@@ -273,7 +273,7 @@ curl 'http://localhost:3789/api/logs?limit=50&trace=8d27a910'
 curl 'http://localhost:3789/api/logs?group=1084253274&slow=2000&q=timeout'
 ```
 
-默认日志会保存并显示调试级详细信息，包括 QQ 消息处理、搜索触发原因、厂商 query 变体以及命中结果。新日志使用 schema v2 标识，并用同一个 trace id 串起一轮 QQ 回复的路由、兴趣判断、联网搜索、Codex 生成、发送和记忆落盘；流程完成日志会记录各阶段与总耗时。`ncc logs` 会同时检索当前及轮转日志，可按 `--level`、`--category`、`--trace`、`--group`、`--sender`、`--search`、`--since`、`--until`、`--slow` 过滤；`--summary` 会显示数量及 P95/最慢耗时，`--json` 输出 JSONL，`--compact` 临时折叠为高信号视图。`/api/logs` 支持对应的 `level`、`category`、`trace`、`group`、`sender`、`q`、`since`、`until`、`slow` 参数并返回摘要。也可以通过 `CODEX_REMOTE_CONTACT_LOG_LEVEL=info` 降低写入详细度。
+默认日志会保存并显示调试级详细信息，包括 QQ 消息处理、搜索触发原因、厂商 query 变体以及命中结果。新日志使用 schema v2 标识，并用同一个 trace id 串起一轮 QQ 回复的路由、兴趣判断、联网搜索、Codex 生成、发送和记忆落盘；流程完成日志会记录各阶段与总耗时。`ncc logs` 会同时检索当前及轮转日志，可按 `--level`、`--category`、`--trace`、`--group`、`--sender`、`--search`、`--since`、`--until`、`--slow` 过滤。交互式终端会分别为级别、模块、稳定 trace、结果、错误和耗时等级着色；管道中可用 `--color` 强制 ANSI 彩色，或用 `--plain` 关闭颜色。`--summary` 会显示数量及 P95/最慢耗时，`--json` 输出 JSONL，`--compact` 临时折叠为高信号视图。`/api/logs` 支持对应的 `level`、`category`、`trace`、`group`、`sender`、`q`、`since`、`until`、`slow` 参数并返回摘要。也可以通过 `CODEX_REMOTE_CONTACT_LOG_LEVEL=info` 降低写入详细度。
 
 `ncc` 仍会在名为 `codex-contact` 的 `screen` 会话里启动后端；只有排查进程启动输出时才需要 `screen -r codex-contact`。
 
