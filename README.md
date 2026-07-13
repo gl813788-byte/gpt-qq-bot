@@ -263,13 +263,17 @@ The hub writes structured JSONL logs to `runtime/logs/hub.jsonl`. Use `ncc logs`
 
 ```bash
 ncc logs
-ncc logs --tail 200 --level error
+ncc logs --errors --since 30m --summary
 ncc logs --verbose --category search
+ncc logs --trace 8d27a910
+ncc logs --group 1084253274 --sender 3784642920 --search timeout
+ncc logs --slow 2000 --summary
 ncc logs -f
-curl 'http://localhost:3789/api/logs?limit=50&category=qq'
+curl 'http://localhost:3789/api/logs?limit=50&trace=8d27a910'
+curl 'http://localhost:3789/api/logs?group=1084253274&slow=2000&q=timeout'
 ```
 
-Logs save and display debug-level diagnostics by default, including QQ message handling, lookup triggers, provider query variants, and matched results. Use `--compact` for a temporary high-signal summary, or set `CODEX_REMOTE_CONTACT_LOG_LEVEL=info` to reduce persisted detail.
+Logs save and display debug-level diagnostics by default, including QQ message handling, lookup triggers, provider query variants, and matched results. New entries use schema v2 identifiers and correlate each QQ reply lifecycle through a shared trace id across routing, proactive-interest judging, web lookup, Codex generation, delivery, and persistence. The lifecycle completion entry records stage and total durations. `ncc logs` searches the current and rotated log files; filters include `--level`, `--category`, `--trace`, `--group`, `--sender`, `--search`, `--since`, `--until`, and `--slow`. Use `--summary` for counts plus P95/max latency, `--json` for JSONL output, or `--compact` for a temporary high-signal view. `/api/logs` supports the equivalent `level`, `category`, `trace`, `group`, `sender`, `q`, `since`, `until`, and `slow` parameters and returns a summary. Set `CODEX_REMOTE_CONTACT_LOG_LEVEL=info` to reduce persisted detail.
 
 `ncc` also starts the hub in a `screen` session named `codex-contact`; use `screen -r codex-contact` only when diagnosing process-level startup output.
 

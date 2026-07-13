@@ -957,6 +957,19 @@ function getQqMemoryScopeId(event) {
   return "";
 }
 
+function ensureQqTraceId(event) {
+  if (!event || typeof event !== "object") return crypto.randomUUID();
+  if (!event.traceId) event.traceId = crypto.randomUUID();
+  return String(event.traceId);
+}
+
+function qqLogContext(event, extra = {}) {
+  return {
+    traceId: ensureQqTraceId(event),
+    ...extra
+  };
+}
+
 function getQqMemoryScopeLabel(event) {
   return event?.groupId ? "本群" : "本次 QQ 私聊";
 }
@@ -2453,7 +2466,7 @@ function logQqProactiveInterestDecision(event, decision = {}) {
     modelError: judge.ok === false ? (judge.reason || judge.error) : undefined
   };
   const level = decision.ok ? "info" : (judge.ok === false ? "warn" : "debug");
-  logger[level]("QQ proactive interest decision", details, "interest");
+  logger[level]("QQ proactive interest decision", details, "interest", qqLogContext(event));
 }
 
 function hasUnhandledQqAudio(event) {
@@ -3371,7 +3384,7 @@ async function executeQqBotInternalCommand(command, event) {
   }
 
   if (isQqBotWebSearchCommand(normalizedCommand)) {
-    return executeQqBotWebSearchCommand(normalizedCommand);
+    return executeQqBotWebSearchCommand(normalizedCommand, event);
   }
 
   if (isQqBotPokeCommand(normalizedCommand)) {
@@ -3734,7 +3747,7 @@ function getPendingQqStickerLabels(event) {
   return Array.isArray(event?.qqPendingStickerLabels) ? event.qqPendingStickerLabels : [];
 }
 
-async function executeQqBotWebSearchCommand(command) {
+async function executeQqBotWebSearchCommand(command, event = null) {
   const query = String(command || "")
     .replace(/^\/?(联网查询|联网|搜索|搜一下|查一下|web|search)\s*/i, "")
     .trim();
@@ -3745,7 +3758,7 @@ async function executeQqBotWebSearchCommand(command) {
     return { ok: false, command, reply: "QQ 联网查询现在是关闭的。" };
   }
   try {
-    const results = await searchWeb(query);
+    const results = await searchWeb(query, { traceId: event?.traceId || "" });
     if (!results.length) {
       return { ok: true, command, reply: `联网查询没有找到稳定结果：${query}` };
     }
@@ -5221,9 +5234,9 @@ async function buildWebLookupContext(event) {
     imageCount: Array.isArray(event.images) ? event.images.length : 0,
     hasReply: Boolean(event.replyContext || event.replyMessageId),
     isAt: isExplicitQqAtEvent(event)
-  }, "search");
+  }, "search", qqLogContext(event));
   try {
-    const results = await searchWeb(query);
+    const results = await searchWeb(query, { traceId: event.traceId });
     if (results.length === 0) return "";
     logger.debug("QQ web lookup results selected", {
       query,
@@ -5234,7 +5247,7 @@ async function buildWebLookupContext(event) {
         snippet: String(result.snippet || "").slice(0, 280),
         source: result.source || null
       }))
-    }, "search");
+    }, "search", qqLogContext(event));
     return [
       "联网查询摘要：",
       "以下是 Hub 为这个 QQ 群聊问题临时查询到的网页搜索摘要。只在相关时参考；不要编造未查到的细节；如果结果不可靠，可以说不确定。",
@@ -5337,7 +5350,7 @@ function isQqImageLookRequest(text) {
   return /(看图|看一下图|看看图|这图|这个图|这张|图片|截图|表情包|图里|图上|什么图|配图|识别|看得懂|看不懂|何意味|逆天|抽象|离谱|绷不住|典中典|味太冲|评价一下|锐评|说说|怎么看|看法)/i.test(String(text || ""));
 }
 
-async function searchWeb(query) {
+async function searchWeb(query, { traceId = "" } = {}) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), qqWebLookupTimeoutMs);
   const startedAt = Date.now();
@@ -5360,7 +5373,7 @@ async function searchWeb(query) {
       providers: providerPlan.map(formatWebSearchProviderName),
       timeoutMs: qqWebLookupTimeoutMs,
       attemptTimeoutMs: qqWebLookupAttemptTimeoutMs
-    }, "search");
+    }, "search", { traceId });
 
     if (preferredProvider !== "tavily" && shouldUseWikipediaForQuery(query)) {
       for (const variant of queryVariants.slice(0, 2)) {
@@ -5370,7 +5383,7 @@ async function searchWeb(query) {
       }
     }
 
-    await collectSearchProviderResults(providerPlan, queryVariants, controller.signal, webResults);
+    await collectSearchProviderResults(providerPlan, queryVariants, controller.signal, webResults, { traceId });
     const results = mergeSearchResults([...wikipediaResults, ...webResults]).slice(0, 5);
     const enriched = await enrichWebResults(results, controller.signal);
     state.maintenance.webLookup.lastOk = true;
@@ -5381,7 +5394,7 @@ async function searchWeb(query) {
       provider: formatWebSearchProviderName(state.maintenance.webLookup.effectiveProvider),
       resultCount: enriched.length,
       durationMs: state.maintenance.webLookup.lastDurationMs
-    }, "search");
+    }, "search", { traceId });
     return enriched;
   } catch (error) {
     state.maintenance.webLookup.lastOk = false;
@@ -5393,7 +5406,7 @@ async function searchWeb(query) {
       durationMs: state.maintenance.webLookup.lastDurationMs,
       error: error.message,
       providerErrors: state.maintenance.webLookup.lastProviderErrors
-    }, "search");
+    }, "search", { traceId });
     if (error.name === "AbortError") throw new Error("search timed out");
     throw error;
   } finally {
@@ -5460,7 +5473,7 @@ function formatWebSearchProviderName(provider) {
   }[provider] || String(provider || "unknown");
 }
 
-async function collectSearchProviderResults(providers, queryVariants, signal, output) {
+async function collectSearchProviderResults(providers, queryVariants, signal, output, { traceId = "" } = {}) {
   if (!Array.isArray(queryVariants) || queryVariants.length === 0) return;
   const providerList = Array.isArray(providers) && providers.length > 0 ? providers : buildWebSearchProviderPlan();
   const errors = [];
@@ -5491,7 +5504,7 @@ async function collectSearchProviderResults(providers, queryVariants, signal, ou
           resultCount: hits.length,
           durationMs: Date.now() - attemptStartedAt,
           status: hits.length > 0 ? "found_results" : "no_results"
-        }, "search");
+        }, "search", { traceId });
         if (hits.length === 0) {
           providerReturnedEmpty = true;
           continue;
@@ -5515,7 +5528,7 @@ async function collectSearchProviderResults(providers, queryVariants, signal, ou
           query: variant,
           durationMs: Date.now() - attemptStartedAt,
           error: error.message
-        }, "search");
+        }, "search", { traceId });
         if (error.name === "AbortError") throw error;
       }
     }
@@ -6165,7 +6178,26 @@ async function rememberQqGroupMessage(event) {
 
 async function processQqReplyEvent(event, options = {}) {
   const source = options.source || "qq";
+  const lifecycleStartedAt = Date.now();
+  const traceId = ensureQqTraceId(event);
+  const timings = {
+    rememberDurationMs: 0,
+    decisionDurationMs: 0,
+    generationDurationMs: 0,
+    sendDurationMs: 0,
+    memoryDurationMs: 0
+  };
+  logger.debug("QQ reply lifecycle started", {
+    source,
+    groupId: event.groupId || null,
+    senderId: event.senderId || null,
+    messageId: event.raw?.message_id == null ? null : String(event.raw.message_id),
+    messageType: event.type || (event.groupId ? "group_message" : "private_message"),
+    proactive: Boolean(options.decisionOverride?.proactive),
+    alreadyRemembered: Boolean(options.alreadyRemembered)
+  }, "lifecycle", { traceId });
   if (!options.alreadyRemembered) {
+    const rememberStartedAt = Date.now();
     if (event.groupId) {
       const groupId = String(event.groupId);
       const activityVersion = Number(qqGroupActivityVersionByGroupId.get(groupId) || 0) + 1;
@@ -6174,11 +6206,17 @@ async function processQqReplyEvent(event, options = {}) {
       event.proactiveObservedAtMs = Date.now();
       event.proactiveSource = source;
     }
-    await rememberQqGroupMessage(event);
-    if (source === "onebot") noteQqImageRequest(event);
+    try {
+      await rememberQqGroupMessage(event);
+      if (source === "onebot") noteQqImageRequest(event);
+    } finally {
+      timings.rememberDurationMs = Date.now() - rememberStartedAt;
+    }
   }
 
+  const decisionStartedAt = Date.now();
   const decision = options.decisionOverride || await shouldRespondToQq(event);
+  timings.decisionDurationMs = Date.now() - decisionStartedAt;
   let reply = null;
   let error = null;
   let commandAction = null;
@@ -6187,6 +6225,7 @@ async function processQqReplyEvent(event, options = {}) {
   let replyScope = null;
 
   if (decision.ok) {
+    const generationStartedAt = Date.now();
     try {
       event.proactiveDecision = decision.proactive ? decision : undefined;
       commandAction = await buildQqCommandAction(event);
@@ -6219,11 +6258,14 @@ async function processQqReplyEvent(event, options = {}) {
       reply = ["QQ_GENERATION_STOPPED", "QQ_REPLY_STOPPED"].includes(caught.code)
         ? null
         : "这边刚刚卡了一下，等我再试一次。";
+    } finally {
+      timings.generationDurationMs = Date.now() - generationStartedAt;
     }
   }
 
   const record = {
     id: crypto.randomUUID(),
+    traceId,
     receivedAt: new Date().toISOString(),
     source,
     event,
@@ -6232,47 +6274,58 @@ async function processQqReplyEvent(event, options = {}) {
     error,
     queued,
     queuedCount,
-    send: null
+    send: null,
+    timings
   };
 
   try {
-    if (record.reply && source === "onebot") {
-      if (isQqPrivateEvent(event)) {
-        try {
-          assertQqReplyScopeActive(replyScope);
-          record.send = await sendOneBotPrivateReply(event, record.reply, {
-            singleBubble: Boolean(commandAction),
-            replyScope
-          });
-        } catch (sendError) {
-          record.send = { ok: false, error: sendError.message };
+    const sendStartedAt = Date.now();
+    try {
+      if (record.reply && source === "onebot") {
+        if (isQqPrivateEvent(event)) {
+          try {
+            assertQqReplyScopeActive(replyScope);
+            record.send = await sendOneBotPrivateReply(event, record.reply, {
+              singleBubble: Boolean(commandAction),
+              replyScope
+            });
+          } catch (sendError) {
+            record.send = { ok: false, error: sendError.message };
+          }
+        } else {
+          try {
+            assertQqReplyScopeActive(replyScope);
+            record.send = await sendOneBotGroupReply(event, record.reply, {
+              singleBubble: Boolean(commandAction),
+              replyScope
+            });
+          } catch (sendError) {
+            record.send = { ok: false, error: sendError.message };
+          }
         }
       } else {
-        try {
-          assertQqReplyScopeActive(replyScope);
-          record.send = await sendOneBotGroupReply(event, record.reply, {
-            singleBubble: Boolean(commandAction),
-            replyScope
-          });
-        } catch (sendError) {
-          record.send = { ok: false, error: sendError.message };
-        }
+        if (record.reply) record.send = { ok: true, skipped: true };
       }
-    } else {
-      if (record.reply) record.send = { ok: true, skipped: true };
+    } finally {
+      timings.sendDurationMs = Date.now() - sendStartedAt;
     }
 
     assertQqReplyScopeActive(replyScope);
-    if (record.reply && record.send?.ok !== false && commandAction?.afterSend) await commandAction.afterSend();
-    if (record.reply && record.send?.ok !== false && !commandAction?.skipMemory) {
-      await rememberQqExchange(event, record.reply);
-      state.qq.conversationMemory = updateQqConversationMemoryFromExchange(
-        state.qq.conversationMemory,
-        event,
-        record.reply,
-        event.qqConversationMemoryPatches || []
-      );
-      await saveQqConversationMemory();
+    const memoryStartedAt = Date.now();
+    try {
+      if (record.reply && record.send?.ok !== false && commandAction?.afterSend) await commandAction.afterSend();
+      if (record.reply && record.send?.ok !== false && !commandAction?.skipMemory) {
+        await rememberQqExchange(event, record.reply);
+        state.qq.conversationMemory = updateQqConversationMemoryFromExchange(
+          state.qq.conversationMemory,
+          event,
+          record.reply,
+          event.qqConversationMemoryPatches || []
+        );
+        await saveQqConversationMemory();
+      }
+    } finally {
+      timings.memoryDurationMs = Date.now() - memoryStartedAt;
     }
   } catch (caught) {
     record.error ||= caught.message;
@@ -6280,7 +6333,7 @@ async function processQqReplyEvent(event, options = {}) {
       groupId: event.groupId || null,
       senderId: event.senderId || null,
       error: caught
-    }, "qq");
+    }, "qq", qqLogContext(event));
   } finally {
     if (event.qqTaskWorkspace) {
       await cleanupQqEventTaskWorkspaceByBot(event, record.send?.skipped ? "QQ send skipped" : "QQ reply processing finished");
@@ -6288,6 +6341,11 @@ async function processQqReplyEvent(event, options = {}) {
     recordQqEvent(record);
     if (replyScope) finishQqReplyScope(replyScope);
   }
+
+  logQqReplyLifecycleCompleted(record, {
+    lifecycleStartedAt,
+    commandAction
+  });
 
   const scopeId = getQqMemoryScopeId(event);
   if (replyScope || record.reply) {
@@ -6297,11 +6355,48 @@ async function processQqReplyEvent(event, options = {}) {
       logger.error("Unable to process queued QQ replies", {
         scopeId,
         error: caught
-      }, "qq");
+      }, "qq", qqLogContext(event));
     }
   }
 
   return record;
+}
+
+function logQqReplyLifecycleCompleted(record, { lifecycleStartedAt, commandAction } = {}) {
+  const event = record.event || {};
+  const decision = record.decision || {};
+  const sendFailed = record.send?.ok === false;
+  let outcome = "ignored";
+  if (record.error || sendFailed) outcome = "failed";
+  else if (record.queued) outcome = "queued";
+  else if (!decision.ok) outcome = "ignored";
+  else if (!record.reply) outcome = decision.proactive ? "silent" : "ignored";
+  else if (commandAction) outcome = "command";
+  else if (record.send?.skipped) outcome = "skipped";
+  else outcome = "sent";
+
+  const details = {
+    outcome,
+    source: record.source,
+    groupId: event.groupId || null,
+    senderId: event.senderId || null,
+    messageId: event.raw?.message_id == null ? null : String(event.raw.message_id),
+    messageType: event.type || (event.groupId ? "group_message" : "private_message"),
+    proactive: Boolean(decision.proactive),
+    triggerMode: decision.triggerMode || (isMentionEvent(event) ? "explicit" : null),
+    decisionReason: decision.reason || null,
+    replyChars: String(record.reply || "").length,
+    bubbleCount: Array.isArray(record.send?.bubbles) ? record.send.bubbles.length : (record.reply ? 1 : 0),
+    queuedCount: record.queuedCount || 0,
+    sendStatus: record.send?.status || record.send?.results?.[0]?.status || null,
+    error: record.error || record.send?.error || null,
+    ...record.timings,
+    totalDurationMs: Date.now() - Number(lifecycleStartedAt || Date.now())
+  };
+  const level = outcome === "failed"
+    ? "error"
+    : (["sent", "command"].includes(outcome) ? "success" : (outcome === "queued" ? "info" : "debug"));
+  logger[level]("QQ reply lifecycle completed", details, "lifecycle", { traceId: record.traceId });
 }
 
 function selectRelevantGroupMessages(event, { expandLevel = 0, entriesOverride = null, resultLimit = null } = {}) {
@@ -9288,8 +9383,10 @@ function runCodexCliProcess(args, input, options) {
       logger.error("Codex CLI timed out", {
         cwd: options.cwd,
         durationMs: state.maintenance.codex.lastDurationMs,
-        qqGenerationId
-      }, "codex");
+        qqGenerationId,
+        groupId: options.qqEvent?.groupId || null,
+        senderId: options.qqEvent?.senderId || null
+      }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
       timedOutError = new Error("Codex CLI timed out while generating a reply");
       terminateChild();
     }, options.timeout);
@@ -9313,8 +9410,11 @@ function runCodexCliProcess(args, input, options) {
       logger.error("Codex CLI failed to start", {
         cwd: options.cwd,
         durationMs: state.maintenance.codex.lastDurationMs,
+        qqGenerationId,
+        groupId: options.qqEvent?.groupId || null,
+        senderId: options.qqEvent?.senderId || null,
         error
-      }, "codex");
+      }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
       clearTrackedQqGeneration(qqGenerationId);
       reject(error);
     });
@@ -9338,8 +9438,10 @@ function runCodexCliProcess(args, input, options) {
           cwd: options.cwd,
           durationMs: state.maintenance.codex.lastDurationMs,
           qqGenerationId,
+          groupId: options.qqEvent?.groupId || null,
+          senderId: options.qqEvent?.senderId || null,
           stderr: stderr.trim().slice(-1000) || null
-        }, "codex");
+        }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
         refreshCodexQuotaSnapshotAfterRun({ startedAtMs: startedAt, previousQuota }).catch(() => null).finally(() => {
           resolve({ stdout, stderr });
         });
@@ -9349,8 +9451,10 @@ function runCodexCliProcess(args, input, options) {
         logger.warn("QQ Codex generation stopped", {
           cwd: options.cwd,
           durationMs: state.maintenance.codex.lastDurationMs,
-          qqGenerationId
-        }, "codex");
+          qqGenerationId,
+          groupId: options.qqEvent?.groupId || null,
+          senderId: options.qqEvent?.senderId || null
+        }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
         const stoppedError = new Error("QQ generation stopped by /stop");
         stoppedError.code = "QQ_GENERATION_STOPPED";
         reject(stoppedError);
@@ -9362,9 +9466,12 @@ function runCodexCliProcess(args, input, options) {
           cwd: options.cwd,
           code,
           durationMs: state.maintenance.codex.lastDurationMs,
+          qqGenerationId,
+          groupId: options.qqEvent?.groupId || null,
+          senderId: options.qqEvent?.senderId || null,
           stderr: stderr.trim().slice(-2000),
           stdout: stdout.trim().slice(-1000)
-        }, "codex");
+        }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
         reject(new Error(message));
       }
     });
@@ -10543,15 +10650,16 @@ async function handleApi(req, res) {
 
   if (req.method === "POST" && req.url === "/api/qq/event") {
     const event = enrichQqEvent(await readBody(req));
+    ensureQqTraceId(event);
     logger.debug("QQ event received", {
       source: "qq",
       type: event.type,
       groupId: event.groupId || null,
       senderId: event.senderId || null,
       textLength: String(event.text || "").length
-    }, "qq");
+    }, "qq", qqLogContext(event));
     await processQqReplyEvent(event, { source: "qq" });
-    return sendJson(res, 200, { status: "ok" });
+    return sendJson(res, 200, { status: "ok", traceId: event.traceId });
   }
 
   if (req.method === "POST" && req.url === "/api/onebot/event") {
@@ -10568,6 +10676,7 @@ async function handleApi(req, res) {
         return sendJson(res, 200, { ignored: true, reason: "Only poke events targeting the bot are handled" });
       }
       const event = enrichQqEvent(normalizeOneBotPokeEvent(payload));
+      ensureQqTraceId(event);
       const dedupeKey = getEventDedupeKey(event);
       if (rememberEvent(dedupeKey)) {
         const record = {
@@ -10582,12 +10691,12 @@ async function handleApi(req, res) {
         };
         state.qq.events.unshift(record);
         state.qq.events = state.qq.events.slice(0, 30);
-        logger.debug("Duplicate OneBot poke ignored", { dedupeKey, groupId: event.groupId || null, senderId: event.senderId || null }, "onebot");
-        return sendJson(res, 200, { status: "ok", duplicate: true });
+        logger.debug("Duplicate OneBot poke ignored", { dedupeKey, groupId: event.groupId || null, senderId: event.senderId || null }, "onebot", qqLogContext(event));
+        return sendJson(res, 200, { status: "ok", duplicate: true, traceId: event.traceId });
       }
-      logger.debug("OneBot poke received", { groupId: event.groupId || null, senderId: event.senderId || null }, "onebot");
+      logger.debug("OneBot poke received", { groupId: event.groupId || null, senderId: event.senderId || null }, "onebot", qqLogContext(event));
       await processQqReplyEvent(event, { source: "onebot" });
-      return sendJson(res, 200, { status: "ok" });
+      return sendJson(res, 200, { status: "ok", traceId: event.traceId });
     }
     if (payload.post_type !== "message" || !["group", "private"].includes(payload.message_type)) {
       logger.debug("OneBot event ignored", {
@@ -10600,6 +10709,7 @@ async function handleApi(req, res) {
 
     const normalizedEvent = await attachQqRichMessageContext(normalizeOneBotEvent(payload));
     const event = enrichQqEvent(await attachReplyContext(normalizedEvent));
+    ensureQqTraceId(event);
     const dedupeKey = getEventDedupeKey(event);
     if (rememberEvent(dedupeKey)) {
       const record = {
@@ -10614,8 +10724,8 @@ async function handleApi(req, res) {
       };
       state.qq.events.unshift(record);
       state.qq.events = state.qq.events.slice(0, 30);
-      logger.debug("Duplicate OneBot message ignored", { dedupeKey, groupId: event.groupId || null, senderId: event.senderId || null }, "onebot");
-      return sendJson(res, 200, { status: "ok", duplicate: true });
+      logger.debug("Duplicate OneBot message ignored", { dedupeKey, groupId: event.groupId || null, senderId: event.senderId || null }, "onebot", qqLogContext(event));
+      return sendJson(res, 200, { status: "ok", duplicate: true, traceId: event.traceId });
     }
 
     logger.debug("OneBot message received", {
@@ -10623,7 +10733,7 @@ async function handleApi(req, res) {
       groupId: event.groupId || null,
       senderId: event.senderId || null,
       textLength: String(event.text || "").length
-    }, "onebot");
+    }, "onebot", qqLogContext(event));
     logger.debug("QQ message details received", {
       source: "OneBot",
       messageType: payload.message_type,
@@ -10635,9 +10745,9 @@ async function handleApi(req, res) {
       hasReply: Boolean(event.replyContext || event.replyMessageId),
       isAt: Boolean(event.hasSelfAtSegment || event.type === "group_at"),
       atTargets: Array.isArray(event.atTargets) ? event.atTargets : []
-    }, "qq");
+    }, "qq", qqLogContext(event));
     await processQqReplyEvent(event, { source: "onebot" });
-    return sendJson(res, 200, { status: "ok" });
+    return sendJson(res, 200, { status: "ok", traceId: event.traceId });
   }
 
   return false;

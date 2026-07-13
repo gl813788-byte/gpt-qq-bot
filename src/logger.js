@@ -1,4 +1,5 @@
 import { appendFile, mkdir, open, readdir, rename, stat, unlink } from "node:fs/promises";
+import crypto from "node:crypto";
 import { basename, dirname, join } from "node:path";
 
 const defaultLevels = new Set(["debug", "info", "success", "warn", "error"]);
@@ -22,7 +23,11 @@ export function createLogger({
   let writeChain = Promise.resolve();
 
   async function write(entry) {
-    const normalized = normalizeEntry(entry);
+    const normalized = normalizeEntry({
+      ...entry,
+      schemaVersion: entry?.schemaVersion || 2,
+      id: entry?.id || crypto.randomUUID()
+    });
     if (shouldPersist(normalized.level, minimumLevel)) {
       const line = `${JSON.stringify(normalized)}\n`;
       const append = writeChain.then(() => appendLogLine(filePath, line, {
@@ -37,28 +42,42 @@ export function createLogger({
     return normalized;
   }
 
-  return {
-    filePath,
-    debug(message, details = {}, category = "system") {
-      return write({ level: "debug", category, message, details });
-    },
-    info(message, details = {}, category = "system") {
-      return write({ level: "info", category, message, details });
-    },
-    success(message, details = {}, category = "system") {
-      return write({ level: "success", category, message, details });
-    },
-    warn(message, details = {}, category = "system") {
-      return write({ level: "warn", category, message, details });
-    },
-    error(message, details = {}, category = "system") {
-      return write({ level: "error", category, message, details });
-    },
-    write,
-    async flush() {
-      await writeChain;
-    }
-  };
+  function buildLoggerApi(boundContext = {}) {
+    const log = (level, message, details = {}, category = "system", context = {}) => write({
+      level,
+      category: context?.category || boundContext.category || category,
+      message,
+      details: {
+        ...(boundContext.details || {}),
+        ...(details || {}),
+        ...(context?.details || {})
+      },
+      traceId: context?.traceId || boundContext.traceId || null,
+      spanId: context?.spanId || boundContext.spanId || null,
+      parentSpanId: context?.parentSpanId || boundContext.parentSpanId || null
+    });
+    return {
+      filePath,
+      debug: (message, details = {}, category = "system", context = {}) => log("debug", message, details, category, context),
+      info: (message, details = {}, category = "system", context = {}) => log("info", message, details, category, context),
+      success: (message, details = {}, category = "system", context = {}) => log("success", message, details, category, context),
+      warn: (message, details = {}, category = "system", context = {}) => log("warn", message, details, category, context),
+      error: (message, details = {}, category = "system", context = {}) => log("error", message, details, category, context),
+      write,
+      child(context = {}) {
+        return buildLoggerApi({
+          ...boundContext,
+          ...context,
+          details: { ...(boundContext.details || {}), ...(context.details || {}) }
+        });
+      },
+      async flush() {
+        await writeChain;
+      }
+    };
+  }
+
+  return buildLoggerApi();
 }
 
 function normalizeLevel(value, fallback) {
@@ -86,12 +105,26 @@ function shouldPersist(level, minimumLevel) {
 export async function readLogEntries(filePath, {
   limit = 100,
   level = "",
-  category = ""
+  category = "",
+  traceId = "",
+  query = "",
+  groupId = "",
+  senderId = "",
+  since = "",
+  until = "",
+  minDurationMs = 0
 } = {}) {
   const maxEntries = Math.max(1, Math.min(1000, Number(limit) || 100));
   const filters = {
-    level: String(level || "").trim().toLowerCase(),
-    category: String(category || "").trim().toLowerCase()
+    levels: normalizeFilterSet(level),
+    categories: normalizeFilterSet(category),
+    traceId: String(traceId || "").trim().toLowerCase(),
+    query: String(query || "").trim().toLowerCase(),
+    groupId: String(groupId || "").trim(),
+    senderId: String(senderId || "").trim(),
+    sinceMs: normalizeTimestamp(since, { relativeFromNow: true }),
+    untilMs: normalizeTimestamp(until),
+    minDurationMs: Math.max(0, Number(minDurationMs) || 0)
   };
   const files = await listExistingLogFiles(filePath);
   const lines = [];
@@ -100,7 +133,7 @@ export async function readLogEntries(filePath, {
     if (!handle) continue;
     try {
       const { size } = await handle.stat();
-      const readSize = Math.min(size, Math.max(64 * 1024, maxEntries * 2048));
+      const readSize = Math.min(size, Math.max(256 * 1024, maxEntries * 8192));
       const buffer = Buffer.alloc(readSize);
       await handle.read(buffer, 0, readSize, Math.max(0, size - readSize));
       lines.push(...buffer.toString("utf8").split("\n").filter(Boolean));
@@ -112,8 +145,7 @@ export async function readLogEntries(filePath, {
   for (const line of lines) {
     const parsed = parseLogLine(line);
     if (!parsed) continue;
-    if (filters.level && parsed.level !== filters.level) continue;
-    if (filters.category && parsed.category !== filters.category) continue;
+    if (!matchesLogFilters(parsed, filters)) continue;
     entries.push(parsed);
   }
   return entries
@@ -126,13 +158,105 @@ export function normalizeEntry(entry) {
     ? String(entry.level).toLowerCase()
     : "info";
   return {
+    schemaVersion: Number(entry?.schemaVersion || 1),
+    id: entry?.id ? String(entry.id).slice(0, 120) : null,
     ts: entry?.ts || new Date().toISOString(),
     level,
     category: normalizeCategory(entry?.category),
     message: String(entry?.message || "").slice(0, 1000),
     details: sanitizeDetails(entry?.details || {}),
-    traceId: entry?.traceId ? String(entry.traceId).slice(0, 120) : null
+    traceId: entry?.traceId ? String(entry.traceId).slice(0, 120) : null,
+    spanId: entry?.spanId ? String(entry.spanId).slice(0, 120) : null,
+    parentSpanId: entry?.parentSpanId ? String(entry.parentSpanId).slice(0, 120) : null
   };
+}
+
+export function summarizeLogEntries(entries = []) {
+  const list = Array.isArray(entries) ? entries : [];
+  const byLevel = {};
+  const byCategory = {};
+  const durations = [];
+  const traces = new Set();
+  for (const entry of list) {
+    const level = String(entry?.level || "info");
+    const category = String(entry?.category || "system");
+    byLevel[level] = Number(byLevel[level] || 0) + 1;
+    byCategory[category] = Number(byCategory[category] || 0) + 1;
+    if (entry?.traceId) traces.add(String(entry.traceId));
+    const duration = getEntryDurationMs(entry);
+    if (duration != null) durations.push(duration);
+  }
+  durations.sort((left, right) => left - right);
+  return {
+    total: list.length,
+    byLevel,
+    byCategory,
+    traceCount: traces.size,
+    firstAt: list[0]?.ts || null,
+    lastAt: list.at(-1)?.ts || null,
+    duration: durations.length > 0 ? {
+      sampleCount: durations.length,
+      p50Ms: percentile(durations, 0.5),
+      p95Ms: percentile(durations, 0.95),
+      maxMs: durations.at(-1)
+    } : null
+  };
+}
+
+function normalizeFilterSet(value) {
+  return new Set(String(value || "").toLowerCase().split(/[,|\s]+/).map((item) => item.trim()).filter(Boolean));
+}
+
+function normalizeTimestamp(value, { relativeFromNow = false } = {}) {
+  if (value == null || value === "") return null;
+  if (Number.isFinite(Number(value))) return Number(value);
+  const relative = String(value).trim().match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/i);
+  if (relative && relativeFromNow) {
+    const unitMs = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[relative[2].toLowerCase()];
+    return Date.now() - Number(relative[1]) * unitMs;
+  }
+  const parsed = Date.parse(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function matchesLogFilters(entry, filters) {
+  if (filters.levels.size > 0 && !filters.levels.has(String(entry.level || "").toLowerCase())) return false;
+  if (filters.categories.size > 0 && !filters.categories.has(String(entry.category || "").toLowerCase())) return false;
+  if (filters.traceId && !String(entry.traceId || "").toLowerCase().startsWith(filters.traceId)) return false;
+  if (filters.groupId && String(entry.details?.groupId ?? "") !== filters.groupId) return false;
+  if (filters.senderId && String(entry.details?.senderId ?? "") !== filters.senderId) return false;
+  const timestamp = Date.parse(String(entry.ts || ""));
+  if (filters.sinceMs != null && (!Number.isFinite(timestamp) || timestamp < filters.sinceMs)) return false;
+  if (filters.untilMs != null && (!Number.isFinite(timestamp) || timestamp > filters.untilMs)) return false;
+  if (filters.minDurationMs > 0 && Number(getEntryDurationMs(entry) || 0) < filters.minDurationMs) return false;
+  if (filters.query) {
+    const searchable = JSON.stringify({
+      level: entry.level,
+      category: entry.category,
+      message: entry.message,
+      details: entry.details,
+      traceId: entry.traceId
+    }).toLowerCase();
+    if (!searchable.includes(filters.query)) return false;
+  }
+  return true;
+}
+
+function getEntryDurationMs(entry) {
+  const details = entry?.details || {};
+  const candidates = [
+    details.totalDurationMs,
+    details.durationMs,
+    details.modelDurationMs,
+    details.sendDurationMs,
+    details.generationDurationMs
+  ].map(Number).filter((value) => Number.isFinite(value) && value >= 0);
+  return candidates.length > 0 ? Math.max(...candidates) : null;
+}
+
+function percentile(sortedValues, ratio) {
+  if (!sortedValues.length) return null;
+  return sortedValues[Math.min(sortedValues.length - 1, Math.max(0, Math.ceil(sortedValues.length * ratio) - 1))];
 }
 
 function normalizeCategory(category) {

@@ -28,3 +28,34 @@ test("log API exposes full diagnostics by default and supports compact mode expl
   const info = await buildLogsResponse(filePath, new URLSearchParams("level=info"));
   assert.deepEqual(info.entries.map((entry) => entry.message), ["OneBot message received"]);
 });
+
+test("log API filters complete traces and returns aggregate diagnostics", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "codex-qq-log-api-trace-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const filePath = join(directory, "hub.jsonl");
+  const logger = createLogger({ filePath, consoleOutput: false });
+  logger.debug("QQ reply lifecycle started", { groupId: "123", senderId: "456" }, "lifecycle", { traceId: "trace-main-123" });
+  logger.success("Codex CLI finished", { groupId: "123", senderId: "456", durationMs: 1800 }, "codex", { traceId: "trace-main-123" });
+  logger.success("QQ reply lifecycle completed", {
+    groupId: "123",
+    senderId: "456",
+    outcome: "sent",
+    totalDurationMs: 2200,
+    generationDurationMs: 1800
+  }, "lifecycle", { traceId: "trace-main-123" });
+  logger.error("other failure", { groupId: "999", durationMs: 5000 }, "system", { traceId: "trace-other" });
+  await logger.flush();
+
+  const trace = await buildLogsResponse(filePath, new URLSearchParams("trace=trace-main&verbose=0"));
+  assert.equal(trace.matched, 3);
+  assert.equal(trace.entries.length, 3);
+  assert.equal(trace.entries[0].level, "debug");
+  assert.equal(trace.summary.traceCount, 1);
+  assert.deepEqual(trace.summary.byCategory, { lifecycle: 2, codex: 1 });
+  assert.deepEqual(trace.summary.duration, { sampleCount: 2, p50Ms: 1800, p95Ms: 2200, maxMs: 2200 });
+
+  const slow = await buildLogsResponse(filePath, new URLSearchParams("group=123&slow=2000&q=sent"));
+  assert.deepEqual(slow.entries.map((entry) => entry.message), ["QQ reply lifecycle completed"]);
+  assert.equal(slow.filters.groupId, "123");
+  assert.equal(slow.filters.minDurationMs, 2000);
+});

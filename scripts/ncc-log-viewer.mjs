@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-import { open, stat } from "node:fs/promises";
+import { open, readdir, stat } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 
 const levelNames = { debug: "调试", info: "信息", success: "成功", warn: "警告", error: "错误" };
 const categoryNames = {
@@ -12,7 +13,8 @@ const categoryNames = {
   search: "搜索",
   interest: "兴趣",
   memory: "记忆",
-  command: "指令"
+  command: "指令",
+  lifecycle: "流程"
 };
 const colors = {
   reset: "\x1b[0m",
@@ -49,7 +51,16 @@ function parseArgs(args) {
     category: "",
     plain: !process.stdout.isTTY,
     all: false,
-    verbose: true
+    verbose: true,
+    traceId: "",
+    query: "",
+    groupId: "",
+    senderId: "",
+    sinceMs: null,
+    untilMs: null,
+    minDurationMs: 0,
+    summary: false,
+    json: false
   };
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index];
@@ -73,6 +84,30 @@ function parseArgs(args) {
       output.verbose = true;
     } else if (arg === "--compact" || arg === "--no-verbose") {
       output.verbose = false;
+    } else if (arg === "--trace") {
+      output.traceId = String(args[++index] || "").toLowerCase();
+    } else if (arg === "--search" || arg === "--query" || arg === "-q") {
+      output.query = String(args[++index] || "").toLowerCase();
+    } else if (arg === "--group") {
+      output.groupId = String(args[++index] || "");
+    } else if (arg === "--sender") {
+      output.senderId = String(args[++index] || "");
+    } else if (arg === "--since") {
+      output.sinceMs = parseTimeFilter(args[++index], { relativeFromNow: true });
+    } else if (arg === "--until") {
+      output.untilMs = parseTimeFilter(args[++index]);
+    } else if (arg === "--slow") {
+      const next = args[index + 1];
+      output.minDurationMs = next && !next.startsWith("-")
+        ? Math.max(1, Number(args[++index]) || 1000)
+        : 1000;
+    } else if (arg === "--errors") {
+      output.level = "warn,error";
+    } else if (arg === "--summary") {
+      output.summary = true;
+    } else if (arg === "--json") {
+      output.json = true;
+      output.plain = true;
     } else {
       throw new Error(`Unknown argument: ${arg}`);
     }
@@ -81,17 +116,50 @@ function parseArgs(args) {
 }
 
 async function printExisting(options) {
-  const body = await readTail(options.file, Math.max(256 * 1024, options.tail * 8192)).catch((error) => {
+  const hasDiagnosticFilter = Boolean(options.traceId || options.query || options.groupId || options.senderId
+    || options.sinceMs != null || options.untilMs != null || options.minDurationMs > 0);
+  const body = await readLogHistory(options.file, Math.max(hasDiagnosticFilter ? 1024 * 1024 : 256 * 1024, options.tail * 8192)).catch((error) => {
     if (error.code === "ENOENT") return "";
     throw error;
   });
-  const rendered = body
+  const entries = body
     .split("\n")
     .filter(Boolean)
-    .map((line) => renderLine(line, options))
-    .filter(Boolean)
+    .map(parseLine)
+    .filter((entry) => entry && matchesViewerFilters(entry, options))
     .slice(-options.tail);
-  for (const line of rendered) process.stdout.write(`${line}\n`);
+  if (options.json) {
+    for (const entry of entries) process.stdout.write(`${JSON.stringify(entry)}\n`);
+  } else {
+    for (const entry of entries) process.stdout.write(`${renderEntry(entry, options)}\n`);
+  }
+  if (options.summary) process.stdout.write(`${renderSummary(entries, options)}\n`);
+}
+
+async function readLogHistory(file, bytesPerFile) {
+  const directory = dirname(file);
+  const base = basename(file);
+  const names = await readdir(directory).catch((error) => {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  });
+  const files = names
+    .filter((name) => name === base || new RegExp(`^${escapeRegExp(base)}\\.\\d+$`).test(name))
+    .sort((left, right) => rotationIndex(right, base) - rotationIndex(left, base))
+    .map((name) => join(directory, name));
+  const chunks = [];
+  for (const current of files) chunks.push(await readTail(current, bytesPerFile));
+  return chunks.join("\n");
+}
+
+function rotationIndex(name, base) {
+  if (name === base) return 0;
+  const value = Number(name.slice(base.length + 1));
+  return Number.isFinite(value) ? value : 999;
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 async function followFile(options) {
@@ -161,17 +229,43 @@ async function readTail(file, bytes) {
 }
 
 function renderLine(line, options) {
-  let entry;
+  const entry = parseLine(line);
+  if (!entry || !matchesViewerFilters(entry, options)) return null;
+  return options.json ? JSON.stringify(entry) : renderEntry(entry, options);
+}
+
+function parseLine(line) {
   try {
-    entry = JSON.parse(line);
+    return JSON.parse(line);
   } catch {
     return null;
   }
-  if (options.level && String(entry.level || "").toLowerCase() !== options.level) return null;
-  if (options.category && String(entry.category || "").toLowerCase() !== options.category) return null;
+}
+
+function matchesViewerFilters(entry, options) {
+  if (options.level && !splitFilter(options.level).has(String(entry.level || "").toLowerCase())) return false;
+  if (options.category && !splitFilter(options.category).has(String(entry.category || "").toLowerCase())) return false;
+  if (options.traceId && !String(entry.traceId || "").toLowerCase().startsWith(options.traceId)) return false;
+  if (options.groupId && String(entry.details?.groupId ?? "") !== options.groupId) return false;
+  if (options.senderId && String(entry.details?.senderId ?? "") !== options.senderId) return false;
+  const timestamp = Date.parse(String(entry.ts || ""));
+  if (options.sinceMs != null && (!Number.isFinite(timestamp) || timestamp < options.sinceMs)) return false;
+  if (options.untilMs != null && (!Number.isFinite(timestamp) || timestamp > options.untilMs)) return false;
+  if (options.minDurationMs > 0 && getEntryDurationMs(entry) < options.minDurationMs) return false;
+  if (options.query) {
+    const searchable = JSON.stringify(entry).toLowerCase();
+    if (!searchable.includes(options.query)) return false;
+  }
   const level = String(entry.level || "info").toLowerCase();
-  if (!options.verbose && level === "debug" && options.level !== "debug") return null;
-  if (!options.verbose && !options.all && !options.level && !options.category && !isDefaultVisible(entry, level)) return null;
+  const hasExplicitFilter = Boolean(options.level || options.category || options.traceId || options.query || options.groupId
+    || options.senderId || options.sinceMs != null || options.untilMs != null || options.minDurationMs > 0);
+  if (!options.verbose && level === "debug" && !hasExplicitFilter) return false;
+  if (!options.verbose && !options.all && !hasExplicitFilter && !isDefaultVisible(entry, level)) return false;
+  return true;
+}
+
+function renderEntry(entry, options) {
+  const level = String(entry.level || "info").toLowerCase();
   const category = String(entry.category || "system").toLowerCase();
   const ts = String(entry.ts || "").replace("T", " ").replace(/\.\d+Z$/, "");
   const colorName = colorFor(entry, level, category);
@@ -181,8 +275,9 @@ function renderLine(line, options) {
     color((categoryNames[category] || category).padEnd(7, " "), colorName, options)
   ].join(" ");
   const message = color(humanMessage(entry.message || ""), colorName, options);
+  const trace = entry.traceId ? color(`[${shortTraceId(entry.traceId)}]`, "dim", options) : "";
   const details = formatDetails(entry, options);
-  return `${header} ${message}${details ? ` ${color(details, "gray", options)}` : ""}`;
+  return `${header}${trace ? ` ${trace}` : ""} ${message}${details ? ` ${color(details, "gray", options)}` : ""}`;
 }
 
 function isDefaultVisible(entry, level) {
@@ -204,6 +299,7 @@ function colorFor(entry, level, category) {
   if (category === "web") return "blue";
   if (category === "memory") return "green";
   if (category === "command") return "yellow";
+  if (category === "lifecycle") return "white";
   if (level === "debug") return "gray";
   return "gray";
 }
@@ -227,6 +323,8 @@ function humanMessage(message) {
     "QQ web lookup trigger matched": "QQ 消息触发联网搜索",
     "QQ web lookup results selected": "已选择联网搜索结果",
     "QQ proactive interest decision": "QQ 主动兴趣判定",
+    "QQ reply lifecycle started": "QQ 回复流程开始",
+    "QQ reply lifecycle completed": "QQ 回复流程完成",
     "QQ message details received": "收到 QQ 消息详情",
     "OneBot message received": "收到 OneBot 消息",
     "OneBot health check succeeded": "OneBot 健康检查成功",
@@ -244,7 +342,31 @@ function formatDetails(entry, options) {
   if (!details || Object.keys(details).length === 0) return "";
   if (entry.category === "search") return formatSearchDetails(details, options);
   if (entry.category === "interest") return formatInterestDetails(details, options);
+  if (entry.category === "lifecycle") return formatLifecycleDetails(details, options);
   return formatGenericDetails(details, options);
+}
+
+function formatLifecycleDetails(details, options) {
+  const parts = [];
+  pushPart(parts, "结果", humanOutcome(details.outcome || details.status));
+  pushPart(parts, "场景", humanDetailValue("messageType", details.messageType));
+  pushPart(parts, "群", details.groupId);
+  if (options.verbose) pushPart(parts, "发送者", details.senderId);
+  pushPart(parts, "触发", humanTriggerMode(details.triggerMode) || details.decisionReason);
+  pushPart(parts, "总用时", formatMs(details.totalDurationMs || details.durationMs));
+  if (options.verbose) {
+    pushPart(parts, "记忆", formatMs(details.rememberDurationMs));
+    pushPart(parts, "路由", formatMs(details.decisionDurationMs));
+    pushPart(parts, "生成", formatMs(details.generationDurationMs));
+    pushPart(parts, "发送", formatMs(details.sendDurationMs));
+    pushPart(parts, "落盘", formatMs(details.memoryDurationMs));
+    pushPart(parts, "回复字符", details.replyChars);
+    pushPart(parts, "气泡", details.bubbleCount);
+    pushPart(parts, "排队", details.queuedCount);
+    pushPart(parts, "发送状态", details.sendStatus);
+    pushPart(parts, "错误", humanError(details.error));
+  }
+  return parts.join(" · ");
 }
 
 function formatSearchDetails(details, options) {
@@ -278,6 +400,12 @@ function formatInterestDetails(details, options) {
   const parts = [];
   pushPart(parts, "是否回复", formatDetailValue(details.shouldReply));
   pushPart(parts, "触发原因", details.reason);
+  pushPart(parts, "触发方式", humanTriggerMode(details.triggerMode));
+  if (details.messageCount != null) {
+    pushPart(parts, "待检查消息", `${details.messageCount}${details.judgeEveryMessages ? ` / ${details.judgeEveryMessages}` : ""}`);
+  }
+  if (options.verbose && details.judgeEveryMinutes != null) pushPart(parts, "分钟间隔", `${details.judgeEveryMinutes} 分钟`);
+  if (options.verbose && details.messageCountRemaining != null) pushPart(parts, "下轮剩余", details.messageCountRemaining);
   pushPart(parts, "规则分", details.ruleScore);
   if (options.verbose) {
     pushPart(parts, "直呼", details.directness);
@@ -305,7 +433,7 @@ function formatInterestDetails(details, options) {
 }
 
 function formatGenericDetails(details, options) {
-  const compactKeys = new Set(["durationMs", "resultCount", "status", "code", "error", "reason", "url"]);
+  const compactKeys = new Set(["durationMs", "totalDurationMs", "resultCount", "status", "outcome", "code", "error", "reason", "url"]);
   const parts = [];
   for (const [key, value] of Object.entries(details)) {
     if (value == null || value === "") continue;
@@ -328,6 +456,12 @@ function detailLabel(key) {
     providers: "厂商顺序",
     preset: "预设",
     durationMs: "用时",
+    totalDurationMs: "总用时",
+    rememberDurationMs: "记忆用时",
+    decisionDurationMs: "路由用时",
+    generationDurationMs: "生成用时",
+    sendDurationMs: "发送用时",
+    memoryDurationMs: "落盘用时",
     timeoutMs: "总超时",
     attemptTimeoutMs: "单次超时",
     resultCount: "结果数",
@@ -353,6 +487,11 @@ function detailLabel(key) {
     modelStreamedTokenChunks: "模型流式片段",
     modelReasoningLength: "模型推理字符",
     modelError: "模型错误",
+    triggerMode: "触发方式",
+    messageCount: "待检查消息",
+    judgeEveryMessages: "消息间隔",
+    judgeEveryMinutes: "分钟间隔",
+    messageCountRemaining: "下轮剩余",
     results: "结果详情",
     title: "标题",
     url: "链接",
@@ -404,6 +543,28 @@ function humanStatus(status) {
     skipped: "已跳过",
     failed: "失败"
   }[String(status || "")] || humanError(String(status || ""));
+}
+
+function humanOutcome(outcome) {
+  return {
+    sent: "已发送",
+    queued: "已排队",
+    ignored: "已忽略",
+    silent: "主动沉默",
+    command: "命令已处理",
+    skipped: "已跳过发送",
+    failed: "失败"
+  }[String(outcome || "")] || String(outcome || "");
+}
+
+function humanTriggerMode(mode) {
+  return {
+    message: "消息数",
+    time: "分钟",
+    explicit: "@或回复",
+    message_count: "消息数",
+    minute_interval: "分钟"
+  }[String(mode || "")] || String(mode || "");
 }
 
 function formatDetailValue(value, key = "") {
@@ -466,7 +627,60 @@ function humanError(error) {
 function formatMs(value) {
   if (value == null || value === "") return "";
   const number = Number(value);
-  return Number.isFinite(number) ? `${number}ms` : String(value);
+  if (!Number.isFinite(number)) return String(value);
+  if (number >= 60_000) return `${(number / 60_000).toFixed(number >= 600_000 ? 1 : 2)}m`;
+  if (number >= 1000) return `${(number / 1000).toFixed(number >= 10_000 ? 1 : 2)}s`;
+  return `${number}ms`;
+}
+
+function shortTraceId(value) {
+  const text = String(value || "");
+  return text.length <= 12 ? text : text.slice(0, 8);
+}
+
+function splitFilter(value) {
+  return new Set(String(value || "").toLowerCase().split(/[,|\s]+/).map((item) => item.trim()).filter(Boolean));
+}
+
+function getEntryDurationMs(entry) {
+  const details = entry?.details || {};
+  const durations = [details.totalDurationMs, details.durationMs, details.modelDurationMs, details.sendDurationMs, details.generationDurationMs]
+    .map(Number)
+    .filter((value) => Number.isFinite(value) && value >= 0);
+  return durations.length > 0 ? Math.max(...durations) : 0;
+}
+
+function parseTimeFilter(value, { relativeFromNow = false } = {}) {
+  const text = String(value || "").trim();
+  const relative = text.match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)$/i);
+  if (relative && relativeFromNow) {
+    const unitMs = { ms: 1, s: 1000, m: 60_000, h: 3_600_000, d: 86_400_000 }[relative[2].toLowerCase()];
+    return Date.now() - Number(relative[1]) * unitMs;
+  }
+  const parsed = Date.parse(text);
+  if (!Number.isFinite(parsed)) throw new Error(`Invalid time filter: ${text}`);
+  return parsed;
+}
+
+function renderSummary(entries, options) {
+  const byLevel = {};
+  const byCategory = {};
+  const durations = [];
+  const traces = new Set();
+  for (const entry of entries) {
+    byLevel[entry.level] = Number(byLevel[entry.level] || 0) + 1;
+    byCategory[entry.category] = Number(byCategory[entry.category] || 0) + 1;
+    if (entry.traceId) traces.add(entry.traceId);
+    const duration = getEntryDurationMs(entry);
+    if (duration > 0) durations.push(duration);
+  }
+  durations.sort((left, right) => left - right);
+  const p95 = durations.length ? durations[Math.max(0, Math.ceil(durations.length * 0.95) - 1)] : 0;
+  const levels = Object.entries(byLevel).map(([key, count]) => `${levelNames[key] || key} ${count}`).join(" / ") || "无";
+  const categories = Object.entries(byCategory).map(([key, count]) => `${categoryNames[key] || key} ${count}`).join(" / ") || "无";
+  const durationText = durations.length ? `；耗时样本 ${durations.length}，P95 ${formatMs(p95)}，最慢 ${formatMs(durations.at(-1))}` : "";
+  const summary = `日志摘要：${entries.length} 条，${traces.size} 条链路；级别 ${levels}；分类 ${categories}${durationText}`;
+  return options.json ? JSON.stringify({ summary, total: entries.length, traces: traces.size, byLevel, byCategory, p95Ms: p95 || null }) : color(summary, "brightCyan", options);
 }
 
 function pushPart(parts, label, value) {
@@ -480,5 +694,5 @@ function color(text, colorName, options) {
 }
 
 function usage() {
-  process.stderr.write("用法: ncc-log-viewer.mjs LOG_FILE [--tail N] [-f] [--level LEVEL] [--category CATEGORY] [--all] [--plain|--color] [--verbose|--compact]\n");
+  process.stderr.write("用法: ncc-log-viewer.mjs LOG_FILE [--tail N] [-f] [--level LEVELS|--errors] [--category CATEGORIES] [--trace ID] [--group ID] [--sender ID] [--search TEXT] [--since 30m|ISO] [--until ISO] [--slow [MS]] [--summary] [--json] [--all] [--plain|--color] [--verbose|--compact]\n");
 }

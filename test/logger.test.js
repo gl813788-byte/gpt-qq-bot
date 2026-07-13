@@ -3,7 +3,7 @@ import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { createLogger, normalizeEntry, readLogEntries } from "../src/logger.js";
+import { createLogger, normalizeEntry, readLogEntries, summarizeLogEntries } from "../src/logger.js";
 
 test("logger stores detailed debug entries by default and still supports an explicit higher threshold", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "codex-qq-logger-"));
@@ -70,4 +70,46 @@ test("logger rotates concurrent writes without corrupting retained JSONL files",
     const lines = (await readFile(join(directory, name), "utf8")).trim().split("\n").filter(Boolean);
     assert.doesNotThrow(() => lines.forEach((line) => JSON.parse(line)));
   }
+});
+
+test("logger correlates child entries and supports diagnostic filters and summaries", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "codex-qq-logger-trace-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const filePath = join(directory, "hub.jsonl");
+  const logger = createLogger({ filePath, consoleOutput: false });
+  const traced = logger.child({
+    traceId: "trace-qq-123456",
+    spanId: "reply-span",
+    details: { groupId: "10001" }
+  });
+
+  traced.debug("QQ reply lifecycle started", { senderId: "20002", durationMs: 12 }, "lifecycle");
+  traced.success("QQ reply lifecycle completed", {
+    senderId: "20002",
+    outcome: "sent",
+    totalDurationMs: 2400
+  }, "lifecycle");
+  logger.warn("unrelated warning", { groupId: "99999", durationMs: 50 }, "system", { traceId: "other-trace" });
+  await logger.flush();
+
+  const tracedEntries = await readLogEntries(filePath, { traceId: "trace-qq", groupId: "10001" });
+  assert.equal(tracedEntries.length, 2);
+  assert.ok(tracedEntries.every((entry) => entry.schemaVersion === 2 && entry.id));
+  assert.ok(tracedEntries.every((entry) => entry.spanId === "reply-span"));
+
+  const slow = await readLogEntries(filePath, {
+    query: "sent",
+    senderId: "20002",
+    minDurationMs: 1000
+  });
+  assert.deepEqual(slow.map((entry) => entry.message), ["QQ reply lifecycle completed"]);
+  assert.deepEqual(summarizeLogEntries(tracedEntries), {
+    total: 2,
+    byLevel: { debug: 1, success: 1 },
+    byCategory: { lifecycle: 2 },
+    traceCount: 1,
+    firstAt: tracedEntries[0].ts,
+    lastAt: tracedEntries[1].ts,
+    duration: { sampleCount: 2, p50Ms: 12, p95Ms: 2400, maxMs: 2400 }
+  });
 });

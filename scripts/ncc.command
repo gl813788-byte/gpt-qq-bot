@@ -354,7 +354,7 @@ case "${1:-setup}" in
   *)
     cat <<EOF
 用法：ncc [setup|status|codex-login|qq|owner|groups|branding|search-config|start|open|logs]
-日志：ncc logs [--tail N] [--all] [--verbose|--compact] [--category NAME] [--level LEVEL] [--plain|--color]
+日志：ncc logs [--tail N] [-f] [--level LEVELS|--errors] [--category NAMES] [--trace ID] [--group ID] [--sender ID] [--search TEXT] [--since 30m|ISO] [--until ISO] [--slow [MS]] [--summary] [--json] [--all] [--verbose|--compact] [--plain|--color]
 项目目录：$PROJECT_DIR
 EOF
     ;;
