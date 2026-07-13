@@ -56,8 +56,7 @@ export const qqCommandCatalog = [
     aliases: ["群管理", "禁言", "解禁言", "解除禁言", "踢人", "全员禁言", "群禁言列表"]
   },
   { key: "ban", defaultPublic: false, configurable: true, menuLine: "/ban @用户", aliases: ["ban", "封禁", "拉黑", "unban", "解禁", "banlist"] },
-  { key: "permissions", defaultPublic: false, configurable: false, menuLine: "/菜单权限", aliases: ["菜单权限", "权限菜单", "公开指令", "允许指令", "禁用指令"] },
-  { key: "shutdown", defaultPublic: false, configurable: true, menuLine: "/关闭QQ", aliases: ["关闭qq", "关掉qq", "停止qq", "切断qq"] }
+  { key: "permissions", defaultPublic: false, configurable: false, menuLine: "/菜单权限", aliases: ["菜单权限", "权限菜单", "公开指令", "允许指令", "禁用指令"] }
 ];
 
 export const defaultQqPublicCommands = Object.fromEntries(

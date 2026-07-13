@@ -356,6 +356,8 @@ Owners can adjust proactive interest settings from QQ:
 /兴趣重置
 ```
 
+Configuration changes made through the QQ management menu are atomically saved to `data/settings.json` before the confirmation reply is sent, so a delivery timeout does not roll them back. The QQ menu intentionally has no channel shutdown command; manage the channel through `ncc` or the external control API.
+
 Manual module path:
 
 ```bash
