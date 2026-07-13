@@ -9,6 +9,8 @@ const defaultOpenRouterBaseUrl = "https://openrouter.ai/api/v1";
 const defaultOpenRouterJudgeModel = "nousresearch/hermes-3-llama-3.1-405b:free";
 const proactiveJudgeFinalMinInterest = 20;
 const defaultJudgeEveryMessages = 20;
+const defaultJudgeEveryMinutes = 5;
+const minuteMs = 60 * 1000;
 
 const likedTopicRules = [
   {
@@ -45,65 +47,144 @@ export function scoreQqTextInterest(text, event = {}, helpers = {}) {
 export async function shouldProactivelyReplyToQq(event = {}, state = {}, helpers = {}) {
   if (!event.groupId) return { ok: false, reason: "not a group message" };
   if (!state.proactive?.enabled) return { ok: false, reason: "proactive disabled" };
-  if (event.type === "group_at" || event.hasSelfAtSegment) {
+  if (event.type === "group_at" || event.hasSelfAtSegment || event.isReplyToSelf || event.replyContext?.isSelf) {
     return { ok: false, reason: "explicit mention is handled by mention-only route" };
   }
 
+  const proactiveState = state.proactive;
+  const groupId = String(event.groupId);
+  const now = typeof helpers.now === "function" ? helpers.now : Date.now;
+  const triggerMode = helpers.triggerMode === "time" ? "time" : "message";
   const judgeEveryMessages = normalizeJudgeEveryMessages(state.proactive?.judgeEveryMessages);
-  const currentCount = incrementProactiveMessageCount(state.proactive, event.groupId);
-  if (currentCount % judgeEveryMessages !== 0) {
+  const judgeEveryMinutes = normalizeJudgeEveryMinutes(state.proactive?.judgeEveryMinutes);
+  ensureProactiveCycleState(proactiveState);
+
+  const previousCount = getProactiveMessageCount(proactiveState, groupId);
+  const currentCount = triggerMode === "message" && helpers.countMessage !== false
+    ? incrementProactiveMessageCount(proactiveState, groupId)
+    : previousCount;
+  if (previousCount === 0 && currentCount > 0) {
+    proactiveState.lastJudgeAtByGroupId[groupId] = now();
+  }
+
+  if (proactiveState.judgeInFlightByGroupId[groupId]) {
     return {
       ok: false,
-      reason: "waiting for proactive judge message interval",
+      reason: "proactive judge already in flight",
       messageCount: currentCount,
-      judgeEveryMessages
+      judgeEveryMessages,
+      judgeEveryMinutes,
+      triggerMode
     };
   }
 
-  const text = helpers.stripMentionText ? helpers.stripMentionText(event.text || "") : String(event.text || "");
-  const assessment = evaluateQqProactiveInterest(text, event, {
-    ...helpers,
-    ownerUserIds: state.ownerUserIds || []
-  });
-
-  const judgeConfig = normalizeJudgeConfig({
-    ...(state.proactive?.judge || {}),
-    judgeEveryMessages
-  });
-  if (!judgeConfig.enabled) {
+  const lastJudgeAt = Number(proactiveState.lastJudgeAtByGroupId[groupId] || now());
+  const elapsedMs = Math.max(0, now() - lastJudgeAt);
+  const messageTriggerDue = currentCount >= judgeEveryMessages;
+  const timeTriggerDue = judgeEveryMinutes > 0 && currentCount > 0 && elapsedMs >= judgeEveryMinutes * minuteMs;
+  const triggerDue = triggerMode === "time" ? timeTriggerDue : messageTriggerDue;
+  if (!triggerDue) {
     return {
       ok: false,
-      reason: "model judge disabled",
+      reason: triggerMode === "time"
+        ? (currentCount > 0 ? "waiting for proactive judge minute interval" : "no new proactive messages to inspect")
+        : "waiting for proactive judge message interval",
       messageCount: currentCount,
       judgeEveryMessages,
-      interestScore: assessment.score,
-      interest: assessment
+      judgeEveryMinutes,
+      elapsedMs,
+      triggerMode
     };
   }
-  const judge = await judgeProactiveInterestWithOpenRouter(event, assessment, {
-    ...judgeConfig,
-    apiKey: helpers.openRouterApiKey || "",
-    fetch: helpers.fetch,
-    recentMessages: helpers.recentMessages || [],
-    assistantName: helpers.assistantName || "assistant",
-    ownerLabel: helpers.ownerLabel || "主人"
-  });
-  if (judge.ok && judge.shouldReply && judge.interest >= judgeConfig.minInterest) {
-    return buildDecision("model final decision", assessment, judge, {
-      messageCount: currentCount,
-      judgeEveryMessages,
-      replyContext: formatRecentMessages(helpers.recentMessages || [], judgeConfig.maxRecentMessages)
+
+  const consumedMessageCount = currentCount;
+  proactiveState.judgeInFlightByGroupId[groupId] = true;
+  let result;
+  try {
+    const text = helpers.stripMentionText ? helpers.stripMentionText(event.text || "") : String(event.text || "");
+    const assessment = evaluateQqProactiveInterest(text, event, {
+      ...helpers,
+      ownerUserIds: state.ownerUserIds || []
     });
+    const commonMeta = {
+      messageCount: currentCount,
+      judgeEveryMessages,
+      judgeEveryMinutes,
+      triggerMode,
+      triggerReason: triggerMode === "time" ? "minute_interval" : "message_count",
+      consumedMessageCount
+    };
+
+    if (triggerMode === "time" && isProactiveEventStale(event, now(), judgeEveryMinutes)) {
+      result = {
+        ok: false,
+        reason: "latest proactive topic is stale",
+        ...commonMeta,
+        interestScore: assessment.score,
+        interest: assessment
+      };
+    } else {
+      const judgeConfig = normalizeJudgeConfig({
+        ...(state.proactive?.judge || {}),
+        judgeEveryMessages,
+        judgeEveryMinutes,
+        triggerMode
+      });
+      if (!judgeConfig.enabled) {
+        result = {
+          ok: false,
+          reason: "model judge disabled",
+          ...commonMeta,
+          interestScore: assessment.score,
+          interest: assessment
+        };
+      } else {
+        const judge = await judgeProactiveInterestWithOpenRouter(event, assessment, {
+          ...judgeConfig,
+          apiKey: helpers.openRouterApiKey || "",
+          fetch: helpers.fetch,
+          recentMessages: helpers.recentMessages || [],
+          humanStyle: helpers.humanStyle || null,
+          assistantName: helpers.assistantName || "assistant",
+          ownerLabel: helpers.ownerLabel || "主人"
+        });
+        if (judge.ok && judge.shouldReply && judge.interest >= judgeConfig.minInterest) {
+          result = buildDecision("model final decision", assessment, judge, {
+            ...commonMeta,
+            replyContext: formatRecentMessages(helpers.recentMessages || [], judgeConfig.maxRecentMessages)
+          });
+        } else {
+          result = {
+            ok: false,
+            reason: judge.ok ? "model final decision declined proactive reply" : `model judge failed: ${judge.reason || judge.error || "unknown error"}`,
+            ...commonMeta,
+            interestScore: assessment.score,
+            interest: assessment,
+            modelJudge: judge
+          };
+        }
+      }
+    }
+  } catch (error) {
+    result = {
+      ok: false,
+      reason: "proactive interest judge crashed",
+      error: error.message,
+      messageCount: currentCount,
+      judgeEveryMessages,
+      judgeEveryMinutes,
+      triggerMode,
+      consumedMessageCount
+    };
+  } finally {
+    const countAfterJudge = getProactiveMessageCount(proactiveState, groupId);
+    proactiveState.messageCountByGroupId[groupId] = Math.max(0, countAfterJudge - consumedMessageCount);
+    proactiveState.lastJudgeAtByGroupId[groupId] = now();
+    delete proactiveState.judgeInFlightByGroupId[groupId];
   }
-  return {
-    ok: false,
-    reason: judge.ok ? "model final decision declined proactive reply" : `model judge failed: ${judge.reason || judge.error || "unknown error"}`,
-    messageCount: currentCount,
-    judgeEveryMessages,
-    interestScore: assessment.score,
-    interest: assessment,
-    modelJudge: judge
-  };
+  result.messageCountRemaining = getProactiveMessageCount(proactiveState, groupId);
+  result.cycleCompletedAt = proactiveState.lastJudgeAtByGroupId[groupId];
+  return result;
 }
 
 export function evaluateQqProactiveInterest(text, event = {}, helpers = {}) {
@@ -222,6 +303,16 @@ function applyPenalties(result, text, event, recent) {
   if (looksLikePrivateBackAndForth(recent, event) && result.directness < 7 && result.likedTopicScore < 6) {
     result.penalty -= 5;
     result.blockers.push("private back-and-forth in group");
+  }
+  const recentBotMessages = recent.slice(-8).filter((item) => item.isAssistant || item.senderId === "assistant").length;
+  const botJustSpoke = recent.slice(-3).some((item) => item.isAssistant || item.senderId === "assistant");
+  if (botJustSpoke && !result.hasQuestionShape && result.directness < 5) {
+    result.penalty -= 4;
+    result.blockers.push("bot just spoke and has no new turn hook");
+  }
+  if (recentBotMessages >= 2 && result.directness < 5) {
+    result.penalty -= 4;
+    result.blockers.push("bot has spoken often in recent context");
   }
   if (/^(?:我|你|他|她|他们|我们).{0,8}(?:吃饭|睡觉|放假|考试|上课|下课|到家|出门|回家|游戏|开黑)/.test(text) && result.likedTopicScore < 5) {
     result.penalty -= 4;
@@ -398,8 +489,10 @@ function buildJudgeMessages(event, assessment, config) {
       role: "system",
       content: [
         "你是 QQ 群聊 bot 的主动回复判定器，只判断未被 @ 时是否值得主动插一句。",
-        "达到配置的消息间隔时，普通群消息会交给你判断；规则评分、blockers、labels 只作为参考信号，不是硬性过滤器。",
-        "你可以先做简短分析，判断上下文、当前消息是否适合 bot 自然插一句。",
+        "达到配置的消息数或分钟间隔时，普通群消息会交给你判断；规则评分、blockers、labels 只作为参考信号，不是硬性过滤器。",
+        "兴趣不等于应该说话。先判断最新消息属于谁的对话、话题是否仍在继续、Bot 能否增加一个具体新信息或真正好笑的接点。",
+        "如果是两个人的来回、已经有人回答、只是生活碎片/短反应、话题已转走，或 Bot 只能复述与泛泛赞同，应当不回复；Bot 不需要抢答群里的每个问题。",
+        "只有插话不会打断当前节奏，而且内容比沉默更有价值时，才判定回复。",
         "最后必须单独输出一行 FINAL_JSON: {\"shouldReply\":boolean,\"interest\":0-100,\"reason\":\"string\",\"replyStyle\":\"string\"}。",
         "Hub 只读取最后的 FINAL_JSON；shouldReply 和 interest 是最终依据。不要使用 Markdown。"
       ].join("\n")
@@ -411,7 +504,11 @@ function buildJudgeMessages(event, assessment, config) {
         ownerLabel: config.ownerLabel,
         proactiveJudgeInterval: {
           everyMessages: config.judgeEveryMessages,
-          note: "这是本次主动判断的消息间隔配置；最终是否回复仍只看 FINAL_JSON。"
+          everyMinutes: config.judgeEveryMinutes,
+          triggeredBy: config.triggerMode === "time" ? "minute_interval" : "message_count",
+          note: config.triggerMode === "time"
+            ? "这是定时兴趣检查。只在当前话题仍活跃、此刻插话不显得迟到时回复；最终是否回复仍只看 FINAL_JSON。"
+            : "这是消息数兴趣检查；最终是否回复仍只看 FINAL_JSON。"
         },
         currentMessage: {
           text: assessment.normalized,
@@ -434,6 +531,17 @@ function buildJudgeMessages(event, assessment, config) {
           blockers: assessment.blockers
         },
         botInterestPreset: preset,
+        groupHumanRhythm: config.humanStyle ? {
+          sampleSize: Number(config.humanStyle.sampleSize || 0),
+          messagesPerHour: Number(config.humanStyle.messagesPerHour || 0),
+          multiMessageRunRatio: Number(config.humanStyle.multiMessageRunRatio || 0),
+          messagesInMultiRunsRatio: Number(config.humanStyle.messagesInMultiRunsRatio || 0),
+          medianTextChars: Number(config.humanStyle.medianTextChars || 0),
+          p90TextChars: Number(config.humanStyle.p90TextChars || 0),
+          imageMessageRatio: Number(config.humanStyle.imageMessageRatio || 0),
+          emojiMessageRatio: Number(config.humanStyle.emojiMessageRatio || 0),
+          replyMessageRatio: Number(config.humanStyle.replyMessageRatio || 0)
+        } : null,
         recentMessages: recent,
         outputPolicy: {
           replyOnlyIfInterestAtLeast: config.minInterest,
@@ -484,6 +592,8 @@ function normalizeJudgeConfig(value = {}) {
     timeoutMs: Number(value?.timeoutMs || 6500),
     minInterest: proactiveJudgeFinalMinInterest,
     judgeEveryMessages: normalizeJudgeEveryMessages(value?.judgeEveryMessages),
+    judgeEveryMinutes: normalizeJudgeEveryMinutes(value?.judgeEveryMinutes),
+    triggerMode: value?.triggerMode === "time" ? "time" : "message",
     maxRecentMessages: Number(value?.maxRecentMessages || 8),
     preset: value?.preset
   };
@@ -495,15 +605,43 @@ function normalizeJudgeEveryMessages(value) {
   return Math.max(1, Math.min(1000, Math.floor(number)));
 }
 
-function incrementProactiveMessageCount(proactiveState = {}, groupId) {
-  if (!groupId) return 0;
+function normalizeJudgeEveryMinutes(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return defaultJudgeEveryMinutes;
+  return Math.max(0, Math.min(1440, Math.floor(number)));
+}
+
+function ensureProactiveCycleState(proactiveState = {}) {
   if (!proactiveState.messageCountByGroupId || typeof proactiveState.messageCountByGroupId !== "object") {
     proactiveState.messageCountByGroupId = {};
   }
+  if (!proactiveState.lastJudgeAtByGroupId || typeof proactiveState.lastJudgeAtByGroupId !== "object") {
+    proactiveState.lastJudgeAtByGroupId = {};
+  }
+  if (!proactiveState.judgeInFlightByGroupId || typeof proactiveState.judgeInFlightByGroupId !== "object") {
+    proactiveState.judgeInFlightByGroupId = {};
+  }
+}
+
+function getProactiveMessageCount(proactiveState = {}, groupId) {
+  const count = Number(proactiveState.messageCountByGroupId?.[String(groupId)] || 0);
+  return Number.isFinite(count) && count > 0 ? Math.floor(count) : 0;
+}
+
+function incrementProactiveMessageCount(proactiveState = {}, groupId) {
+  if (!groupId) return 0;
+  ensureProactiveCycleState(proactiveState);
   const key = String(groupId);
-  const next = Number(proactiveState.messageCountByGroupId[key] || 0) + 1;
+  const next = getProactiveMessageCount(proactiveState, key) + 1;
   proactiveState.messageCountByGroupId[key] = next;
   return next;
+}
+
+function isProactiveEventStale(event = {}, nowMs, judgeEveryMinutes) {
+  const observedAt = Number(event.proactiveObservedAtMs || event.observedAtMs || 0);
+  if (!Number.isFinite(observedAt) || observedAt <= 0) return false;
+  const maxAgeMs = Math.max(10 * minuteMs, Math.max(1, judgeEveryMinutes) * 2 * minuteMs);
+  return nowMs - observedAt > maxAgeMs;
 }
 
 function normalizePreset(value = {}) {
@@ -546,6 +684,10 @@ function buildDecision(reason, assessment, judge = null, meta = {}) {
     includeRecentContext: true,
     messageCount: meta.messageCount,
     judgeEveryMessages: meta.judgeEveryMessages,
+    judgeEveryMinutes: meta.judgeEveryMinutes,
+    triggerMode: meta.triggerMode,
+    triggerReason: meta.triggerReason,
+    consumedMessageCount: meta.consumedMessageCount,
     interestScore: assessment.score,
     interest: assessment,
     modelJudge: judge,
@@ -555,13 +697,23 @@ function buildDecision(reason, assessment, judge = null, meta = {}) {
 }
 
 function formatRecentMessages(recentMessages = [], maxRecentMessages = 8) {
+  const memberAliases = new Map();
+  let nextMember = 1;
   return (Array.isArray(recentMessages) ? recentMessages : [])
     .slice(-Math.max(1, Math.min(12, maxRecentMessages)))
-    .map((item) => ({
-      sender: item.isAssistant || item.senderId === "assistant" ? "bot" : (item.isOwner ? "owner" : "member"),
-      text: String(item.text || "").slice(0, 220),
-      replyToBot: Boolean(item.replyContext?.isSelf)
-    }))
+    .map((item) => {
+      const senderId = String(item.senderId || "unknown");
+      if (!item.isAssistant && item.senderId !== "assistant" && !item.isOwner && !memberAliases.has(senderId)) {
+        memberAliases.set(senderId, `member${nextMember++}`);
+      }
+      return {
+        sender: item.isAssistant || item.senderId === "assistant"
+          ? "bot"
+          : (item.isOwner ? "owner" : memberAliases.get(senderId) || "member"),
+        text: String(item.text || "").slice(0, 220),
+        replyToBot: Boolean(item.replyContext?.isSelf)
+      };
+    })
     .filter((item) => item.text);
 }
 
@@ -600,7 +752,7 @@ function looksLikePrivateBackAndForth(recent, event) {
     .slice(-4);
   if (lastHuman.length < 3) return false;
   const participants = new Set(lastHuman.map((item) => String(item.senderId)));
-  return participants.size <= 2 && !lastHuman.some((item) => item.isOwner);
+  return participants.size <= 2;
 }
 
 function findLastIndex(list, predicate) {

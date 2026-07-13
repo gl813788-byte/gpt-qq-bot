@@ -35,12 +35,13 @@ function streamResponse(chunks, signal) {
   });
 }
 
-function proactiveState(timeoutMs = 1500) {
+function proactiveState(timeoutMs = 1500, overrides = {}) {
   return {
     ownerUserIds: [],
     proactive: {
       enabled: true,
-      judgeEveryMessages: 1,
+      judgeEveryMessages: overrides.judgeEveryMessages ?? 1,
+      judgeEveryMinutes: overrides.judgeEveryMinutes ?? 5,
       messageCountByGroupId: {},
       judge: {
         enabled: true,
@@ -52,6 +53,20 @@ function proactiveState(timeoutMs = 1500) {
       }
     }
   };
+}
+
+function jsonJudgeResponse({ shouldReply = true, interest = 88 } = {}) {
+  return new Response(JSON.stringify({
+    choices: [{
+      message: {
+        content: `FINAL_JSON: {"shouldReply":${shouldReply},"interest":${interest},"reason":"测试","replyStyle":"简短"}`
+      },
+      finish_reason: "stop"
+    }]
+  }), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  });
 }
 
 const event = {
@@ -79,19 +94,32 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
     recentMessages: [
       { senderId: "100", text: "前面在讨论 Node 部署" },
       { senderId: "assistant", isAssistant: true, text: "可以看日志定位" }
-    ]
+    ],
+    humanStyle: {
+      sampleSize: 120,
+      messagesPerHour: 42,
+      multiMessageRunRatio: 0.38,
+      messagesInMultiRunsRatio: 0.6,
+      medianTextChars: 6,
+      p90TextChars: 12,
+      imageMessageRatio: 0.18,
+      emojiMessageRatio: 0.06,
+      replyMessageRatio: 0.12
+    }
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.modelJudge.interest, 88);
   assert.equal(result.modelJudge.finishReason, "stop");
   assert.deepEqual(result.replyContext, [
-    { sender: "member", text: "前面在讨论 Node 部署", replyToBot: false },
+    { sender: "member1", text: "前面在讨论 Node 部署", replyToBot: false },
     { sender: "bot", text: "可以看日志定位", replyToBot: false }
   ]);
   assert.ok(result.modelJudge.durationMs >= 2500);
   assert.equal(requestBody.stream, true);
   assert.equal(requestBody.max_tokens, 2048);
+  const judgeInput = JSON.parse(requestBody.messages[1].content);
+  assert.equal(judgeInput.groupHumanRhythm.multiMessageRunRatio, 0.38);
 });
 
 test("proactive judge aborts only after the token stream stays idle", async () => {
@@ -109,4 +137,147 @@ test("proactive judge aborts only after the token stream stays idle", async () =
   assert.match(result.reason, /produced no new token for 1500ms/);
   assert.ok(result.modelJudge.durationMs >= 1400);
   assert.ok(result.modelJudge.durationMs < 2400);
+});
+
+test("minute trigger does nothing when no new ordinary group message exists", async () => {
+  const state = proactiveState(1500, { judgeEveryMessages: 20, judgeEveryMinutes: 2 });
+  let fetchCount = 0;
+  const result = await shouldProactivelyReplyToQq(event, state, {
+    triggerMode: "time",
+    countMessage: false,
+    now: () => 10 * 60 * 1000,
+    openRouterApiKey: "configured-for-test",
+    fetch: async () => {
+      fetchCount += 1;
+      return jsonJudgeResponse();
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "no new proactive messages to inspect");
+  assert.equal(fetchCount, 0);
+  assert.equal(state.proactive.messageCountByGroupId[event.groupId] || 0, 0);
+});
+
+test("explicit mentions and replies to the bot never enter a proactive cycle", async () => {
+  const state = proactiveState(1500, { judgeEveryMessages: 1, judgeEveryMinutes: 1 });
+  let fetchCount = 0;
+  const result = await shouldProactivelyReplyToQq({ ...event, isReplyToSelf: true }, state, {
+    openRouterApiKey: "configured-for-test",
+    fetch: async () => {
+      fetchCount += 1;
+      return jsonJudgeResponse();
+    }
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, "explicit mention is handled by mention-only route");
+  assert.equal(fetchCount, 0);
+  assert.equal(state.proactive.messageCountByGroupId[event.groupId] || 0, 0);
+});
+
+test("minute trigger consumes pending messages and resets both cycles", async () => {
+  const state = proactiveState(1500, { judgeEveryMessages: 20, judgeEveryMinutes: 2 });
+  let nowMs = 1_000_000;
+  let fetchCount = 0;
+  const helpers = {
+    now: () => nowMs,
+    openRouterApiKey: "configured-for-test",
+    fetch: async () => {
+      fetchCount += 1;
+      return jsonJudgeResponse();
+    }
+  };
+
+  const first = await shouldProactivelyReplyToQq(event, state, helpers);
+  assert.equal(first.reason, "waiting for proactive judge message interval");
+  assert.equal(state.proactive.messageCountByGroupId[event.groupId], 1);
+
+  nowMs += 2 * 60 * 1000 - 1;
+  const early = await shouldProactivelyReplyToQq(event, state, {
+    ...helpers,
+    triggerMode: "time",
+    countMessage: false
+  });
+  assert.equal(early.reason, "waiting for proactive judge minute interval");
+  assert.equal(fetchCount, 0);
+
+  nowMs += 1;
+  const due = await shouldProactivelyReplyToQq({ ...event, proactiveObservedAtMs: nowMs }, state, {
+    ...helpers,
+    triggerMode: "time",
+    countMessage: false
+  });
+  assert.equal(due.ok, true);
+  assert.equal(due.triggerReason, "minute_interval");
+  assert.equal(due.consumedMessageCount, 1);
+  assert.equal(due.messageCountRemaining, 0);
+  assert.equal(state.proactive.messageCountByGroupId[event.groupId], 0);
+  assert.equal(state.proactive.lastJudgeAtByGroupId[event.groupId], nowMs);
+  assert.equal(fetchCount, 1);
+
+  nowMs += 5 * 60 * 1000;
+  const emptyCycle = await shouldProactivelyReplyToQq(event, state, {
+    ...helpers,
+    triggerMode: "time",
+    countMessage: false
+  });
+  assert.equal(emptyCycle.reason, "no new proactive messages to inspect");
+  assert.equal(fetchCount, 1);
+});
+
+test("message-count trigger also restarts the minute cycle", async () => {
+  const state = proactiveState(1500, { judgeEveryMessages: 2, judgeEveryMinutes: 5 });
+  let nowMs = 2_000_000;
+  let fetchCount = 0;
+  const helpers = {
+    now: () => nowMs,
+    openRouterApiKey: "configured-for-test",
+    fetch: async () => {
+      fetchCount += 1;
+      return jsonJudgeResponse();
+    }
+  };
+
+  const first = await shouldProactivelyReplyToQq(event, state, helpers);
+  assert.equal(first.ok, false);
+  nowMs += 1000;
+  const second = await shouldProactivelyReplyToQq(event, state, helpers);
+  assert.equal(second.ok, true);
+  assert.equal(second.triggerReason, "message_count");
+  assert.equal(second.messageCountRemaining, 0);
+  assert.equal(state.proactive.lastJudgeAtByGroupId[event.groupId], nowMs);
+
+  nowMs += 6 * 60 * 1000;
+  const timer = await shouldProactivelyReplyToQq(event, state, {
+    ...helpers,
+    triggerMode: "time",
+    countMessage: false
+  });
+  assert.equal(timer.reason, "no new proactive messages to inspect");
+  assert.equal(fetchCount, 1);
+});
+
+test("messages arriving during a judge stay in the next cycle", async () => {
+  const state = proactiveState(1500, { judgeEveryMessages: 1, judgeEveryMinutes: 5 });
+  let releaseJudge;
+  const fetch = async () => {
+    await new Promise((resolve) => { releaseJudge = resolve; });
+    return jsonJudgeResponse();
+  };
+  const firstPromise = shouldProactivelyReplyToQq(event, state, {
+    openRouterApiKey: "configured-for-test",
+    fetch
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  const during = await shouldProactivelyReplyToQq({ ...event, text: "第二条新消息" }, state, {
+    openRouterApiKey: "configured-for-test",
+    fetch
+  });
+  assert.equal(during.reason, "proactive judge already in flight");
+  releaseJudge();
+  const first = await firstPromise;
+  assert.equal(first.ok, true);
+  assert.equal(first.messageCountRemaining, 1);
+  assert.equal(state.proactive.messageCountByGroupId[event.groupId], 1);
 });

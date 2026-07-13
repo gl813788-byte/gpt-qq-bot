@@ -9,7 +9,10 @@ const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 export function buildQqChatStyleInstructions(event = {}) {
   return [
     "QQ 群聊风格：",
-    "- 回复尽量短，像群里自然接话；别写客服式长段落、总结标题或免责声明。",
+    "- 回复尽量短，像群里自然接话；允许省略双方都知道的主语和背景，别把口语补成书面说明文。",
+    "- 对方在分享、感叹、发图或说生活碎片时，先回应最具体的一点；没有求建议就别自动分析、科普或列解决方案。",
+    "- 多人同时聊天时只跟住当前发送者、引用对象和仍在延续的主线，不要把整个群逐条总结一遍。",
+    "- 可以偶尔连发两条短气泡，第二条用于自然补一句或接梗；不要把长段落机械切开，也不要为了连发制造废话。",
     "- 不要复读群友昵称，不要解释自己是 AI，不要主动暴露后台工具或内部标记。",
     "- 能一句话说清就一句话；需要解释时先给结论，再补关键理由。",
     "- 对主人可以自然亲近一点，但不要每句都叫“主人”；只有直接回应主人、管理动作或需要区分权限时再叫。",
@@ -55,13 +58,13 @@ export function buildQqSendPlan(_event, reply) {
   };
 }
 
-export async function sendQqGroupBubbles({ event, reply, sendGroupMessage, quoteFirstBubble = true }) {
+export async function sendQqGroupBubbles({ event, reply, sendGroupMessage, quoteFirstBubble = true, delayMs = 650 }) {
   const plan = buildQqSendPlan(event, reply);
   const bubbles = plan.bubbles || [];
   if (bubbles.length === 0) return { ok: true, bubbles: [], results: [] };
   const results = [];
   for (const [index, bubble] of bubbles.entries()) {
-    if (index > 0) await sleep(650);
+    if (index > 0) await sleep(Math.max(0, Number(delayMs || 0)));
     results.push(await sendGroupMessage(bubble, {
       quoteSource: index === 0 && quoteFirstBubble && event?.type !== "private_message"
     }));
@@ -194,10 +197,15 @@ async function prepareSingleImage(image, { outputDir, fetchOneBotImage } = {}) {
   if (direct) return copyImage(direct, outputDir);
   const file = image?.file ? String(image.file) : "";
   if (file && fetchOneBotImage) {
-    const data = await fetchOneBotImage(file);
-    const fetchedPath = existingImagePath(data);
-    if (fetchedPath) return copyImage(fetchedPath, outputDir);
-    if (data?.url) return downloadImage(data.url, outputDir, data.file_name || data.file || file);
+    try {
+      const data = await fetchOneBotImage(file);
+      const fetchedPath = existingImagePath(data);
+      if (fetchedPath) return copyImage(fetchedPath, outputDir);
+      if (data?.url) return downloadImage(data.url, outputDir, data.file_name || data.file || file);
+    } catch {
+      // Account stickers may have a display-only filename alongside a usable URL.
+      // A failed OneBot get_image lookup must not prevent the direct URL fallback.
+    }
   }
   if (image?.url) return downloadImage(String(image.url), outputDir, file || "qq-image");
   return "";
