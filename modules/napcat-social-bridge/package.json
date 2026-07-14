@@ -1,0 +1,7 @@
+{
+  "name": "napcat-plugin-builtin",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.mjs",
+  "description": "Loopback-only QQ social action bridge for Codex Remote Contact"
+}

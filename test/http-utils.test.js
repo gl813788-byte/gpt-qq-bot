@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   corsHeaders,
   HttpError,
+  isLoopbackAddress,
   isLoopbackHost,
   isLoopbackRequestHost,
   isRequestOriginAllowed,
@@ -71,4 +72,10 @@ test("recognizes loopback bindings", () => {
   assert.equal(isLoopbackRequestHost("127.0.0.1.example:3789"), false);
   assert.equal(isLoopbackRequestHost("evil.example:3789"), false);
   assert.equal(isLoopbackRequestHost(""), false);
+  assert.equal(isLoopbackAddress("127.0.0.1"), true);
+  assert.equal(isLoopbackAddress("127.42.0.9"), true);
+  assert.equal(isLoopbackAddress("::1"), true);
+  assert.equal(isLoopbackAddress("::ffff:127.0.0.1"), true);
+  assert.equal(isLoopbackAddress("192.168.1.20"), false);
+  assert.equal(isLoopbackAddress("::ffff:10.0.0.2"), false);
 });

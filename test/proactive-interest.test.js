@@ -311,6 +311,22 @@ test("message-count trigger also restarts the minute cycle", async () => {
   assert.equal(fetchCount, 1);
 });
 
+test("uses per-group learned proactive intervals supplied by the runtime", async () => {
+  const state = proactiveState(1500, { judgeEveryMessages: 20, judgeEveryMinutes: 5 });
+  const helpers = {
+    judgeEveryMessages: 2,
+    judgeEveryMinutes: 1,
+    openRouterApiKey: "configured-for-test",
+    fetch: async () => jsonJudgeResponse()
+  };
+  const first = await shouldProactivelyReplyToQq(event, state, helpers);
+  const second = await shouldProactivelyReplyToQq(event, state, helpers);
+  assert.equal(first.reason, "waiting for proactive judge message interval");
+  assert.equal(first.judgeEveryMessages, 2);
+  assert.equal(second.ok, true);
+  assert.equal(second.judgeEveryMinutes, 1);
+});
+
 test("messages arriving during a judge stay in the next cycle", async () => {
   const state = proactiveState(1500, { judgeEveryMessages: 1, judgeEveryMinutes: 5 });
   let releaseJudge;

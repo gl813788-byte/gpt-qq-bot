@@ -52,6 +52,14 @@ export function isLoopbackRequestHost(hostHeader) {
   }
 }
 
+export function isLoopbackAddress(address) {
+  const value = String(address || "").trim().toLowerCase();
+  if (!value) return false;
+  if (value === "::1" || value === "0:0:0:0:0:0:0:1") return true;
+  const ipv4 = value.startsWith("::ffff:") ? value.slice(7) : value;
+  return ipv4 === "127.0.0.1" || ipv4.startsWith("127.");
+}
+
 export class HttpError extends Error {
   constructor(statusCode, message) {
     super(message);

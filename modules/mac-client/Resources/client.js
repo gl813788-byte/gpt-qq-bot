@@ -10,7 +10,7 @@ const translations = {
     heroTitle: "你的本地智能通讯中枢", heroBody: "在一个安静、清晰的界面里掌握 QQ、iMessage、Codex 和记忆系统。", manageChannels: "管理通道", openApi: "打开 API",
     liveChannels: "LIVE CHANNELS", channelControl: "通道控制", viewAll: "查看全部", usageWindow: "用量窗口", systemPulse: "SYSTEM PULSE", serviceHealth: "服务健康", checkNow: "立即检查", recentFlow: "RECENT FLOW", recentActivity: "最近活动", openLogs: "打开日志",
     connectionRules: "CONNECTION RULES", channelsHeading: "管理每一条消息通道", channelsBody: "控制启停、访问范围和可信联系人，所有改动会立即写入本地 Hub。",
-    toggleQq: "启用 QQ 通道", toggleIMessage: "启用 iMessage 通道", qqAllowlist: "QQ群白名单", qqAllowlistHint: "只有列表内群聊会触发助手。", groupId: "群 ID", groupIdExample: "例如 123456789", add: "添加",
+    toggleQq: "启用 QQ 通道", toggleIMessage: "启用 iMessage 通道", qqAllowlist: "QQ群白名单", qqAllowlistHint: "只有列表内群聊会触发助手。", stickerFrequency: "表情包频率", stickerFrequencyHint: "按群查看最近真人与上线后 Bot 的实际使用率。", humanStickerRate: "真人 {rate}% · {count} 条样本", botStickerRate: "Bot {rate}% · {count} 条新回复", plannedStickerRate: "闲聊计划 {rate}%", noStickerFrequency: "还没有可统计的群聊样本。", adaptiveLearning: "自动适应", adaptiveLearningHint: "按群学习活跃时段、成员节奏，并按 24 小时时钟复盘真人与 Bot 的风格差异。", adaptiveSamples: "真人 {count} 条 · {members} 位成员", adaptiveHours: "常见活跃时段：{hours}", adaptiveNextReview: "下次复盘检查：{time}", adaptiveColdWaiting: "冷群兴趣发言已暂停，等待真人接话", adaptiveCollecting: "正在积累上线后的 Bot 回复，样本足够后按天复盘。", noAdaptiveLearning: "还没有可用的自动学习样本。", coldInterest: "冷群兴趣发言", coldInterestHint: "按最后一条消息计时，结合群节奏选择发一句或保持沉默。", coldInterestPolicy: "开放 {hours} · 沉默后重试 {retry} 小时 · 发言后等待真人接话", coldInterestRecent: "最近判断", noColdInterest: "还没有可展示的冷群状态。", noColdInterestDecisions: "还没有实际触发过冷群判断。", viewDetailedLogs: "查看详细日志", learningHuman: "真人学习参数", learningBot: "Bot 实际参数", learningReview: "风格复盘", learningInterest: "兴趣回复参数", detailSample: "样本 {value}", detailConfidence: "置信度 {value}%", detailTextSample: "文字样本 {value}", detailAverageChars: "平均文字 {value} 字", detailShortRatio: "短消息 {value}%", detailLongRatio: "长消息 {value}%", detailStickerRatio: "表情包 {value}%", detailImageRatio: "图片 {value}%", detailEmojiRatio: "Emoji {value}%", detailReplyRatio: "回复引用 {value}%", detailMentionRatio: "@ 消息 {value}%", detailQuestionRatio: "问句 {value}%", detailBotInteraction: "与 Bot 直接互动 {value}%", detailBurstRatio: "两分钟连发 {value}%", detailGap: "消息间隔中位 {value}", detailActiveDays: "活跃 {value} 天", detailDailyMessages: "活跃日均 {value} 条", detailCurrentHour: "当前时段占比 {value}%", detailFirstSeen: "开始学习 {value}", detailLastHuman: "最后真人消息 {value}", detailBotReplies: "新 Bot 回复 {value}", detailBotChars: "Bot 平均 {value} 字", detailBotSticker: "Bot 表情包 {value}%", detailBotBubbles: "Bot 多气泡 {value}%", detailBotFollowup: "真人接话率 {value}%", detailTrackingStart: "Bot 统计起点 {value}", detailLastBot: "最后 Bot 回复 {value}", detailReviewSamples: "复盘样本 真人 {human} / Bot {bot}", detailLastReview: "上次复盘 {value}", detailNextReview: "下次复盘 {value}", detailOrdinaryInterest: "普通兴趣：{messages} 条或 {minutes} 分钟", detailInterestReason: "间隔依据 {value}", detailColdIdle: "已沉默 {idle} / 需 {required} 小时", detailColdReason: "当前状态 {value}", detailColdThreshold: "计时阈值 {value}", detailColdCheck: "上次判断 {value}", detailColdSent: "上次主动发言 {value}", groupLabel: "群 {value}", groupId: "群 ID", groupIdExample: "例如 123456789", add: "添加",
     trustedContacts: "可信联系人", trustedContactsHint: "仅响应这些号码或邮箱。", phoneOrEmail: "手机号或邮箱", defaultReplyAccount: "默认回复账号", optional: "可留空", save: "保存", qqRecent: "QQ 最近事件", imessageRecent: "iMessage 最近事件",
     contextVault: "CONTEXT VAULT", memoryHeading: "可见、可控的本地记忆", memoryBody: "浏览跨端摘要、群聊上下文和远程执行记录，并精确清理不再需要的内容。", refreshMemory: "刷新记忆", memoryType: "记忆类型", unified: "统一记忆", remoteExecution: "远程执行", searchMemory: "搜索记忆",
     observability: "OBSERVABILITY", activityHeading: "把每一次运行看清楚", activityBody: "筛选日志、追踪链路并观察耗时分布，定位问题不再依赖翻文件。", liveRefresh: "实时刷新", level: "级别", allLevels: "全部级别", category: "模块", allCategories: "全部模块", search: "搜索", logSearchHint: "消息、Trace、群或发送者", slowThreshold: "慢请求", noLimit: "不限", applyFilter: "应用筛选", structuredLogs: "结构化日志", waitingLogs: "等待日志", resetFilter: "重置", refresh: "刷新",
@@ -34,7 +34,7 @@ const translations = {
     heroTitle: "Your local intelligent communication hub", heroBody: "A calm, clear place to manage QQ, iMessage, Codex, and memory.", manageChannels: "Manage channels", openApi: "Open API",
     liveChannels: "LIVE CHANNELS", channelControl: "Channel control", viewAll: "View all", usageWindow: "Usage windows", systemPulse: "SYSTEM PULSE", serviceHealth: "Service health", checkNow: "Check now", recentFlow: "RECENT FLOW", recentActivity: "Recent activity", openLogs: "Open logs",
     connectionRules: "CONNECTION RULES", channelsHeading: "Manage every message channel", channelsBody: "Control availability, access scope, and trusted contacts. Changes are written to the local Hub immediately.",
-    toggleQq: "Enable QQ channel", toggleIMessage: "Enable iMessage channel", qqAllowlist: "QQ group allowlist", qqAllowlistHint: "Only listed groups can trigger the assistant.", groupId: "Group ID", groupIdExample: "e.g. 123456789", add: "Add",
+    toggleQq: "Enable QQ channel", toggleIMessage: "Enable iMessage channel", qqAllowlist: "QQ group allowlist", qqAllowlistHint: "Only listed groups can trigger the assistant.", stickerFrequency: "Sticker frequency", stickerFrequencyHint: "Compare recent human usage with Bot replies sent after this rollout.", humanStickerRate: "Humans {rate}% · {count} samples", botStickerRate: "Bot {rate}% · {count} new replies", plannedStickerRate: "Casual target {rate}%", noStickerFrequency: "No group samples are available yet.", adaptiveLearning: "Adaptive learning", adaptiveLearningHint: "Learns group timing and member rhythm, then reviews human-versus-Bot style on a 24-hour clock.", adaptiveSamples: "{count} human messages · {members} members", adaptiveHours: "Common active hours: {hours}", adaptiveNextReview: "Next review check: {time}", adaptiveColdWaiting: "Cold-group interest is paused until a human replies", adaptiveCollecting: "Collecting new Bot replies; review runs daily when samples are sufficient.", noAdaptiveLearning: "No adaptive-learning samples yet.", coldInterest: "Cold-group interest", coldInterestHint: "Times from the latest message and uses group rhythm to speak once or stay silent.", coldInterestPolicy: "Open {hours} · retry after silence in {retry}h · wait for a human after sending", coldInterestRecent: "Recent decisions", noColdInterest: "No cold-group status is available yet.", noColdInterestDecisions: "No cold-group candidate has run yet.", viewDetailedLogs: "View detailed logs", learningHuman: "Human learning signals", learningBot: "Bot actual signals", learningReview: "Style review", learningInterest: "Interest reply signals", detailSample: "Samples {value}", detailConfidence: "Confidence {value}%", detailTextSample: "Text samples {value}", detailAverageChars: "Average text {value} chars", detailShortRatio: "Short messages {value}%", detailLongRatio: "Long messages {value}%", detailStickerRatio: "Stickers {value}%", detailImageRatio: "Images {value}%", detailEmojiRatio: "Emoji {value}%", detailReplyRatio: "Replies {value}%", detailMentionRatio: "Mentions {value}%", detailQuestionRatio: "Questions {value}%", detailBotInteraction: "Direct Bot interaction {value}%", detailBurstRatio: "Two-minute bursts {value}%", detailGap: "Median gap {value}", detailActiveDays: "Active {value} days", detailDailyMessages: "{value} per active day", detailCurrentHour: "Current-hour share {value}%", detailFirstSeen: "Learning since {value}", detailLastHuman: "Latest human message {value}", detailBotReplies: "New Bot replies {value}", detailBotChars: "Bot average {value} chars", detailBotSticker: "Bot stickers {value}%", detailBotBubbles: "Bot multi-bubble {value}%", detailBotFollowup: "Human follow-up {value}%", detailTrackingStart: "Bot tracking since {value}", detailLastBot: "Latest Bot reply {value}", detailReviewSamples: "Review samples human {human} / Bot {bot}", detailLastReview: "Last review {value}", detailNextReview: "Next review {value}", detailOrdinaryInterest: "Ordinary interest: {messages} messages or {minutes} minutes", detailInterestReason: "Cadence basis {value}", detailColdIdle: "Idle {idle} / required {required}h", detailColdReason: "Current state {value}", detailColdThreshold: "Time threshold {value}", detailColdCheck: "Last check {value}", detailColdSent: "Last outreach {value}", groupLabel: "Group {value}", groupId: "Group ID", groupIdExample: "e.g. 123456789", add: "Add",
     trustedContacts: "Trusted contacts", trustedContactsHint: "Only respond to these numbers or emails.", phoneOrEmail: "Phone or email", defaultReplyAccount: "Default reply account", optional: "Optional", save: "Save", qqRecent: "Recent QQ events", imessageRecent: "Recent iMessage events",
     contextVault: "CONTEXT VAULT", memoryHeading: "Visible, controllable local memory", memoryBody: "Browse cross-device summaries, chat context, and remote execution records, then remove exactly what you no longer need.", refreshMemory: "Refresh memory", memoryType: "Memory type", unified: "Unified", remoteExecution: "Remote execution", searchMemory: "Search memory",
     observability: "OBSERVABILITY", activityHeading: "See every run clearly", activityBody: "Filter logs, follow traces, and inspect latency without digging through files.", liveRefresh: "Live refresh", level: "Level", allLevels: "All levels", category: "Category", allCategories: "All categories", search: "Search", logSearchHint: "Message, trace, group, or sender", slowThreshold: "Slow requests", noLimit: "No limit", applyFilter: "Apply", structuredLogs: "Structured logs", waitingLogs: "Waiting for logs", resetFilter: "Reset", refresh: "Refresh",
@@ -467,6 +467,13 @@ function renderChannelSettings() {
   $("#imessageStatusText").textContent = state.channels?.imessage ? `${t("enabled")} · ${state.imessage?.status || t("idle")}` : t("disabled");
   $("#qqChannelMeta").innerHTML = [t("groupsAllowed", { count: state.qq?.allowedGroups?.length || 0 }), t("recentEventsCount", { count: state.qq?.events?.length || 0 }), `${t("active")} ${h.qq?.activeGenerations || 0}`].map(metaChip).join("");
   $("#imessageChannelMeta").innerHTML = [t("contactsTrusted", { count: state.imessage?.trustedHandles?.length || 0 }), t("recentEventsCount", { count: state.imessage?.events?.length || 0 }), state.remoteExecution?.enabled ? t("remoteExecution") : t("idle")].map(metaChip).join("");
+  renderQqStickerFrequency(state.qq?.humanBehavior?.stickerFrequency || {});
+  renderQqAdaptiveLearning(state.qq?.humanBehavior?.adaptiveLearning || {});
+  renderQqColdInterest(
+    state.qq?.proactive?.coldGroupInterest || {},
+    state.qq?.humanBehavior?.adaptiveLearning || {},
+    state.qq?.events || []
+  );
   renderGroups(state.qq?.allowedGroups || []);
   renderHandles(state.imessage?.trustedHandles || []);
   const replyInput = $("#replyHandleInput");
@@ -474,6 +481,138 @@ function renderChannelSettings() {
 }
 
 function metaChip(text) { return `<span class="meta-chip">${escapeHtml(text)}</span>`; }
+
+function renderQqStickerFrequency(frequency) {
+  const entries = Object.entries(frequency || {}).sort(([left], [right]) => left.localeCompare(right));
+  $("#qqStickerFrequency").innerHTML = entries.length ? entries.map(([groupId, item]) => {
+    const humanRate = formatRate(item.humanStickerMessageRatio);
+    const botRate = formatRate(item.botStickerMessageRatio);
+    const plannedRate = formatRate(item.plannedCasualStickerRatio);
+    return `<article class="behavior-frequency-item"><strong>${escapeHtml(t("groupLabel", { value: groupId }))}</strong><div><span>${escapeHtml(t("humanStickerRate", { rate: humanRate, count: item.humanSampleSize || 0 }))}</span><span>${escapeHtml(t("botStickerRate", { rate: botRate, count: item.botSampleSize || 0 }))}</span><span>${escapeHtml(t("plannedStickerRate", { rate: plannedRate }))}</span></div></article>`;
+  }).join("") : `<p class="token-empty">${escapeHtml(t("noStickerFrequency"))}</p>`;
+}
+
+function renderQqAdaptiveLearning(groups) {
+  const entries = Object.entries(groups || {}).filter(([, item]) => Number(item.sampleSize || 0) > 0).sort(([left], [right]) => left.localeCompare(right));
+  $("#qqAdaptiveLearning").innerHTML = entries.length ? entries.map(([groupId, item]) => {
+    const hours = (item.activeHours || []).map((hour) => `${hour}:00`).join(" · ") || "—";
+    const guidance = (item.styleGuidance || []).slice(0, 5);
+    const review = item.styleReviewSummary || t("adaptiveCollecting");
+    const intervals = item.proactiveIntervals || {};
+    const cold = item.coldInterest || {};
+    const sections = [
+      adaptiveDetailSection(t("learningHuman"), [
+        t("detailSample", { value: item.sampleSize || 0 }),
+        t("detailConfidence", { value: formatRate(item.confidence) }),
+        t("detailTextSample", { value: item.textSampleSize || 0 }),
+        t("detailAverageChars", { value: item.averageTextChars || 0 }),
+        t("detailShortRatio", { value: formatRate(item.shortTextRatio) }),
+        t("detailLongRatio", { value: formatRate(item.longTextRatio) }),
+        t("detailStickerRatio", { value: formatRate(item.stickerMessageRatio) }),
+        t("detailImageRatio", { value: formatRate(item.imageMessageRatio) }),
+        t("detailEmojiRatio", { value: formatRate(item.emojiMessageRatio) }),
+        t("detailReplyRatio", { value: formatRate(item.replyMessageRatio) }),
+        t("detailMentionRatio", { value: formatRate(item.mentionMessageRatio) }),
+        t("detailQuestionRatio", { value: formatRate(item.questionMessageRatio) }),
+        t("detailBotInteraction", { value: formatRate(item.directBotInteractionRatio) }),
+        t("detailBurstRatio", { value: formatRate(item.burstContinuationRatio) }),
+        t("detailGap", { value: formatAdaptiveGap(item.medianGapSeconds) }),
+        t("detailActiveDays", { value: item.activeDays || 0 }),
+        t("detailDailyMessages", { value: item.messagesPerActiveDay || 0 }),
+        t("detailCurrentHour", { value: formatRate(item.currentHourShare) }),
+        t("detailFirstSeen", { value: formatTime(item.firstSeenAt) }),
+        t("detailLastHuman", { value: formatTime(item.lastMessageAt) })
+      ]),
+      adaptiveDetailSection(t("learningBot"), [
+        t("detailBotReplies", { value: item.botReplyCount || 0 }),
+        t("detailBotChars", { value: item.averageBotReplyChars || 0 }),
+        t("detailBotSticker", { value: formatRate(item.botStickerReplyRatio) }),
+        t("detailBotBubbles", { value: formatRate(item.botMultiBubbleReplyRatio) }),
+        t("detailBotFollowup", { value: formatRate(item.botReplyFollowUpRatio) }),
+        t("detailTrackingStart", { value: formatTime(item.botTrackingStartedAt) }),
+        t("detailLastBot", { value: formatTime(item.lastBotReplyAt) })
+      ]),
+      adaptiveDetailSection(t("learningReview"), [
+        t("detailReviewSamples", { human: item.styleHumanSampleSize || 0, bot: item.styleBotSampleSize || 0 }),
+        t("detailLastReview", { value: formatTime(item.lastStyleReviewAt) }),
+        t("detailNextReview", { value: formatTime(item.nextStyleReviewAt) }),
+        review,
+        ...guidance.map((rule) => `↳ ${rule}`)
+      ]),
+      adaptiveDetailSection(t("learningInterest"), [
+        t("detailOrdinaryInterest", { messages: intervals.judgeEveryMessages ?? "—", minutes: intervals.judgeEveryMinutes ?? "—" }),
+        t("detailInterestReason", { value: formatAdaptiveReason(intervals.reason) }),
+        t("detailColdIdle", { idle: cold.idleHours ?? "—", required: cold.idleHoursRequired ?? "—" }),
+        t("detailColdReason", { value: formatAdaptiveReason(cold.reason) }),
+        t("detailColdThreshold", { value: formatTime(cold.thresholdReachedAt) }),
+        t("detailColdCheck", { value: formatTime(cold.lastCheckAt || item.lastColdProactiveCheckAt) }),
+        t("detailColdSent", { value: formatTime(cold.lastProactiveAt || item.lastColdProactiveAt) })
+      ])
+    ].join("");
+    return `<details class="behavior-frequency-item adaptive-learning-item"><summary><span><strong>${escapeHtml(t("groupLabel", { value: groupId }))}</strong><small>${escapeHtml(formatActivityLevel(item.activityLevel))}</small></span><span class="adaptive-summary-meta">${escapeHtml(t("adaptiveSamples", { count: item.sampleSize || 0, members: item.learnedMembers || 0 }))}</span></summary><div class="adaptive-summary-chips"><span>${escapeHtml(t("adaptiveHours", { hours }))}</span>${item.coldProactiveAwaitingHuman ? `<span class="status-warn">${escapeHtml(t("adaptiveColdWaiting"))}</span>` : ""}</div><div class="adaptive-detail-grid">${sections}</div></details>`;
+  }).join("") : `<p class="token-empty">${escapeHtml(t("noAdaptiveLearning"))}</p>`;
+}
+
+function adaptiveDetailSection(title, values) {
+  return `<section class="adaptive-detail-section"><h4>${escapeHtml(title)}</h4><div>${values.filter(Boolean).map((value) => `<span>${escapeHtml(value)}</span>`).join("")}</div></section>`;
+}
+
+function renderQqColdInterest(policy, groups, events) {
+  const entries = Object.entries(groups || {}).filter(([, item]) => Number(item.sampleSize || 0) > 0).sort(([left], [right]) => left.localeCompare(right));
+  const policyText = t("coldInterestPolicy", { hours: policy.allowedHours || "09:00-23:00", retry: policy.retryCooldownHours ?? 3 });
+  const groupCards = entries.map(([groupId, item]) => {
+    const cold = item.coldInterest || {};
+    const statusClass = cold.eligible ? "ready" : cold.awaitingHuman ? "waiting" : "idle";
+    return `<article class="cold-interest-item ${statusClass}"><div class="cold-interest-head"><strong>${escapeHtml(t("groupLabel", { value: groupId }))}</strong><span>${escapeHtml(formatAdaptiveReason(cold.reason))}</span></div><div class="cold-interest-metrics"><span>${escapeHtml(t("detailColdIdle", { idle: cold.idleHours ?? "—", required: cold.idleHoursRequired ?? "—" }))}</span><span>${escapeHtml(t("detailLastHuman", { value: formatTime(cold.lastActivityAt || item.lastMessageAt) }))}</span><span>${escapeHtml(t("detailColdThreshold", { value: formatTime(cold.thresholdReachedAt) }))}</span><span>${escapeHtml(t("detailColdCheck", { value: formatTime(cold.lastCheckAt || item.lastColdProactiveCheckAt) }))}</span></div></article>`;
+  }).join("");
+  const decisions = (events || []).filter((record) => record.event?.coldProactive).slice(0, 5);
+  const recent = decisions.length
+    ? `<div class="cold-decision-list">${decisions.map((record) => `<article><span>${escapeHtml(t("groupLabel", { value: record.event?.groupId || "—" }))} · ${escapeHtml(formatColdDecisionOutcome(record))}</span><time>${escapeHtml(formatRelative(record.receivedAt))}</time>${record.reply ? `<p>${escapeHtml(record.reply)}</p>` : `<p>${escapeHtml(record.decision?.reason || formatAdaptiveReason(record.decision?.coldInterest?.reason))}</p>`}</article>`).join("")}</div>`
+    : `<p class="token-empty">${escapeHtml(t("noColdInterestDecisions"))}</p>`;
+  $("#qqColdInterest").innerHTML = `<p class="cold-interest-policy">${escapeHtml(policyText)}</p>${groupCards || `<p class="token-empty">${escapeHtml(t("noColdInterest"))}</p>`}<div class="cold-recent-head"><strong>${escapeHtml(t("coldInterestRecent"))}</strong></div>${recent}`;
+}
+
+function formatActivityLevel(value) {
+  const labels = app.language === "en"
+    ? { high: "high activity", typical: "typical activity", low: "low activity", unknown: "learning" }
+    : { high: "高活跃", typical: "一般活跃", low: "低活跃", unknown: "学习中" };
+  return labels[value] || labels.unknown;
+}
+
+function formatAdaptiveReason(value) {
+  const zh = {
+    learning_sample_low: "学习样本不足", outside_social_hours: "不在开放时段", no_human_context: "缺少真人上下文",
+    awaiting_human_after_cold_proactive: "等待真人接话", cold_check_cooldown: "判断冷却中", group_not_cold: "尚未达到沉默时长",
+    bot_spoke_recently: "Bot 最近说过话", cold_group_time_due: "已到判断时间", ordinary_interest_pending: "普通兴趣消息待判断",
+    reply_queue_pending: "回复队列处理中", reply_generation_active: "当前正在生成回复", activity_high: "群当前高活跃",
+    activity_typical: "群当前一般活跃", activity_low: "群当前低活跃", activity_unknown: "活跃度仍在学习"
+  };
+  const en = {
+    learning_sample_low: "learning sample is low", outside_social_hours: "outside allowed hours", no_human_context: "no human context",
+    awaiting_human_after_cold_proactive: "waiting for a human", cold_check_cooldown: "decision cooldown", group_not_cold: "quiet threshold not reached",
+    bot_spoke_recently: "Bot spoke recently", cold_group_time_due: "ready for a decision", ordinary_interest_pending: "ordinary interest is pending",
+    reply_queue_pending: "reply queue is pending", reply_generation_active: "reply generation is active", activity_high: "currently high activity",
+    activity_typical: "currently typical activity", activity_low: "currently low activity", activity_unknown: "activity still learning"
+  };
+  return (app.language === "en" ? en : zh)[value] || value || "—";
+}
+
+function formatColdDecisionOutcome(record) {
+  if (record.error || record.send?.ok === false) return app.language === "en" ? "failed" : "失败";
+  if (record.decision?.superseded) return app.language === "en" ? "cancelled by new activity" : "因新消息取消";
+  if (record.reply) return app.language === "en" ? "sent" : "已发送";
+  return app.language === "en" ? "stayed silent" : "保持沉默";
+}
+
+function formatAdaptiveGap(seconds) {
+  const value = Number(seconds);
+  return Number.isFinite(value) && value > 0 ? formatDuration(value * 1000) : "—";
+}
+
+function formatRate(value) {
+  const rate = Number(value || 0) * 100;
+  return rate >= 10 ? rate.toFixed(0) : rate.toFixed(1);
+}
 
 function renderGroups(groups) {
   $("#groupCount").textContent = String(groups.length);
@@ -753,6 +892,7 @@ function showToast(message, type = "info") {
 function emptyState(message) { return `<div class="empty-state">${escapeHtml(message)}</div>`; }
 
 function formatTime(value) {
+  if (value == null || value === "") return "—";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "—";
   return new Intl.DateTimeFormat(app.language === "en" ? "en" : "zh-CN", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(date);
@@ -890,6 +1030,21 @@ document.addEventListener("click", async (event) => {
   if (nav) { setView(nav.dataset.view, { focus: true }); return; }
   const go = event.target.closest("[data-go-view]");
   if (go) { setView(go.dataset.goView, { focus: true }); return; }
+  const featureLogs = event.target.closest("[data-open-feature-logs]");
+  if (featureLogs) {
+    const category = featureLogs.dataset.openFeatureLogs || "";
+    setView("activity", { focus: false });
+    if (category) {
+      app.logCategories.add(category);
+      updateLogCategories({});
+      $("#logCategory").value = category;
+    }
+    $("#logLevel").value = "";
+    $("#logSlow").value = "";
+    $("#logQuery").value = featureLogs.dataset.logQuery || "";
+    await refreshLogs().catch(() => undefined);
+    return;
+  }
   const scrollHealth = event.target.closest("[data-scroll-health]");
   if (scrollHealth) { $("#healthGrid").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" }); return; }
   const removeGroup = event.target.closest("[data-remove-group]");

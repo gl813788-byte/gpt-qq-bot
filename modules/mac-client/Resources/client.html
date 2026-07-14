@@ -227,6 +227,20 @@
                   </label>
                 </div>
                 <div class="channel-meta" id="qqChannelMeta"></div>
+                <div class="subsection-head behavior-heading">
+                  <div><h3 data-i18n="stickerFrequency">表情包频率</h3><p data-i18n="stickerFrequencyHint">按群查看最近真人与上线后 Bot 的实际使用率。</p></div>
+                </div>
+                <div id="qqStickerFrequency" class="behavior-frequency-list"></div>
+                <div class="subsection-head behavior-heading">
+                  <div><h3 data-i18n="adaptiveLearning">自动适应</h3><p data-i18n="adaptiveLearningHint">按群学习活跃时段、成员节奏，并按 24 小时时钟复盘真人与 Bot 的风格差异。</p></div>
+                  <button class="text-button compact-button" type="button" data-open-feature-logs="learning" data-i18n="viewDetailedLogs">查看详细日志</button>
+                </div>
+                <div id="qqAdaptiveLearning" class="behavior-frequency-list"></div>
+                <div class="subsection-head behavior-heading">
+                  <div><h3 data-i18n="coldInterest">冷群兴趣发言</h3><p data-i18n="coldInterestHint">按最后一条消息计时，结合群节奏选择发一句或保持沉默。</p></div>
+                  <button class="text-button compact-button" type="button" data-open-feature-logs="interest" data-log-query="cold-group" data-i18n="viewDetailedLogs">查看详细日志</button>
+                </div>
+                <div id="qqColdInterest" class="behavior-frequency-list"></div>
                 <div class="subsection-head">
                   <div><h3 data-i18n="qqAllowlist">QQ群白名单</h3><p data-i18n="qqAllowlistHint">只有列表内群聊会触发助手。</p></div>
                   <span id="groupCount" class="count-pill">0</span>

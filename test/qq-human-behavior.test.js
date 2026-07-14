@@ -1,11 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  analyzeQqBotChatStyle,
   analyzeQqHumanChatStyle,
   applyQqHumanReplyGuard,
   buildQqHumanBehaviorPlan,
   formatQqHumanBehaviorContext,
+  getQqAdaptiveStickerChance,
   getQqAdaptiveBubbleDelayMs,
+  isQqStickerStyleMessage,
   isQqSilentReply
 } from "../src/qq-human-behavior.js";
 import { buildQqSendPlan } from "../src/qq-enhancer/index.js";
@@ -28,6 +31,50 @@ test("learns short group rhythm from humans while excluding assistant messages",
   assert.ok(Array.isArray(style.emojiPalette));
 });
 
+test("recognizes QQ animated, marketplace and face stickers without counting their URLs as text", () => {
+  const entries = [
+    { senderId: "1", text: "[CQ:image,summary=[动画表情],file=a.jpg,sub_type=1,url=https://example.test/very-long-url]" },
+    { senderId: "2", text: "[CQ:image,summary=[嘻嘻],file=b.gif,emoji_id=abc,emoji_package_id=123]" },
+    { senderId: "3", text: "[CQ:face,id=477,raw={\"faceType\":3}]" },
+    { senderId: "4", text: "普通图片[CQ:image,file=c.png,sub_type=0,url=https://example.test/image]" },
+    { senderId: "5", text: "一句正常文字" },
+    { senderId: "6", text: ",file=legacy.jpg,sub_type=1,url=https://example.test/legacy" }
+  ];
+  const style = analyzeQqHumanChatStyle(entries);
+  assert.equal(style.sampleSize, 6);
+  assert.equal(style.stickerMessageRatio, 0.667);
+  assert.equal(style.imageMessageRatio, 0.167);
+  assert.equal(style.textSampleSize, 2);
+  assert.ok(style.p90TextChars < 20);
+  assert.equal(isQqStickerStyleMessage(entries[0]), true);
+});
+
+test("tracks bot sticker frequency separately from anonymous human frequency", () => {
+  const bot = analyzeQqBotChatStyle([
+    { senderId: "1", text: "真人" },
+    { senderId: "assistant", isAssistant: true, text: "收到", stickerCount: 1 },
+    { senderId: "assistant", isAssistant: true, text: "普通回复", stickerCount: 0 }
+  ]);
+  assert.equal(bot.sampleSize, 2);
+  assert.equal(bot.stickerMessages, 1);
+  assert.equal(bot.stickerMessageRatio, 0.5);
+  assert.equal(bot.textSampleSize, 2);
+  assert.equal(bot.averageTextChars, 3);
+});
+
+test("measures bot language habits for periodic human-versus-bot review", () => {
+  const bot = analyzeQqBotChatStyle([
+    { senderId: "assistant", isAssistant: true, text: "好的，下面是一段很完整的回答。", bubbleCount: 2 },
+    { senderId: "assistant", isAssistant: true, text: "如果需要我可以继续帮你。" },
+    { senderId: "1", text: "真人消息不计入" }
+  ]);
+  assert.equal(bot.sampleSize, 2);
+  assert.equal(bot.multiBubbleRatio, 0.5);
+  assert.equal(bot.genericOpeningRatio, 0.5);
+  assert.equal(bot.serviceEndingRatio, 0.5);
+  assert.equal(bot.terminalPeriodRatio, 1);
+});
+
 test("plans reactions, short answers and tasks with different behavior budgets", () => {
   const style = analyzeQqHumanChatStyle([
     { senderId: "1", text: "好" },
@@ -42,6 +89,20 @@ test("plans reactions, short answers and tasks with different behavior budgets",
   assert.equal(taskPlan.mode, "task");
   assert.ok(imagePlan.maxChars < answerPlan.maxChars);
   assert.ok(answerPlan.maxChars < taskPlan.maxChars);
+});
+
+test("plans cold-group interest as one optional short message", () => {
+  const style = analyzeQqHumanChatStyle([{ senderId: "1", text: "这个挺好玩" }]);
+  const plan = buildQqHumanBehaviorPlan({
+    groupId: "g",
+    senderId: "0",
+    text: "",
+    qqColdProactive: true
+  }, {}, style, { text: "" });
+  assert.equal(plan.mode, "cold_proactive");
+  assert.equal(plan.maxSentences, 1);
+  assert.equal(plan.preferMultiBubble, false);
+  assert.equal(plan.preferSticker, false);
 });
 
 test("treats playful social requests as compact chat instead of a formal task report", () => {
@@ -73,6 +134,24 @@ test("learned burst rate raises multi-bubble frequency without making every turn
     if (plan.preferMultiBubble) multi += 1;
   }
   assert.ok(multi > 180 && multi < 280, `unexpected multi-bubble count: ${multi}`);
+});
+
+test("boosts casual bot sticker planning above the learned human rate while keeping it bounded", () => {
+  const style = { stickerMessageRatio: 0.12, privateChat: false };
+  const target = getQqAdaptiveStickerChance(style);
+  assert.ok(target > style.stickerMessageRatio);
+  assert.ok(target <= 0.34);
+  let preferred = 0;
+  for (let index = 0; index < 1000; index += 1) {
+    const plan = buildQqHumanBehaviorPlan({
+      groupId: "g",
+      senderId: "u",
+      text: "这也太好笑了",
+      raw: { message_id: String(index) }
+    }, {}, style, { text: "这也太好笑了" });
+    if (plan.preferSticker) preferred += 1;
+  }
+  assert.ok(preferred > 140 && preferred < 260, `unexpected sticker preference count: ${preferred}`);
 });
 
 test("compacts casual replies and preserves invisible memory markers", () => {
@@ -114,6 +193,7 @@ test("formats anonymous evidence and recognizes proactive silence", () => {
   }, { proactive: true });
   assert.match(context, /匿名统计/);
   assert.match(context, /2 条短气泡/);
+  assert.match(context, /表情包规划/);
   assert.match(context, /\[\[qq_silent\]\]/);
   assert.equal(isQqSilentReply("[[qq_silent]]\n[[qq_memory:{\"recentTopic\":\"闲聊\"}]]"), true);
 });

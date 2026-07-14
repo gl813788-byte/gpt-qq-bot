@@ -8,6 +8,7 @@ import { brotliDecompress } from "node:zlib";
 import { promisify } from "node:util";
 import {
   corsHeaders,
+  isLoopbackAddress,
   isLoopbackHost,
   isLoopbackRequestHost,
   isRequestOriginAllowed,
@@ -56,9 +57,23 @@ import {
   applyQqHumanReplyGuard,
   buildQqHumanBehaviorPlan,
   formatQqHumanBehaviorContext,
+  getQqAdaptiveStickerChance,
   getQqAdaptiveBubbleDelayMs,
   isQqSilentReply
 } from "./qq-human-behavior.js";
+import {
+  buildQqAdaptiveLearningSignals,
+  ensureQqAdaptiveLearning,
+  formatQqAdaptiveLearningContext,
+  getQqAdaptiveColdProactivePlan,
+  getQqAdaptiveProactiveIntervals,
+  markQqAdaptiveColdProactiveCheck,
+  maybeReviewQqAdaptiveLanguageStyle,
+  personalizeQqHumanStyle,
+  recordQqAdaptiveBotReply,
+  recordQqAdaptiveHumanMessage,
+  summarizeQqAdaptiveGroupLearning
+} from "./qq-adaptive-learning.js";
 import { createRuntimePaths } from "./runtime-paths.js";
 import { createScopedReplyScheduler } from "./scoped-reply-scheduler.js";
 import { serializeFileOperation, writeJsonAtomically } from "./file-store.js";
@@ -67,6 +82,11 @@ import { isSupportedImageContentType, readResponseJson, writeResponseBodyToFile 
 import { runJsonProcess, runProcess } from "./process-runner.js";
 import { createDashboardAssetHandler } from "./dashboard-assets.js";
 import { requestHasValidToken } from "./request-auth.js";
+import {
+  buildOneBotPokeAttempts,
+  shouldImplicitlyPokeBack,
+  summarizePokeFailures
+} from "./qq-onebot-social.js";
 import { fetchWithUrlPolicy } from "./safe-fetch.js";
 import { createCoalescingWriter } from "./coalescing-writer.js";
 import {
@@ -608,6 +628,8 @@ const state = {
 const seenOneBotMessageIds = new Map();
 const qqProactiveLatestEventByGroupId = new Map();
 const qqGroupActivityVersionByGroupId = new Map();
+const qqColdInterestStatusByGroupId = new Map();
+const qqAdaptiveLearningSnapshotLoggedGroups = new Set();
 const seenMessageTtlMs = 10 * 60 * 1000;
 const stoppedQqGenerationIds = new Set();
 const activeCodexChildren = new Set();
@@ -1368,7 +1390,7 @@ async function saveQqPublicMemory() {
 const qqPersonasWriter = createCoalescingWriter(async () => {
   await serializeFileOperation(qqPersonasPath, async () => {
     await writeJsonAtomically(qqPersonasPath, {
-      version: 1,
+      version: 2,
       updatedAt: new Date().toISOString(),
       groups: state.qq.personas.groups
     });
@@ -1483,6 +1505,45 @@ function buildPublicState() {
         }];
       })
   );
+  const qqStickerFrequency = Object.fromEntries(
+    Object.entries(state.qq.memory.recentMessages)
+      .filter(([scopeId]) => !scopeId.startsWith("private:"))
+      .map(([groupId, entries]) => {
+        const human = analyzeQqHumanChatStyle(entries);
+        const adaptive = buildQqAdaptiveLearningSignals(state.qq.personas.groups[groupId], null).group;
+        return [groupId, {
+          humanSampleSize: human.sampleSize,
+          humanStickerMessages: Math.round(human.stickerMessageRatio * human.sampleSize),
+          humanStickerMessageRatio: human.stickerMessageRatio,
+          botSampleSize: adaptive.botReplyCount,
+          botStickerMessages: Math.round(adaptive.botStickerReplyRatio * adaptive.botReplyCount),
+          botStickerMessageRatio: adaptive.botStickerReplyRatio,
+          plannedCasualStickerRatio: getQqAdaptiveStickerChance(human)
+        }];
+      })
+  );
+  const qqAdaptiveLearning = Object.fromEntries(
+    Object.entries(state.qq.personas.groups).map(([groupId, group]) => {
+      const signals = buildQqAdaptiveLearningSignals(group, null);
+      const summary = summarizeQqAdaptiveGroupLearning(group, group?.members || {});
+      const latestEntry = (state.qq.memory.recentMessages[groupId] || []).at(-1);
+      const coldInterest = applyQqColdGroupInterestRuntimeBlocker(
+        groupId,
+        getQqAdaptiveColdProactivePlan(signals, { lastActivityAt: latestEntry?.at })
+      );
+      return [groupId, {
+        ...summary,
+        coldInterest,
+        proactiveIntervals: getQqAdaptiveProactiveIntervals(
+          signals,
+          {
+            judgeEveryMessages: state.qq.proactive.judgeEveryMessages,
+            judgeEveryMinutes: state.qq.proactive.judgeEveryMinutes
+          }
+        )
+      }];
+    })
+  );
   const activeGenerations = Object.fromEntries(
     Object.entries(state.qq.activeGenerations).map(([scopeId, generation]) => [scopeId, sanitizeActiveGeneration(generation)])
   );
@@ -1503,7 +1564,14 @@ function buildPublicState() {
       proactive: {
         enabled: state.qq.proactive.enabled,
         judgeEveryMessages: state.qq.proactive.judgeEveryMessages,
-        judgeEveryMinutes: state.qq.proactive.judgeEveryMinutes
+        judgeEveryMinutes: state.qq.proactive.judgeEveryMinutes,
+        coldGroupInterest: {
+          enabled: state.qq.proactive.enabled,
+          allowedHours: "09:00-23:00",
+          retryCooldownHours: 3,
+          requiresHumanReplyBeforeRepeating: true,
+          logCategory: "interest"
+        }
       },
       events: state.qq.events.slice(0, 30).map(sanitizePublicQqEvent),
       memory: {
@@ -1525,7 +1593,11 @@ function buildPublicState() {
       pendingReplyCounts,
       personas: { groupMemberCounts: personaCounts },
       conversationMemory: summarizeQqConversationMemory(state.qq.conversationMemory),
-      humanBehavior: { groupStyles: humanGroupStyles }
+      humanBehavior: {
+        groupStyles: humanGroupStyles,
+        stickerFrequency: qqStickerFrequency,
+        adaptiveLearning: qqAdaptiveLearning
+      }
     },
     imessage: {
       trustedHandles: [...state.imessage.trustedHandles],
@@ -1586,11 +1658,23 @@ function sanitizePublicQqEvent(record) {
       imageCount: Number.isFinite(Number(event.imageCount))
         ? Math.max(0, Math.floor(Number(event.imageCount)))
         : (Array.isArray(event.images) ? event.images.length : 0),
-      hasReplySegment: Boolean(event.hasReplySegment)
+      hasReplySegment: Boolean(event.hasReplySegment),
+      coldProactive: Boolean(event.qqColdProactive || event.coldProactive)
     },
     decision: record?.decision ? {
       ok: Boolean(record.decision.ok),
-      reason: String(record.decision.reason || "").slice(0, 300)
+      reason: String(record.decision.reason || "").slice(0, 300),
+      proactive: Boolean(record.decision.proactive),
+      triggerMode: String(record.decision.triggerMode || "").slice(0, 80),
+      superseded: Boolean(record.decision.superseded),
+      coldInterest: record.decision.coldInterest ? {
+        activityLevel: String(record.decision.coldInterest.activityLevel || "unknown").slice(0, 40),
+        sampleSize: Math.max(0, Number(record.decision.coldInterest.sampleSize || 0)),
+        idleHours: Number(record.decision.coldInterest.idleHours || 0),
+        idleHoursRequired: Number(record.decision.coldInterest.idleHoursRequired || 0),
+        lastActivityAt: record.decision.coldInterest.lastActivityAt || null,
+        thresholdReachedAt: record.decision.coldInterest.thresholdReachedAt || null
+      } : null
     } : null,
     reply: record?.reply == null ? null : String(record.reply).slice(0, 2_000),
     error: record?.error ? String(record.error?.message || record.error).slice(0, 500) : null,
@@ -2630,10 +2714,13 @@ async function shouldRespondToQq(event) {
 
 async function judgeQqProactiveEvent(event, { triggerMode = "message", countMessage = true } = {}) {
   const activityVersion = Number(event.groupActivityVersion || 0);
+  const adaptive = getQqAdaptiveRuntimeForEvent(event);
   const proactiveDecision = await Promise.resolve(shouldProactivelyReplyToQq(event, state.qq, {
     stripMentionText,
     recentMessages: state.qq.memory.recentMessages[event.groupId] || [],
-    humanStyle: analyzeQqHumanChatStyle(state.qq.memory.recentMessages[event.groupId] || []),
+    humanStyle: adaptive.style,
+    judgeEveryMessages: adaptive.proactiveIntervals.judgeEveryMessages,
+    judgeEveryMinutes: adaptive.proactiveIntervals.judgeEveryMinutes,
     openRouterApiKey,
     assistantName,
     ownerLabel,
@@ -2676,6 +2763,8 @@ function resetQqProactiveRuntimeCycles() {
   state.qq.proactive.lastJudgeAtByGroupId = createSafeRecord();
   state.qq.proactive.judgeInFlightByGroupId = createSafeRecord();
   qqProactiveLatestEventByGroupId.clear();
+  qqColdInterestStatusByGroupId.clear();
+  qqAdaptiveLearningSnapshotLoggedGroups.clear();
 }
 
 function updateQqProactiveMinuteScheduler() {
@@ -2690,9 +2779,11 @@ function updateQqProactiveMinuteScheduler() {
 }
 
 async function runQqProactiveMinuteChecks() {
-  if (qqProactiveMinuteChecking || !state.channels.qq || !state.qq.enhancer.enabled || !state.qq.proactive.enabled) return;
+  if (qqProactiveMinuteChecking || !state.channels.qq) return;
   qqProactiveMinuteChecking = true;
   try {
+    await runQqTimedAdaptiveStyleReviews();
+    if (!state.qq.enhancer.enabled || !state.qq.proactive.enabled) return;
     for (const [groupId, cachedEvent] of qqProactiveLatestEventByGroupId) {
       if (!state.qq.allowedGroups.includes(groupId)) {
         qqProactiveLatestEventByGroupId.delete(groupId);
@@ -2700,8 +2791,9 @@ async function runQqProactiveMinuteChecks() {
       }
       const messageCount = Number(state.qq.proactive.messageCountByGroupId[groupId] || 0);
       if (messageCount <= 0 || getActiveQqReplyScopeForEvent(cachedEvent) || getActiveQqGenerationForEvent(cachedEvent)) continue;
-      const messageTriggerDue = messageCount >= state.qq.proactive.judgeEveryMessages;
-      if (!messageTriggerDue && state.qq.proactive.judgeEveryMinutes <= 0) continue;
+      const intervals = getQqAdaptiveRuntimeForEvent(cachedEvent).proactiveIntervals;
+      const messageTriggerDue = messageCount >= intervals.judgeEveryMessages;
+      if (!messageTriggerDue && intervals.judgeEveryMinutes <= 0) continue;
       if (!messageTriggerDue && !hasQqProactiveQuietWindowElapsed(cachedEvent)) continue;
       const triggerMode = messageTriggerDue ? "message" : "time";
       const decision = await judgeQqProactiveEvent(cachedEvent, { triggerMode, countMessage: false });
@@ -2712,15 +2804,225 @@ async function runQqProactiveMinuteChecks() {
         decisionOverride: decision
       });
     }
+    await runQqColdGroupInterestCheck();
   } finally {
     qqProactiveMinuteChecking = false;
   }
 }
 
+async function runQqTimedAdaptiveStyleReviews() {
+  let changed = false;
+  for (const [groupId, group] of Object.entries(state.qq.personas.groups)) {
+    const learningBefore = ensureQqAdaptiveLearning(group);
+    const hadClock = Boolean(learningBefore.styleReviewWindowStartedAt || learningBefore.lastStyleReviewAt);
+    const reviewed = maybeReviewQqAdaptiveLanguageStyle(
+      group,
+      state.qq.memory.recentMessages[groupId] || []
+    );
+    const learningAfter = ensureQqAdaptiveLearning(group);
+    const clockInitialized = !hadClock && Boolean(learningAfter.styleReviewWindowStartedAt);
+    if (reviewed || clockInitialized) changed = true;
+    if (!qqAdaptiveLearningSnapshotLoggedGroups.has(groupId)) {
+      qqAdaptiveLearningSnapshotLoggedGroups.add(groupId);
+      const snapshot = summarizeQqAdaptiveGroupLearning(group, group?.members || {});
+      logger.debug("QQ adaptive learning group snapshot", {
+        groupId,
+        learning: snapshot,
+        proactiveIntervals: getQqAdaptiveProactiveIntervals(
+          buildQqAdaptiveLearningSignals(group, null),
+          {
+            judgeEveryMessages: state.qq.proactive.judgeEveryMessages,
+            judgeEveryMinutes: state.qq.proactive.judgeEveryMinutes
+          }
+        )
+      }, "learning");
+    }
+    if (clockInitialized) {
+      const snapshot = summarizeQqAdaptiveGroupLearning(group, group?.members || {});
+      logger.debug("QQ adaptive learning review clock initialized", {
+        groupId,
+        sampleSize: snapshot.sampleSize,
+        botReplyCount: snapshot.botReplyCount,
+        reviewWindowStartedAt: snapshot.styleReviewWindowStartedAt,
+        nextStyleReviewAt: snapshot.nextStyleReviewAt
+      }, "learning");
+    }
+    if (reviewed) {
+      const snapshot = summarizeQqAdaptiveGroupLearning(group, group?.members || {});
+      logger.info("QQ adaptive learning style review completed", {
+        groupId,
+        sampleSize: snapshot.sampleSize,
+        textSampleSize: snapshot.textSampleSize,
+        botReplyCount: snapshot.botReplyCount,
+        styleHumanSampleSize: snapshot.styleHumanSampleSize,
+        styleBotSampleSize: snapshot.styleBotSampleSize,
+        lastStyleReviewAt: snapshot.lastStyleReviewAt,
+        nextStyleReviewAt: snapshot.nextStyleReviewAt,
+        styleReviewSummary: snapshot.styleReviewSummary,
+        styleGuidance: snapshot.styleGuidance
+      }, "learning");
+    }
+  }
+  if (changed) await saveQqPersonas();
+}
+
+async function runQqColdGroupInterestCheck() {
+  for (const groupId of qqColdInterestStatusByGroupId.keys()) {
+    if (!state.qq.allowedGroups.includes(groupId)) qqColdInterestStatusByGroupId.delete(groupId);
+  }
+  for (const groupId of state.qq.allowedGroups) {
+    const entries = state.qq.memory.recentMessages[groupId] || [];
+    const lastHumanEntry = [...entries].reverse().find((entry) => !entry?.isAssistant && entry?.senderId !== "assistant");
+    const latestEntry = entries.at(-1);
+    if (!lastHumanEntry || !latestEntry) continue;
+
+    const event = {
+      type: "group_message",
+      groupId,
+      senderId: "0",
+      senderName: "群聊定时观察",
+      senderLabel: "群聊定时观察",
+      text: "",
+      atTargets: [],
+      images: [],
+      isOwner: false,
+      qqColdProactive: true,
+      proactiveObservedAtMs: Date.now(),
+      proactiveSource: "cold_interest_timer",
+      groupActivityVersion: Number(qqGroupActivityVersionByGroupId.get(groupId) || 0),
+      raw: {
+        message_id: `cold-interest-${Date.now()}-${groupId}`,
+        time: Math.floor(Date.now() / 1000)
+      }
+    };
+
+    const group = getQqPersonaGroup(groupId);
+    const signals = buildQqAdaptiveLearningSignals(group, null);
+    const adaptivePlan = getQqAdaptiveColdProactivePlan(signals, { lastActivityAt: latestEntry.at });
+    const plan = applyQqColdGroupInterestRuntimeBlocker(groupId, adaptivePlan, event);
+    logQqColdGroupInterestStatus(event, plan, signals.group);
+    if (!plan.eligible) continue;
+
+    const decision = {
+      ok: true,
+      proactive: true,
+      coldProactive: true,
+      triggerMode: "cold_time",
+      reason: "cold group interest time due",
+      coldInterest: {
+        ...plan,
+        activityLevel: signals.group.activityLevel,
+        sampleSize: signals.group.sampleSize
+      },
+      promptHint: [
+        `这是兴趣回复的冷群时间分支：群里最后一条消息距今约 ${plan.idleHours} 小时，目前没有任何人刚刚输入。`,
+        "结合最近聊天、当前时间和群的说话风格，判断现在是否真有一句具体、自然、不会打扰人的新话题可说。",
+        "合适时只发一句短消息，可以接一个尚有余味的话题或轻量分享；不要点名催人、不要说群冷了、不要自称出来冒泡，也不要连续发多条。",
+        "如果只能尬聊、重复旧话、像通知或客服，必须只输出 [[qq_silent]]。"
+      ].join("\n"),
+      replyContext: entries.slice(-10).map((entry) => ({
+        sender: entry.isAssistant ? assistantName : entry.senderLabel || "群友",
+        text: entry.text || "（非文字消息）",
+        imageCount: Array.isArray(entry.images) ? entry.images.length : 0,
+        replyToBot: Boolean(entry.replyContext?.isSelf)
+      }))
+    };
+    markQqAdaptiveColdProactiveCheck(group);
+    await saveQqPersonas();
+    await processQqReplyEvent(event, {
+      source: "onebot",
+      alreadyRemembered: true,
+      decisionOverride: decision
+    });
+    return;
+  }
+}
+
+function applyQqColdGroupInterestRuntimeBlocker(groupId, adaptivePlan, event = null) {
+  let reason = "";
+  if (Number(state.qq.proactive.messageCountByGroupId[groupId] || 0) > 0) reason = "ordinary_interest_pending";
+  else if (Array.isArray(state.qq.pendingReplies[groupId]?.events) && state.qq.pendingReplies[groupId].events.length > 0) reason = "reply_queue_pending";
+  else if (event
+    ? getActiveQqReplyScopeForEvent(event) || getActiveQqGenerationForEvent(event)
+    : qqReplyScheduler.get(String(groupId)) || state.qq.activeGenerations[String(groupId)]) reason = "reply_generation_active";
+  return reason
+    ? { ...adaptivePlan, eligible: false, reason, adaptiveReason: adaptivePlan.reason }
+    : adaptivePlan;
+}
+
+function logQqColdGroupInterestStatus(event, plan = {}, learning = {}) {
+  const groupId = String(event.groupId || "");
+  if (!groupId) return;
+  const fingerprint = [
+    Boolean(plan.eligible),
+    plan.reason || "",
+    plan.adaptiveReason || "",
+    Boolean(plan.awaitingHuman),
+    plan.idleHoursRequired ?? ""
+  ].join("|");
+  if (qqColdInterestStatusByGroupId.get(groupId) === fingerprint) return;
+  qqColdInterestStatusByGroupId.set(groupId, fingerprint);
+  const details = {
+    groupId,
+    eligible: Boolean(plan.eligible),
+    reason: plan.reason || null,
+    adaptiveReason: plan.adaptiveReason || null,
+    activityLevel: learning.activityLevel || "unknown",
+    humanSampleSize: Number(learning.sampleSize || 0),
+    idleHours: plan.idleHours ?? null,
+    idleHoursRequired: plan.idleHoursRequired ?? null,
+    lastActivityAt: plan.lastActivityAt || null,
+    thresholdReachedAt: plan.thresholdReachedAt || null,
+    nextCheckAt: plan.nextCheckAt || null,
+    lastCheckAt: plan.lastCheckAt || null,
+    lastProactiveAt: plan.lastProactiveAt || null,
+    awaitingHuman: Boolean(plan.awaitingHuman)
+  };
+  logger[plan.eligible ? "info" : "debug"](
+    "QQ cold-group interest status changed",
+    details,
+    "interest",
+    qqLogContext(event)
+  );
+}
+
+function logQqColdGroupInterestOutcome(record) {
+  const event = record?.event || {};
+  if (!event.qqColdProactive) return;
+  const decision = record.decision || {};
+  const plan = decision.coldInterest || {};
+  const sendFailed = record.send?.ok === false;
+  let outcome = "silent";
+  if (record.error || sendFailed) outcome = "failed";
+  else if (decision.superseded) outcome = "superseded";
+  else if (record.reply && record.send?.ok !== false) outcome = "sent";
+  const details = {
+    outcome,
+    groupId: event.groupId || null,
+    triggerMode: decision.triggerMode || "cold_time",
+    reason: decision.reason || null,
+    activityLevel: plan.activityLevel || null,
+    humanSampleSize: plan.sampleSize ?? null,
+    idleHours: plan.idleHours ?? null,
+    idleHoursRequired: plan.idleHoursRequired ?? null,
+    lastActivityAt: plan.lastActivityAt || null,
+    thresholdReachedAt: plan.thresholdReachedAt || null,
+    nextCheckAt: plan.nextCheckAt || null,
+    replyChars: String(record.reply || "").length,
+    sendStatus: record.send?.status || record.send?.results?.[0]?.status || null,
+    error: record.error || record.send?.error || null,
+    generationDurationMs: record.timings?.generationDurationMs || 0,
+    sendDurationMs: record.timings?.sendDurationMs || 0,
+    totalDurationMs: Object.values(record.timings || {}).reduce((sum, value) => sum + (Number(value) || 0), 0)
+  };
+  const level = outcome === "failed" ? "error" : outcome === "sent" ? "success" : "info";
+  logger[level]("QQ cold-group interest decision", details, "interest", qqLogContext(event));
+}
+
 function hasQqProactiveQuietWindowElapsed(event) {
   const observedAtMs = Number(event?.proactiveObservedAtMs || 0);
   if (!Number.isFinite(observedAtMs) || observedAtMs <= 0) return true;
-  const style = analyzeQqHumanChatStyle(state.qq.memory.recentMessages[event.groupId] || []);
+  const style = getQqAdaptiveRuntimeForEvent(event).style;
   const learnedGapSeconds = Math.max(
     Number(style.sameSpeakerGapMedianSeconds || 0),
     Number(style.speakerSwitchGapMedianSeconds || 0)
@@ -3512,6 +3814,9 @@ function formatQqAllowedGroups() {
 }
 
 function formatQqBotInternalToolContext(event) {
+  if (event.qqColdProactive) {
+    return "冷群兴趣判断禁止调用内部工具或执行管理动作；只根据已有群聊上下文决定发一句短消息或输出 [[qq_silent]]。";
+  }
   const scopeId = getQqMemoryScopeId(event);
   const scopeLabel = getQqMemoryScopeLabel(event);
   const recentCount = scopeId ? (state.qq.memory.recentMessages[scopeId] || []).length : 0;
@@ -3577,6 +3882,31 @@ async function runQqBotToolLoop({ initialReply, event, memoryContext, buildReply
     event.qqCurrentToolRound = round;
     const resolution = await resolveQqBotCommandMarkers(reply, event, { commandCounts });
     if (resolution.results.length === 0) {
+      if (shouldImplicitlyPokeBack(resolution.visibleText || reply, event)) {
+        const pokeResult = await executeQqBotPokeCommand("/拍一拍 发送者", event);
+        logger[pokeResult.ok ? "success" : "warn"]("Implicit QQ poke-back intent handled", {
+          ok: pokeResult.ok,
+          groupId: event.groupId || null,
+          senderId: event.senderId || null,
+          error: pokeResult.ok ? null : pokeResult.reply
+        }, "qq", qqLogContext(event));
+        if (pokeResult.ok) return stripQqBotDoneMarker(resolution.visibleText || reply);
+        transcript.push({
+          round,
+          visibleText: resolution.visibleText,
+          results: [pokeResult]
+        });
+        const prompt = await buildReplyPrompt(
+          memoryContext,
+          1,
+          true,
+          formatQqBotToolTranscript(transcript),
+          resolution.visibleText,
+          round
+        );
+        reply = await runReplyPrompt(prompt);
+        continue;
+      }
       const pendingStickers = getPendingQqStickerLabels(event);
       if (pendingStickers.length > 0) {
         transcript.push({
@@ -3854,10 +4184,15 @@ async function executeQqActiveAddCommand(command, event) {
     });
     const result = await readResponseJson(response).catch(() => ({}));
     const ok = response.ok && (result.ok === true || result.status === "ok" || Number(result.code) === 0);
+    const alreadyFriend = kind === "friend" && result.status === "already_friend";
     return {
       ok,
       command,
-      reply: ok ? `已发起${kind === "friend" ? "好友" : "加群"}申请：${match[2]}。` : `发起申请失败：${result.error || `HTTP ${response.status}`}`
+      reply: ok
+        ? alreadyFriend
+          ? `${match[2]} 已经是 Bot 好友，不重复发送申请。`
+          : `已发起${kind === "friend" ? "好友" : "加群"}申请：${match[2]}。`
+        : `发起申请失败：${result.error || `HTTP ${response.status}`}`
     };
   } catch (error) {
     return { ok: false, command, reply: `发起申请失败：${error.message}` };
@@ -4690,7 +5025,9 @@ function isFilesystemProbe(text) {
 }
 
 async function buildAssistantInstructions(event) {
-  const speaker = event.isOwner ? ownerLabel : event.senderLabel || "群友";
+  const speaker = event.qqColdProactive
+    ? "兴趣回复定时器（没有新发送者）"
+    : event.isOwner ? ownerLabel : event.senderLabel || "群友";
   const assistantSkillBrief = await loadAssistantSkillBrief();
   const privateChat = isQqPrivateEvent(event);
   return [
@@ -4699,6 +5036,9 @@ async function buildAssistantInstructions(event) {
     privateChat
       ? "你正在为 QQ 私聊生成一条将由小号发出的回复。"
       : "你正在为 QQ 群聊生成一条将由小号发出的回复。",
+    event.qqColdProactive
+      ? "这是兴趣回复的冷群时间分支，没有群友刚刚发消息。只能结合已有上下文选择发一句自然的新消息，或输出 [[qq_silent]] 保持沉默。"
+      : null,
     "只输出最终要发送出去的中文文本，不要解释，不要写前后缀，不要使用 Markdown。",
     `你是接入 QQ 的 ${assistantName}。公开群聊里不要说出本机路径、自定义 profile 细节或宿主个人信息；如果必须提到自己的代号，只说 ${assistantName}。`,
     privateChat
@@ -4865,21 +5205,34 @@ async function buildModelReply(event, { replyScope = null } = {}) {
   const conversationIntent = analyzeQqConversationIntent(event);
   const intentContext = formatQqConversationIntent(conversationIntent);
   const scopeId = getQqMemoryScopeId(event);
-  const humanChatStyle = analyzeQqHumanChatStyle(
+  const baseHumanChatStyle = analyzeQqHumanChatStyle(
     scopeId ? state.qq.memory.recentMessages[scopeId] || [] : [],
     { privateChat: isQqPrivateEvent(event) }
   );
+  const adaptiveSignals = event.groupId ? getQqAdaptiveSignalsForEvent(event) : null;
+  const humanChatStyle = adaptiveSignals
+    ? personalizeQqHumanStyle(baseHumanChatStyle, adaptiveSignals)
+    : baseHumanChatStyle;
   const humanBehaviorPlan = buildQqHumanBehaviorPlan(event, conversationIntent, humanChatStyle, { text });
-  const humanBehaviorContext = formatQqHumanBehaviorContext(humanChatStyle, humanBehaviorPlan, {
-    proactive: Boolean(event.proactiveDecision)
-  });
+  const humanBehaviorContext = [
+    formatQqHumanBehaviorContext(humanChatStyle, humanBehaviorPlan, {
+      proactive: Boolean(event.proactiveDecision)
+    }),
+    adaptiveSignals ? formatQqAdaptiveLearningContext(adaptiveSignals) : ""
+  ].filter(Boolean).join("\n\n");
   event.qqHumanBehavior = {
     mode: humanBehaviorPlan.mode,
     maxChars: humanBehaviorPlan.maxChars,
     preferMultiBubble: humanBehaviorPlan.preferMultiBubble,
+    preferSticker: humanBehaviorPlan.preferSticker,
+    stickerChance: humanBehaviorPlan.stickerChance,
+    humanStickerMessageRatio: humanChatStyle.stickerMessageRatio,
     styleSampleSize: humanChatStyle.textSampleSize,
     styleMedianChars: humanChatStyle.medianTextChars,
-    styleP90Chars: humanChatStyle.p90TextChars
+    styleP90Chars: humanChatStyle.p90TextChars,
+    adaptiveMemberWeight: humanChatStyle.adaptivePersonalization?.memberWeight || 0,
+    adaptiveActivityLevel: humanChatStyle.adaptivePersonalization?.activityLevel || "unknown",
+    adaptiveStyleReviewAt: adaptiveSignals?.group?.lastStyleReviewAt || null
   };
   const conversationMemoryContext = formatQqConversationMemoryContext(state.qq.conversationMemory, event);
   const unifiedMemoryContext = await unifiedMemory.formatForPrompt({ query: text, limit: 6 });
@@ -4993,13 +5346,19 @@ async function buildModelReply(event, { replyScope = null } = {}) {
       state.qq.enhancer.enabled ? formatQqStickerCatalog(stickerCatalog) : null,
       state.qq.enhancer.enabled && stickerCatalog.length ? "你可以根据 QQ 原生标签或 Bot 标签直接选择 [[qq_sticker:表情包名]]。遇到未查看/未标注的表情时，可以主动调用 [[qq_command:/看表情 表情名]] 查看；首次查看后必须用 /表情标签 写入标签。已标注表情也能重复查看并覆盖更新标签。动图带【动图】标记；默认抽中段 3 帧，也可自选帧位、帧数和要识别的动图数量。只能选择提示里真实存在的表情包名。" : null,
       "",
-      isQqPrivateEvent(event) ? "收到的 QQ 私聊：" : "收到的群消息：",
+      event.qqColdProactive
+        ? "兴趣回复冷群时间检查："
+        : isQqPrivateEvent(event) ? "收到的 QQ 私聊：" : "收到的群消息：",
       event.queuedAggregate ? `下面是你上一轮生成期间继续收到的 ${event.queuedMessageCount || "多"} 条消息，Hub 已按“消息一/消息二/...”标注；请把它们当作连续上下文一起回应，不要逐条机械复读标签，除非需要澄清。` : null,
-      text || "对方只 @ 了你，没有附加具体内容。",
+      event.qqColdProactive
+        ? "当前没有新消息。请仅依据上面的最近群聊和时间信号判断是否自然发一句。"
+        : text || "对方只 @ 了你，没有附加具体内容。",
       "",
       forceLocalReply ? "你正在 agent 工具循环中。请根据上面的全部工具结果判断下一步：如果还缺信息，可以继续只输出新的 [[qq_command:/...]]；如果工具调用结束，请输出最终 QQ 回复并包含 [[qq_done]]。不要把内部标记解释给群友，不要复述工具日志。" : null,
       forceLocalReply ? "" : null,
-      isQqPrivateEvent(event)
+      event.qqColdProactive
+        ? "如果决定开口，只输出一句要发到群里的短消息；否则只输出 [[qq_silent]]。"
+        : isQqPrivateEvent(event)
         ? "请直接给出要发送到 QQ 私聊里的最终回复。不要追加服务式追问或“我还能继续帮你”的结尾。"
         : "请直接给出要发送到 QQ 群里的最终回复。不要追加服务式追问或“我还能继续帮你”的结尾。"
     ].filter((part) => part != null).join("\n");
@@ -5021,14 +5380,16 @@ async function buildModelReply(event, { replyScope = null } = {}) {
       prompt = await buildReplyPrompt(memoryContext, 1, true);
       baseReply = await runReplyPrompt(prompt);
     }
-    baseReply = await runQqBotToolLoop({
-      initialReply: baseReply,
-      event,
-      memoryContext,
-      buildReplyPrompt,
-      runReplyPrompt,
-      replyScope
-    });
+    if (!event.qqColdProactive) {
+      baseReply = await runQqBotToolLoop({
+        initialReply: baseReply,
+        event,
+        memoryContext,
+        buildReplyPrompt,
+        runReplyPrompt,
+        replyScope
+      });
+    }
     assertQqReplyScopeActive(replyScope);
     if (isQqSilentReply(baseReply)) {
       if (event.proactiveDecision) return "";
@@ -5051,7 +5412,7 @@ async function buildModelReply(event, { replyScope = null } = {}) {
       ...(event.qqConversationMemoryPatches || []),
       ...parsedMemory.patches
     ];
-    if (!parsedMemory.visibleText) return buildAssistantReply(event);
+    if (!parsedMemory.visibleText) return event.qqColdProactive ? "" : buildAssistantReply(event);
     return parsedMemory.visibleText.slice(0, 900);
   } finally {
     event.imagePaths = imagePaths;
@@ -5520,15 +5881,28 @@ function deRepeatQqReply(reply, event) {
 }
 
 function encourageQqStickerReply(reply, event, stickerCatalog) {
-  return String(reply || "").trim();
+  const text = String(reply || "").trim();
+  if (!text || /\[\[qq_sticker:[^\]]+\]\]/i.test(text)) return text;
+  if (!event?.qqHumanBehavior?.preferSticker || isLowStickerValueReply(text, event)) return text;
+  const source = `${stripMentionText(event.text || "")} ${text}`.trim();
+  if (!shouldAutoAttachQqSticker(source, event)) return text;
+  const name = chooseQqStickerName(source, stickerCatalog);
+  if (!name) return text;
+  return `${text}\n[[qq_sticker:${name}]]`;
 }
 
 function isLowStickerValueReply(reply, event) {
-  return false;
+  const mode = event?.qqHumanBehavior?.mode || "";
+  if (!["ping", "casual", "social_emotion", "social_request", "opinion", "visual_reaction", "casual_answer", "shared_content"].includes(mode)) return true;
+  const visible = stripLocalQqMediaMarkers(reply);
+  return [...visible].length > 120
+    || /(?:失败|错误|不支持|无法执行|权限|警告|危险|违法|隐私|密钥)/i.test(visible)
+    || /\[\[qq_(?:file|image|command):/i.test(reply);
 }
 
 function shouldAutoAttachQqSticker(source, event) {
-  return false;
+  if (!Array.isArray(event?.qqReplyStickerCandidates) && !String(source || "").trim()) return false;
+  return Boolean(event?.qqHumanBehavior?.preferSticker);
 }
 
 function chooseQqStickerName(text, stickerCatalog) {
@@ -5557,7 +5931,11 @@ function rankStickerNamesByText(text, stickerCatalog) {
   return (stickerCatalog || [])
     .map((item) => ({
       name: item.name,
-      score: scoreStickerNameAgainstText(item.name, normalizedText)
+      score: scoreStickerNameAgainstText([
+        item.name,
+        ...(Array.isArray(item.tags) ? item.tags : []),
+        item.description || ""
+      ].join(" "), normalizedText)
     }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score || a.name.localeCompare(b.name, "zh-Hans-CN"));
@@ -5575,8 +5953,14 @@ function scoreStickerNameAgainstText(name, normalizedText) {
     if (normalizedText.includes(gram)) score += 1;
   }
   const boosts = [
-    // Deployment customization point:
-    // Add semantic boost pairs here if you want filename-based sticker ranking.
+    [/笑|哈哈|绷不住|乐|好玩|有趣/, /笑|嘻嘻|乐|开心|憋笑|抽象/],
+    [/无语|离谱|尴尬|蚌埠住|逆天/, /无语|尴尬|假笑|抽象|怀疑/],
+    [/困|累|睡|晚安|躺/, /困|睡|趴|摆烂|宕机/],
+    [/气|怒|生气|火大|急了/, /气|怒|哈气|火猫三丈|咬/],
+    [/晕|懵|什么|咋|怎么|\?|？|思考/, /晕|懵|怀疑|怎样|我吗|思考/],
+    [/贴贴|亲|喜欢|可爱|抱/, /贴贴|亲亲|喜欢|害羞|舔/],
+    [/饿|吃|饭|冰|热/, /饿|吃|冰|热/],
+    [/跑|溜|撤|走了|拜拜/, /开溜|潜水/]
   ];
   for (const [textPattern, namePattern] of boosts) {
     if (textPattern.test(normalizedText) && namePattern.test(normalizedName)) score += 8;
@@ -5636,7 +6020,9 @@ function replySimilarity(a, b) {
 
 function findAvailableStickerName(stickerCatalog, names) {
   for (const name of names) {
-    const found = stickerCatalog.find((item) => item.name === name);
+    const normalized = normalizeSemanticText(name);
+    const found = stickerCatalog.find((item) => normalizeSemanticText(item.name) === normalized)
+      || stickerCatalog.find((item) => normalizeSemanticText(item.name).includes(normalized));
     if (found) return found.name;
   }
   return "";
@@ -5984,20 +6370,48 @@ async function rememberQqExchange(event, reply) {
   const visibleReply = flattenQqReplyForMemory(event, reply);
   const entry = {
     at: new Date().toISOString(),
-    senderId: event.senderId,
-    senderLabel: event.senderLabel || event.senderName || "群友",
+    senderId: event.qqColdProactive ? "system" : event.senderId,
+    senderLabel: event.qqColdProactive ? "冷群兴趣触发" : event.senderLabel || event.senderName || "群友",
     isOwner: Boolean(event.isOwner),
-    userText: compactMemoryText(stripMentionText(event.text) || ""),
+    userText: event.qqColdProactive ? "" : compactMemoryText(stripMentionText(event.text) || ""),
     quotedText: compactMemoryText(event.replyContext?.text || ""),
     reply: compactMemoryText(visibleReply)
   };
   const current = state.qq.memory.entries[scopeId] || [];
   state.qq.memory.entries[scopeId] = [...current, entry].slice(-state.qq.memory.perGroupLimit);
-  rememberQqConversationAssistantMessage(scopeId, visibleReply);
-  await saveQqMemory();
+  const bubbleCount = buildDefaultQqSendPlan(event, reply).bubbles.length || 1;
+  rememberQqConversationAssistantMessage(scopeId, visibleReply, {
+    stickerCount: extractQqStickerMarkerNames(reply).length,
+    bubbleCount,
+    replyTargetId: event.qqColdProactive ? "" : event.senderId
+  });
+  let adaptiveChanged = false;
+  if (event.groupId) {
+    const group = getQqPersonaGroup(event.groupId);
+    const member = event.qqColdProactive
+      ? null
+      : getQqPersonaMember(event.groupId, event.senderId, event.senderName);
+    adaptiveChanged = recordQqAdaptiveBotReply(group, member, event, reply, { bubbleCount });
+    if (event.qqColdProactive) {
+      markQqAdaptiveColdProactiveCheck(group, { sent: true });
+      adaptiveChanged = true;
+    }
+    adaptiveChanged = maybeReviewQqAdaptiveLanguageStyle(
+      group,
+      state.qq.memory.recentMessages[event.groupId] || []
+    ) || adaptiveChanged;
+  }
+  await Promise.all([
+    saveQqMemory(),
+    adaptiveChanged ? saveQqPersonas() : Promise.resolve()
+  ]);
 }
 
-function rememberQqConversationAssistantMessage(scopeId, reply) {
+function rememberQqConversationAssistantMessage(scopeId, reply, {
+  stickerCount = 0,
+  bubbleCount = 1,
+  replyTargetId = ""
+} = {}) {
   const text = compactMemoryText(reply);
   if (!scopeId || !text) return;
   const entry = {
@@ -6005,10 +6419,19 @@ function rememberQqConversationAssistantMessage(scopeId, reply) {
     senderId: "assistant",
     senderLabel: assistantName,
     isAssistant: true,
-    text
+    text,
+    stickerCount: Math.max(0, Number(stickerCount) || 0),
+    bubbleCount: Math.max(1, Number(bubbleCount) || 1),
+    replyTargetId: normalizeQqIdentifier(replyTargetId) || undefined
   };
   const current = state.qq.memory.recentMessages[scopeId] || [];
   state.qq.memory.recentMessages[scopeId] = [...current, entry].slice(-state.qq.memory.groupRecentLimit);
+}
+
+function extractQqStickerMarkerNames(reply) {
+  return [...String(reply || "").matchAll(/\[\[qq_sticker:([^\]\n]+)\]\]/g)]
+    .map((match) => String(match[1] || "").trim())
+    .filter(Boolean);
 }
 
 async function rememberQqGroupMessage(event) {
@@ -6042,12 +6465,16 @@ async function rememberQqGroupMessage(event) {
   const current = state.qq.memory.recentMessages[scopeId] || [];
   state.qq.memory.recentMessages[scopeId] = [...current, entry].slice(-state.qq.memory.groupRecentLimit);
   const personaChanged = event.groupId ? updateQqPersonaFromEvent(event) : false;
+  const styleReviewed = event.groupId ? maybeReviewQqAdaptiveLanguageStyle(
+    getQqPersonaGroup(event.groupId),
+    state.qq.memory.recentMessages[scopeId] || []
+  ) : false;
   state.qq.conversationMemory = updateQqConversationMemoryFromEvent(state.qq.conversationMemory, event);
   const scopesPruned = pruneQqStateScopes();
   await Promise.all([
     saveQqMemory(),
     saveQqConversationMemory(),
-    personaChanged || scopesPruned ? saveQqPersonas() : Promise.resolve()
+    personaChanged || styleReviewed || scopesPruned ? saveQqPersonas() : Promise.resolve()
   ]);
 }
 
@@ -6106,17 +6533,21 @@ async function processQqReplyEvent(event, options = {}) {
       event.proactiveDecision = decision.proactive ? decision : undefined;
       commandAction = await buildQqCommandAction(event);
       if (shouldQueueQqEventDuringGeneration(event, decision, commandAction)) {
-        const pending = queueQqPendingReplyEvent(event, source, decision);
-        queued = true;
-        queuedCount = Array.isArray(pending?.events) ? pending.events.length : 0;
+        if (!event.qqColdProactive) {
+          const pending = queueQqPendingReplyEvent(event, source, decision);
+          queued = true;
+          queuedCount = Array.isArray(pending?.events) ? pending.events.length : 0;
+        }
       } else if (commandAction) {
         reply = commandAction.reply;
       } else {
         replyScope = startQqReplyScope(event);
         if (!replyScope) {
-          const pending = queueQqPendingReplyEvent(event, source, decision);
-          queued = true;
-          queuedCount = Array.isArray(pending?.events) ? pending.events.length : 0;
+          if (!event.qqColdProactive) {
+            const pending = queueQqPendingReplyEvent(event, source, decision);
+            queued = true;
+            queuedCount = Array.isArray(pending?.events) ? pending.events.length : 0;
+          }
         } else {
           const modelReply = await buildModelReply(event, { replyScope });
           const parsedMemory = extractQqConversationMemoryMarkers(modelReply);
@@ -6131,9 +6562,11 @@ async function processQqReplyEvent(event, options = {}) {
       if (reply) reply = normalizeVisibleQqReply(reply, event);
     } catch (caught) {
       error = caught.message;
-      reply = ["QQ_GENERATION_STOPPED", "QQ_REPLY_STOPPED", "HUB_SHUTTING_DOWN"].includes(caught.code)
+      reply = event.qqColdProactive
         ? null
-        : "这边刚刚卡了一下，等我再试一次。";
+        : ["QQ_GENERATION_STOPPED", "QQ_REPLY_STOPPED", "HUB_SHUTTING_DOWN"].includes(caught.code)
+          ? null
+          : "这边刚刚卡了一下，等我再试一次。";
     } finally {
       timings.generationDurationMs = Date.now() - generationStartedAt;
     }
@@ -6153,6 +6586,17 @@ async function processQqReplyEvent(event, options = {}) {
     send: null,
     timings
   };
+
+  if (event.qqColdProactive
+    && Number(event.groupActivityVersion || 0) !== Number(qqGroupActivityVersionByGroupId.get(String(event.groupId)) || 0)) {
+    record.reply = null;
+    record.decision = {
+      ...record.decision,
+      ok: false,
+      superseded: true,
+      reason: "group activity resumed during cold interest check"
+    };
+  }
 
   try {
     if (record.reply && commandAction?.beforeSend) await commandAction.beforeSend();
@@ -6194,13 +6638,15 @@ async function processQqReplyEvent(event, options = {}) {
       if (record.reply && record.send?.ok !== false && commandAction?.afterSend) await commandAction.afterSend();
       if (record.reply && record.send?.ok !== false && !commandAction?.skipMemory) {
         await rememberQqExchange(event, record.reply);
-        state.qq.conversationMemory = updateQqConversationMemoryFromExchange(
-          state.qq.conversationMemory,
-          event,
-          record.reply,
-          event.qqConversationMemoryPatches || []
-        );
-        await saveQqConversationMemory();
+        if (!event.qqColdProactive) {
+          state.qq.conversationMemory = updateQqConversationMemoryFromExchange(
+            state.qq.conversationMemory,
+            event,
+            record.reply,
+            event.qqConversationMemoryPatches || []
+          );
+          await saveQqConversationMemory();
+        }
       }
     } finally {
       timings.memoryDurationMs = Date.now() - memoryStartedAt;
@@ -6224,6 +6670,7 @@ async function processQqReplyEvent(event, options = {}) {
     lifecycleStartedAt,
     commandAction
   });
+  logQqColdGroupInterestOutcome(record);
 
   const scopeId = getQqMemoryScopeId(event);
   if (replyScope || record.reply) {
@@ -6556,12 +7003,64 @@ function updateQqPersonaFromEvent(event) {
   for (const topic of detectQqPersonaTopics(text)) bumpCounter(member.topicScores, topic);
   for (const style of detectQqPersonaStyles(text)) bumpCounter(member.styleScores, style);
   if (text) member.recentTexts = [...(member.recentTexts || []), text].slice(-8);
-  getQqPersonaGroup(event.groupId).updatedAt = now;
+  const group = getQqPersonaGroup(event.groupId);
+  recordQqAdaptiveHumanMessage(group, member, event);
+  group.updatedAt = now;
   return true;
 }
 
+function getQqAdaptiveSignalsForEvent(event) {
+  if (!event?.groupId) return null;
+  const group = getQqPersonaGroup(event.groupId);
+  const member = event.senderId && !event.qqColdProactive
+    ? getQqPersonaMember(event.groupId, event.senderId, event.senderName)
+    : null;
+  return buildQqAdaptiveLearningSignals(group, member);
+}
+
+function getQqAdaptiveRuntimeForEvent(event) {
+  const entries = event?.groupId ? state.qq.memory.recentMessages[event.groupId] || [] : [];
+  const baseStyle = analyzeQqHumanChatStyle(entries);
+  const signals = getQqAdaptiveSignalsForEvent(event) || buildQqAdaptiveLearningSignals(null, null);
+  return {
+    signals,
+    style: personalizeQqHumanStyle(baseStyle, signals),
+    proactiveIntervals: getQqAdaptiveProactiveIntervals(signals, {
+      judgeEveryMessages: state.qq.proactive.judgeEveryMessages,
+      judgeEveryMinutes: state.qq.proactive.judgeEveryMinutes
+    })
+  };
+}
+
+function backfillQqAdaptiveLearningFromRecentMessages() {
+  let changed = false;
+  for (const [groupId, entries] of Object.entries(state.qq.memory.recentMessages)) {
+    if (groupId.startsWith("private:") || !Array.isArray(entries)) continue;
+    const group = getQqPersonaGroup(groupId);
+    if (ensureQqAdaptiveLearning(group).bootstrapVersion >= 1) continue;
+    for (const entry of entries) {
+      if (entry?.isAssistant || entry?.senderId === "assistant") {
+        continue;
+      }
+      if (!entry?.senderId) continue;
+      const member = getQqPersonaMember(groupId, entry.senderId, entry.senderLabel);
+      recordQqAdaptiveHumanMessage(group, member, {
+        ...entry,
+        groupId,
+        senderName: entry.senderLabel,
+        isReplyToSelf: Boolean(entry.replyContext?.isSelf)
+      }, { at: entry.at });
+      ensureQqAdaptiveLearning(member).bootstrapVersion = 1;
+    }
+    ensureQqAdaptiveLearning(group).bootstrapVersion = 1;
+    maybeReviewQqAdaptiveLanguageStyle(group, entries, { force: true });
+    changed = true;
+  }
+  return changed;
+}
+
 function formatQqPersonaContext(event) {
-  if (!event.groupId) return "";
+  if (!event.groupId || event.qqColdProactive) return "";
   const members = [];
   if (event.senderId) members.push(getQqPersonaMember(event.groupId, event.senderId, event.senderName));
   if (event.replyContext?.senderId) {
@@ -9384,7 +9883,7 @@ async function sendOneBotGroupReply(event, reply, options = {}) {
       reply,
       quoteFirstBubble: isExplicitQqAtEvent(event),
       delayMs: getQqAdaptiveBubbleDelayMs(
-        analyzeQqHumanChatStyle(state.qq.memory.recentMessages[event.groupId] || []),
+        getQqAdaptiveRuntimeForEvent(event).style,
         { configuredMs: qqBubbleSendDelayMs }
       ),
       sendGroupMessage: (bubble, bubbleOptions) => sendOneBotGroupMessage(event, bubble, {
@@ -10127,21 +10626,23 @@ async function uploadOneBotFile(endpoint, payload, { signal } = {}) {
 }
 
 async function sendOneBotPoke({ groupId, userId }) {
-  const payload = groupId
-    ? { group_id: String(groupId), user_id: String(userId) }
-    : { user_id: String(userId) };
-  const endpoints = groupId ? ["send_poke", "group_poke"] : ["send_poke", "friend_poke"];
-  let lastResult = null;
-  for (const endpoint of endpoints) {
-    const result = await callOneBotAction(endpoint, payload).catch((error) => ({
+  const attempts = buildOneBotPokeAttempts({ groupId, userId });
+  const results = [];
+  for (const attempt of attempts) {
+    const result = await callOneBotAction(attempt.endpoint, attempt.payload).catch((error) => ({
       ok: false,
       error: error.message,
-      endpoint
+      endpoint: attempt.endpoint
     }));
-    lastResult = result;
+    results.push(result);
     if (result.ok) return result;
   }
-  return lastResult || { ok: false, error: "No OneBot poke endpoint attempted" };
+  return {
+    ...(results.at(-1) || { ok: false }),
+    ok: false,
+    attempts: results,
+    error: summarizePokeFailures(results) || "No OneBot poke endpoint attempted"
+  };
 }
 
 async function callOneBotAction(endpoint, payload) {
@@ -10416,6 +10917,12 @@ async function handleApi(req, res) {
       alternativeHeaders: oneBotAccessToken ? ["x-onebot-access-token"] : ["x-codex-api-token"]
     });
     if (!trustedOneBotRequest) return sendJson(res, 401, { error: "OneBot authentication required" });
+  } else if (isOneBotWebhook) {
+    trustedOneBotRequest = isLoopbackRequestHost(req.headers.host)
+      && isLoopbackAddress(req.socket?.remoteAddress);
+    if (!trustedOneBotRequest) {
+      return sendJson(res, 403, { error: "OneBot webhook must come from loopback when no token is configured" });
+    }
   } else if (!isOneBotWebhook && managementApiToken && !requestHasValidToken(req, managementApiToken, {
     alternativeHeaders: ["x-codex-api-token"]
   })) {
@@ -10676,6 +11183,7 @@ await mkdir(qqStickerDir, { recursive: true });
 await loadQqMemory();
 await loadQqPublicMemory();
 await loadQqPersonas();
+if (backfillQqAdaptiveLearningFromRecentMessages()) await saveQqPersonas();
 await loadQqConversationMemory();
 await qqRequestStore.load().catch((error) => logger.warn("Unable to load QQ request store", { error }, "qq"));
 await loadIMessageMemory();

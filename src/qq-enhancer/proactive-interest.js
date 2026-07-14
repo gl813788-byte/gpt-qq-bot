@@ -57,8 +57,12 @@ export async function shouldProactivelyReplyToQq(event = {}, state = {}, helpers
   const groupId = String(event.groupId);
   const now = typeof helpers.now === "function" ? helpers.now : Date.now;
   const triggerMode = helpers.triggerMode === "time" ? "time" : "message";
-  const judgeEveryMessages = normalizeJudgeEveryMessages(state.proactive?.judgeEveryMessages);
-  const judgeEveryMinutes = normalizeJudgeEveryMinutes(state.proactive?.judgeEveryMinutes);
+  const judgeEveryMessages = normalizeJudgeEveryMessages(
+    helpers.judgeEveryMessages ?? state.proactive?.judgeEveryMessages
+  );
+  const judgeEveryMinutes = normalizeJudgeEveryMinutes(
+    helpers.judgeEveryMinutes ?? state.proactive?.judgeEveryMinutes
+  );
   ensureProactiveCycleState(proactiveState);
 
   const previousCount = getProactiveMessageCount(proactiveState, groupId);
