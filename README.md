@@ -312,7 +312,7 @@ QQ enhancer is built into `src/qq-enhancer/` and works out of the box. It provid
 
 Interest judging merges the current message, quoted message, recent context, global-persona keywords, and the sender's interaction distance into one decision. The Bot's own name is always a fixed interest keyword. A direct @Bot or reply-to-Bot still always enters the reply path, while the first bubble independently chooses a quote, sender mention, or plain delivery based on messages and minutes since the previous interaction. Immediately after an interaction, ordinary interest cadence may contract to a minimum of one message or one minute, then smoothly decay back to the configured `/兴趣间隔` and `/兴趣分钟` baselines.
 
-The Hub creates a separate anonymous, non-identifying summary for every group and private scope. After enough messages and Bot replies accumulate, the current QQ reply model generates a global Bot persona whose name is forced to the logged-in QQ nickname. The persona includes traits, a self-description, interest keywords, a full interest paragraph, weighted interests, and proactive topics, and is stored in `data/qq-self-persona.json`. Scopes contribute summaries only; private raw text is never copied across conversations. The QQ dashboard shows the current persona, keywords, and generation progress.
+The Hub creates a separate anonymous, non-identifying summary for every group and private scope. After enough messages and Bot replies accumulate, the current QQ reply model generates a global Bot persona whose name is forced to the logged-in QQ nickname. The persona includes traits, a self-description, interest keywords, a full interest paragraph, weighted interests, and proactive topics, and is stored in `data/qq-self-persona.json`. Scopes contribute summaries only; private raw text is never copied across conversations. By default, a scope first summarizes after 32 messages, then after 48 new human messages or 12 Bot replies with a 12-hour minimum interval. The first global persona requires 80 total messages across at least two summarized scopes; later updates require 160 new human messages, 40 Bot replies, or eight scope summaries with a 48-hour minimum interval. Human-versus-Bot style review likewise runs at most once every 48 hours. The QQ dashboard shows the current persona, keywords, generation progress, and update policy.
 
 Timed outreach uses learned active hours per group or contact. Cold-group outreach lowers interest and exponentially lengthens retries as unanswered Bot messages accumulate instead of blocking forever. Private proactive interest follows an interaction-frequency-aware short-high, middle-low, long-rising probability curve, with the same unanswered-message suppression and backoff. The dashboard exposes learned hours, unanswered streaks, interest multipliers, private phases, candidate probabilities, and next-check times. Keyword hits, relationship distance, quote/@ selection, persona refreshes, and group/private proactive outcomes are persisted as structured `interest` or `learning` logs.
 
@@ -495,10 +495,16 @@ CODEX_REMOTE_CONTACT_QQ_MEMORY_LIMIT=10
 CODEX_REMOTE_CONTACT_QQ_GROUP_MEMORY_LIMIT=200
 CODEX_REMOTE_CONTACT_QQ_SCOPE_LIMIT=500
 CODEX_REMOTE_CONTACT_QQ_PERSONA_MEMBER_LIMIT=500
-CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_MESSAGES=24
-CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_BOT_REPLIES=6
-CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_MESSAGES=80
-CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_BOT_REPLIES=20
+CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_INITIAL_MESSAGES=32
+CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_MESSAGES=48
+CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_BOT_REPLIES=12
+CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_COOLDOWN_HOURS=12
+CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_INITIAL_MESSAGES=80
+CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_MESSAGES=160
+CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_BOT_REPLIES=40
+CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_SCOPE_SUMMARIES=8
+CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_COOLDOWN_HOURS=48
+CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_FAILURE_RETRY_HOURS=2
 CODEX_REMOTE_CONTACT_QQ_IMAGE_MAX_BYTES=20971520
 CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP=1
 CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS=12000

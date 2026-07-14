@@ -102,7 +102,8 @@ test("periodically compares human and bot language and replaces old improvements
   const reviewClockStartedAt = Date.UTC(2026, 6, 6, 0, 0);
   assert.equal(maybeReviewQqAdaptiveLanguageStyle(group, entries, { now: reviewClockStartedAt }), false);
   assert.equal(maybeReviewQqAdaptiveLanguageStyle(group, entries, { now: reviewClockStartedAt + 23 * 60 * 60 * 1000 }), false);
-  assert.equal(maybeReviewQqAdaptiveLanguageStyle(group, entries, { now: reviewClockStartedAt + 24 * 60 * 60 * 1000 }), true);
+  assert.equal(maybeReviewQqAdaptiveLanguageStyle(group, entries, { now: reviewClockStartedAt + 24 * 60 * 60 * 1000 }), false);
+  assert.equal(maybeReviewQqAdaptiveLanguageStyle(group, entries, { now: reviewClockStartedAt + 48 * 60 * 60 * 1000 }), true);
   const signals = buildQqAdaptiveLearningSignals(group, member);
   assert.ok(signals.group.styleGuidance.length > 0);
   assert.ok(signals.group.styleGuidance.length <= 5);
@@ -111,7 +112,7 @@ test("periodically compares human and bot language and replaces old improvements
   assert.ok(signals.group.styleGuidance.some((item) => item.includes("模板式开头")));
   assert.equal(
     Date.parse(signals.group.nextStyleReviewAt) - Date.parse(signals.group.lastStyleReviewAt),
-    24 * 60 * 60 * 1000
+    48 * 60 * 60 * 1000
   );
   const context = formatQqAdaptiveLearningContext(signals);
   assert.match(context, /最近一次真人\/Bot 差异复盘/);

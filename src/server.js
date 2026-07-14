@@ -340,10 +340,16 @@ const defaultQqProactiveJudgeModel = "nousresearch/hermes-3-llama-3.1-405b:free"
 const qqProactiveJudgeModel = process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE_MODEL || defaultQqProactiveJudgeModel;
 const qqProactiveJudgeTimeoutMs = Number(process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE_TIMEOUT_MS || 6500);
 const qqProactiveJudgeMinInterest = 20;
-const qqSelfPersonaScopeMessages = Math.max(8, Math.min(200, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_MESSAGES || 24))));
-const qqSelfPersonaScopeBotReplies = Math.max(2, Math.min(80, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_BOT_REPLIES || 6))));
-const qqSelfPersonaGenerationMessages = Math.max(20, Math.min(1000, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_MESSAGES || 80))));
-const qqSelfPersonaGenerationBotReplies = Math.max(6, Math.min(300, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_BOT_REPLIES || 20))));
+const qqSelfPersonaScopeInitialMessages = Math.max(16, Math.min(200, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_INITIAL_MESSAGES || 32))));
+const qqSelfPersonaScopeMessages = Math.max(16, Math.min(400, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_MESSAGES || 48))));
+const qqSelfPersonaScopeBotReplies = Math.max(4, Math.min(160, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_BOT_REPLIES || 12))));
+const qqSelfPersonaScopeCooldownHours = Math.max(1, Math.min(168, Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_COOLDOWN_HOURS || 12)));
+const qqSelfPersonaGenerationInitialMessages = Math.max(40, Math.min(1000, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_INITIAL_MESSAGES || 80))));
+const qqSelfPersonaGenerationMessages = Math.max(40, Math.min(2000, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_MESSAGES || 160))));
+const qqSelfPersonaGenerationBotReplies = Math.max(12, Math.min(600, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_BOT_REPLIES || 40))));
+const qqSelfPersonaGenerationScopeSummaries = Math.max(2, Math.min(40, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_SCOPE_SUMMARIES || 8))));
+const qqSelfPersonaGenerationCooldownHours = Math.max(6, Math.min(720, Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_COOLDOWN_HOURS || 48)));
+const qqSelfPersonaFailureRetryHours = Math.max(1, Math.min(24, Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_FAILURE_RETRY_HOURS || 2)));
 const openRouterApiKey = process.env.OPENROUTER_API_KEY || process.env.CODEX_REMOTE_CONTACT_OPENROUTER_API_KEY || "";
 const openRouterBaseUrl = process.env.OPENROUTER_BASE_URL || process.env.CODEX_REMOTE_CONTACT_OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
 const imessageMemoryLimit = Number(process.env.CODEX_REMOTE_CONTACT_IMESSAGE_MEMORY_LIMIT || 120);
@@ -1477,7 +1483,8 @@ async function saveQqSelfPersona() {
 function maybeScheduleQqSelfPersonaRefresh() {
   if (qqSelfPersonaRefreshPromise || shuttingDown) return qqSelfPersonaRefreshPromise;
   const failedAt = Date.parse(state.qq.selfPersona.generation?.lastAttemptAt || "");
-  if (state.qq.selfPersona.generation?.lastError && Number.isFinite(failedAt) && Date.now() - failedAt < 30 * 60 * 1000) {
+  if (state.qq.selfPersona.generation?.lastError && Number.isFinite(failedAt)
+    && Date.now() - failedAt < qqSelfPersonaFailureRetryHours * 60 * 60 * 1000) {
     return null;
   }
   const refresh = refreshQqSelfPersona().finally(() => {
@@ -1503,8 +1510,10 @@ async function refreshQqSelfPersona() {
   });
   state.qq.selfPersona = accountUpdate.store;
   const dueScopes = getDueQqSelfPersonaScopes(state.qq.selfPersona, {
+    minInitialMessages: qqSelfPersonaScopeInitialMessages,
     messagesPerSummary: qqSelfPersonaScopeMessages,
     botRepliesPerSummary: qqSelfPersonaScopeBotReplies,
+    minHoursBetweenSummaries: qqSelfPersonaScopeCooldownHours,
     limit: 2
   });
   for (const scope of dueScopes) {
@@ -1533,10 +1542,12 @@ async function refreshQqSelfPersona() {
   }
 
   const generationPlan = shouldRegenerateQqSelfPersona(state.qq.selfPersona, {
-    minScopeSummaries: 1,
+    minScopeSummaries: 2,
+    minInitialMessages: qqSelfPersonaGenerationInitialMessages,
     messagesPerGeneration: qqSelfPersonaGenerationMessages,
     botRepliesPerGeneration: qqSelfPersonaGenerationBotReplies,
-    scopeSummariesPerGeneration: 4
+    scopeSummariesPerGeneration: qqSelfPersonaGenerationScopeSummaries,
+    minHoursBetweenGenerations: qqSelfPersonaGenerationCooldownHours
   });
   if (!generationPlan.due) {
     if (accountUpdate.changed) await saveQqSelfPersona();
@@ -1843,7 +1854,21 @@ function buildPublicState() {
       pendingReplies: pendingReplyCounts,
       pendingReplyCounts,
       personas: { groupMemberCounts: personaCounts },
-      selfPersona: summarizeQqSelfPersona(state.qq.selfPersona),
+      selfPersona: {
+        ...summarizeQqSelfPersona(state.qq.selfPersona),
+        updatePolicy: {
+          scopeInitialMessages: qqSelfPersonaScopeInitialMessages,
+          scopeMessages: qqSelfPersonaScopeMessages,
+          scopeBotReplies: qqSelfPersonaScopeBotReplies,
+          scopeCooldownHours: qqSelfPersonaScopeCooldownHours,
+          generationInitialMessages: qqSelfPersonaGenerationInitialMessages,
+          generationMessages: qqSelfPersonaGenerationMessages,
+          generationBotReplies: qqSelfPersonaGenerationBotReplies,
+          generationScopeSummaries: qqSelfPersonaGenerationScopeSummaries,
+          generationCooldownHours: qqSelfPersonaGenerationCooldownHours,
+          failureRetryHours: qqSelfPersonaFailureRetryHours
+        }
+      },
       conversationMemory: summarizeQqConversationMemory(state.qq.conversationMemory),
       humanBehavior: {
         groupStyles: humanGroupStyles,

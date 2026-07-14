@@ -1,5 +1,6 @@
 const personaVersion = 1;
 const maxScopes = 500;
+const hourMs = 60 * 60 * 1000;
 
 export function createEmptyQqSelfPersona() {
   return {
@@ -112,23 +113,40 @@ export function syncQqSelfPersonaActivity(store, recentMessagesByScope = {}) {
 }
 
 export function getDueQqSelfPersonaScopes(store, {
-  minInitialMessages = 8,
-  messagesPerSummary = 24,
-  botRepliesPerSummary = 6,
+  minInitialMessages = 32,
+  messagesPerSummary = 48,
+  botRepliesPerSummary = 12,
+  minHoursBetweenSummaries = 12,
+  now = Date.now(),
   limit = 3
 } = {}) {
   const normalized = normalizeQqSelfPersona(store);
+  const currentAtMs = Date.parse(toIsoDate(now));
+  const cooldownMs = Math.max(0, Number(minHoursBetweenSummaries || 0)) * hourMs;
   return Object.values(normalized.scopes)
-    .map((scope) => ({
-      ...scope,
-      pendingHumanMessages: Math.max(0, scope.humanMessages - scope.humanMessagesAtSummary),
-      pendingBotReplies: Math.max(0, scope.botReplies - scope.botRepliesAtSummary)
-    }))
-    .filter((scope) => (
-      (!scope.summary && scope.humanMessages + scope.botReplies >= Math.max(1, minInitialMessages))
-      || scope.pendingHumanMessages >= Math.max(1, messagesPerSummary)
-      || scope.pendingBotReplies >= Math.max(1, botRepliesPerSummary)
-    ))
+    .map((scope) => {
+      const pendingHumanMessages = Math.max(0, scope.humanMessages - scope.humanMessagesAtSummary);
+      const pendingBotReplies = Math.max(0, scope.botReplies - scope.botRepliesAtSummary);
+      const lastSummarizedAtMs = Date.parse(scope.lastSummarizedAt || "");
+      const summaryCooldownElapsed = !scope.summary
+        || !Number.isFinite(lastSummarizedAtMs)
+        || currentAtMs - lastSummarizedAtMs >= cooldownMs;
+      const summaryThresholdReached = !scope.summary
+        ? scope.humanMessages + scope.botReplies >= Math.max(1, minInitialMessages)
+        : pendingHumanMessages >= Math.max(1, messagesPerSummary)
+          || pendingBotReplies >= Math.max(1, botRepliesPerSummary);
+      return {
+        ...scope,
+        pendingHumanMessages,
+        pendingBotReplies,
+        summaryCooldownElapsed,
+        summaryThresholdReached,
+        nextSummaryAt: scope.summary && Number.isFinite(lastSummarizedAtMs) && cooldownMs > 0
+          ? new Date(lastSummarizedAtMs + cooldownMs).toISOString()
+          : null
+      };
+    })
+    .filter((scope) => scope.summaryThresholdReached && scope.summaryCooldownElapsed)
     .sort((left, right) => {
       const leftScore = left.pendingHumanMessages + left.pendingBotReplies * 3;
       const rightScore = right.pendingHumanMessages + right.pendingBotReplies * 3;
@@ -157,10 +175,12 @@ export function applyQqSelfPersonaScopeSummary(store, scopeId, summary, { at = D
 
 export function shouldRegenerateQqSelfPersona(store, {
   minScopeSummaries = 2,
-  minInitialMessages = 20,
-  messagesPerGeneration = 80,
-  botRepliesPerGeneration = 20,
-  scopeSummariesPerGeneration = 4
+  minInitialMessages = 80,
+  messagesPerGeneration = 160,
+  botRepliesPerGeneration = 40,
+  scopeSummariesPerGeneration = 8,
+  minHoursBetweenGenerations = 48,
+  now = Date.now()
 } = {}) {
   const normalized = normalizeQqSelfPersona(store);
   const summarizedScopes = Object.values(normalized.scopes).filter((scope) => scope.summary).length;
@@ -171,16 +191,26 @@ export function shouldRegenerateQqSelfPersona(store, {
   const humanDelta = Math.max(0, normalized.totals.humanMessages - generation.humanMessagesAtGeneration);
   const botDelta = Math.max(0, normalized.totals.botReplies - generation.botRepliesAtGeneration);
   const summaryDelta = Math.max(0, normalized.totals.scopeSummaryRevisions - generation.scopeSummaryRevisionsAtGeneration);
+  const generatedAtMs = Date.parse(generation.generatedAt || "");
+  const cooldownMs = Math.max(0, Number(minHoursBetweenGenerations || 0)) * hourMs;
+  const cooldownElapsed = generation.revision === 0
+    || !Number.isFinite(generatedAtMs)
+    || Date.parse(toIsoDate(now)) - generatedAtMs >= cooldownMs;
+  const updateThresholdReached = humanDelta >= messagesPerGeneration
+    || botDelta >= botRepliesPerGeneration
+    || summaryDelta >= scopeSummariesPerGeneration;
   return {
-    due: firstGenerationDue
-      || humanDelta >= messagesPerGeneration
-      || botDelta >= botRepliesPerGeneration
-      || summaryDelta >= scopeSummariesPerGeneration,
+    due: firstGenerationDue || (generation.revision > 0 && updateThresholdReached && cooldownElapsed),
     firstGenerationDue,
     summarizedScopes,
     humanDelta,
     botDelta,
-    summaryDelta
+    summaryDelta,
+    updateThresholdReached,
+    cooldownElapsed,
+    nextGenerationAt: generation.revision > 0 && Number.isFinite(generatedAtMs) && cooldownMs > 0
+      ? new Date(generatedAtMs + cooldownMs).toISOString()
+      : null
   };
 }
 
