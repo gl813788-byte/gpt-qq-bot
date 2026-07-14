@@ -3,9 +3,10 @@ name: claude-to-im
 description: |
   Manage the local NapCat + Codex Remote Contact QQ bridge for THIS Codex session.
   Use when the user asks to start, connect, diagnose, log in, or check QQ/NapCat,
-  OneBot, Codex Remote Contact, QQ group whitelist, or phrases like "启动napcat",
-  "连上qq", "QQ后台", "NapCat后台", "扫码登录", "OneBot", "群白名单",
-  "ncc", "napcat-codex-control". This local setup uses NapCat/QQ + OneBot HTTP
+  OneBot, Codex Remote Contact, its local dashboard, QQ group whitelist, or phrases
+  like "启动napcat", "连上qq", "QQ后台", "NapCat后台", "扫码登录", "OneBot",
+  "群白名单", "控制台", "运行总览", "前端", "ncc", "napcat-codex-control".
+  This local setup uses NapCat/QQ + OneBot HTTP
   and /root/Codex-Remote-Contact, not the official QQ Bot OpenAPI channel.
 ---
 
@@ -37,11 +38,12 @@ Default services:
 - NapCat WebUI: `http://127.0.0.1:6099/webui`
 - OneBot API: `http://127.0.0.1:3000`
 - Codex Remote Contact backend: `http://127.0.0.1:3789`
+- Codex Remote Contact dashboard: `http://127.0.0.1:3789/` (alias `/dashboard`)
 - Backend project: `/root/Codex-Remote-Contact`
-- Backend control is through `ncc` and HTTP API endpoints only. `/root/Codex-Remote-Contact` does not serve its own browser WebUI.
-- The backend WebUI assets were removed from `/root/Codex-Remote-Contact/modules/web-console`; non-API browser requests to port `3789` should return JSON 404. Use `/api/state` and `/api/maintenance` for diagnostics.
+- Use `ncc` for process lifecycle and the dashboard for state, health, channel, memory, log, and local appearance controls. The dashboard does not replace `ncc` startup/login recovery.
+- Dashboard assets live in `/root/Codex-Remote-Contact/modules/mac-client/Resources` and are served through `/root/Codex-Remote-Contact/src/dashboard-assets.js`; the removed `modules/web-console` is not used.
 - Do not add separate shortcut scripts for QQ on/off/status. The user wants one control entry: `ncc` / `/root/napcat-codex-control.sh`.
-- `modules/mac-client` and `modules/macos-launcher` may still exist as source, but they are not the normal control path for this setup. Do not present them as the project WebUI.
+- `modules/mac-client` is the shared browser/macOS dashboard source. `modules/macos-launcher` remains optional and is not a replacement for `ncc`.
 - Project homepage docs are split by language: `/root/Codex-Remote-Contact/README.md` is English and `/root/Codex-Remote-Contact/README_CN.md` is Simplified Chinese. Keep the top language-switch links in sync if either file is edited.
 - Allowed QQ groups: read `ALLOWED_GROUPS` from `/root/.napcat-codex-control.env`
 - Owner QQ user id: `3784642920` should be present in `/root/Codex-Remote-Contact/data/settings.json`
@@ -122,6 +124,7 @@ Map user intent to the existing control script whenever possible:
 | connect, 修复连接, 扫码后继续连接 | `ncc connect` |
 | start NapCat only | `ncc napcat` |
 | start backend only | `ncc hub` |
+| dashboard, 控制台, 运行总览, 前端 | open `http://127.0.0.1:3789/`; first confirm with `ncc status` |
 | logs, 日志, 看日志 | `ncc logs` for high-signal events, `ncc logs --all` for routine info, or `ncc logs --verbose --category search` for full diagnostics |
 | groups, 群白名单 | `ncc groups` or non-interactive `ncc group-add`, `ncc group-remove`, `ncc group-set` |
 | stop backend | `ncc stop-hub` |
@@ -130,6 +133,14 @@ Map user intent to the existing control script whenever possible:
 Prefer the `ncc` alias in user-facing instructions when it is available; use the full `/root/napcat-codex-control.sh` path in scripts or when absolute clarity is useful.
 
 Do not run the old `~/.claude-to-im` daemon for QQ unless the user explicitly asks for the official QQ Bot OpenAPI bridge. This machine's QQ workflow is NapCat + OneBot + Codex Remote Contact.
+
+## Local Dashboard
+
+- Serve `/`, `/dashboard`, `/client.css`, `/client.js`, and explicitly registered image assets from the Hub. Keep executable code and styles in external files to satisfy the dashboard CSP.
+- Treat the dashboard as a local operational surface: overview, QQ/iMessage channels, unified memory, structured logs, and device-local preferences. It supports Chinese/English, light/dark/system themes, responsive layouts, and `Cmd/Ctrl+K` quick actions.
+- Keep static selector ids unique, Chinese/English translation keys aligned, reduced-motion behavior intact, and at least desktop/tablet/mobile responsive breakpoints. Run `npm run verify` after dashboard changes.
+- The asset handler caches loaded files in memory. After changing dashboard files or adding an asset route, verify that no QQ generation is active, then use `ncc stop-hub` followed by `ncc hub`; do not kill NapCat or restart the Hub merely to inspect status.
+- If a dashboard asset returns 404, confirm the route is registered in `src/dashboard-assets.js`, the file exists under `modules/mac-client/Resources`, and the running Hub was restarted after the change.
 
 ## QQ In-Chat Commands
 
@@ -206,7 +217,7 @@ tail -n 160 /tmp/napcat.screen.log
 
 ## NapCat WebUI Token
 
-This section is only about NapCat's own login/backend WebUI on port `6099`. It is not the removed Codex Remote Contact project WebUI.
+This section is only about NapCat's own login/backend WebUI on port `6099`. It is distinct from the Codex Remote Contact dashboard on port `3789`.
 
 When the user asks for the NapCat backend/login token, read it from:
 
@@ -223,6 +234,7 @@ Useful checks:
 ```bash
 ps -ef | rg -i 'napcat|QQ/qq|Codex-Remote-Contact|node src/server|npm start|xvfb'
 ss -ltnp | rg ':3000|:3789|:6099|qq|node'
+curl -fsS --max-time 3 -o /dev/null -w '%{http_code} %{content_type}\n' http://127.0.0.1:3789/
 curl -fsS --max-time 3 http://127.0.0.1:3789/api/state | jq .
 curl -fsS --max-time 3 http://127.0.0.1:3789/api/maintenance | jq '.webLookup'
 curl -fsS --max-time 3 'http://127.0.0.1:3789/api/logs?limit=50' | jq .
@@ -239,6 +251,7 @@ Common states:
 
 - NapCat process running, WebUI on `6099`, OneBot on `3000` unavailable: QQ is probably not logged in yet, or NapCat has not loaded the OneBot config.
 - Backend on `3789` running, `channels.qq` false: run `connect` after OneBot is available.
+- Backend API works but `/` or a dashboard asset is 404/stale: check `src/dashboard-assets.js` and restart only the Hub with `ncc stop-hub`, then `ncc hub` after confirming no active QQ generation.
 - Dead screen sockets: run `screen -wipe`, then retry.
 - No `onebot11_*.json`: log in to NapCat once so it creates an account-specific OneBot config.
 - QQ web lookup should show `webLookupProvider: "tavily"` in `status` when a Tavily key is configured, and `/api/maintenance` should show `.webLookup.effectiveProvider == "tavily"` after a search-triggering QQ query. `/api/maintenance` also exposes `.webLookup.configuredProviders`, `.webLookup.providerPreset`, `.webLookup.lastAttempts`, and `.webLookup.lastProviderErrors`. `ncc logs` is concise by default; use `ncc logs --verbose --category search` for translated detailed logs showing QQ message text, trigger reason, provider attempts, result titles, URLs, and snippets.
