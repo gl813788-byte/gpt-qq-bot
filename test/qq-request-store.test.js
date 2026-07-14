@@ -31,6 +31,19 @@ test("normalizeOneBotRequest normalizes friend and group requests", () => {
   assert.equal(invite.subType, "invite");
   assert.equal(invite.groupId, "10001");
 
+  const doubt = normalizeOneBotRequest({
+    post_type: "request",
+    request_type: "friend",
+    sub_type: "doubt",
+    flag: "doubt-uid",
+    user_id: 998877,
+    comment: "问题：项目口令\n答案：OpenAI"
+  });
+  assert.equal(doubt.subType, "doubt");
+  assert.equal(doubt.verificationQuestion, "项目口令");
+  assert.equal(doubt.verificationAnswer, "OpenAI");
+  assert.match(formatQqRequestEntry(doubt), /可疑好友申请/);
+
   const bounded = normalizeOneBotRequest({
     post_type: "request",
     request_type: "friend",
@@ -78,5 +91,5 @@ test("QQ request store persists, deduplicates and updates requests", async () =>
   await reloaded.load();
   assert.equal(reloaded.find(first.entry.id).status, "approved");
   const body = JSON.parse(await readFile(filePath, "utf8"));
-  assert.equal(body.version, 1);
+  assert.equal(body.version, 2);
 });

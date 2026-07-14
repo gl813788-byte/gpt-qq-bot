@@ -13,9 +13,11 @@ export function normalizeOneBotRequest(payload, { now = () => new Date() } = {})
   if (!requestType || !flag) return null;
   const subType = requestType === "group"
     ? (payload.sub_type === "invite" ? "invite" : "add")
-    : "add";
+    : (payload.sub_type === "doubt" ? "doubt" : "add");
   const key = `${requestType}:${subType}:${flag}`;
   const receivedAt = now().toISOString();
+  const comment = String(payload.comment || "").trim().slice(0, 500);
+  const verification = extractVerificationDetails(comment);
   return {
     id: createHash("sha256").update(key).digest("hex").slice(0, 10),
     key,
@@ -25,7 +27,12 @@ export function normalizeOneBotRequest(payload, { now = () => new Date() } = {})
     userId: normalizeQqId(payload.user_id),
     groupId: normalizeQqId(payload.group_id),
     selfId: normalizeQqId(payload.self_id),
-    comment: String(payload.comment || "").trim().slice(0, 500),
+    comment,
+    verificationQuestion: boundedString(payload.verification_question || verification.question, 300).trim(),
+    verificationAnswer: boundedString(payload.verification_answer || verification.answer, 300).trim(),
+    requesterNickname: boundedString(payload.requester_nickname || payload.nickname || payload.nick, 100).trim(),
+    groupName: boundedString(payload.group_name, 100).trim(),
+    source: boundedString(payload.source, 120).trim(),
     eventTime: Number.isFinite(Number(payload.time)) ? Number(payload.time) : null,
     receivedAt,
     updatedAt: receivedAt,
@@ -54,7 +61,7 @@ export function createQqRequestStore({ filePath, maxEntries = 200 }) {
 
   async function save() {
     return serializeFileOperation(filePath, () => writeJsonAtomically(filePath, {
-      version: 1,
+      version: 2,
       updatedAt: new Date().toISOString(),
       entries
     }));
@@ -70,6 +77,11 @@ export function createQqRequestStore({ filePath, maxEntries = 200 }) {
         userId: normalized.userId || entries[index].userId,
         groupId: normalized.groupId || entries[index].groupId,
         comment: normalized.comment || entries[index].comment,
+        verificationQuestion: normalized.verificationQuestion || entries[index].verificationQuestion,
+        verificationAnswer: normalized.verificationAnswer || entries[index].verificationAnswer,
+        requesterNickname: normalized.requesterNickname || entries[index].requesterNickname,
+        groupName: normalized.groupName || entries[index].groupName,
+        source: normalized.source || entries[index].source,
         updatedAt: normalized.updatedAt
       };
       entries.unshift(entries.splice(index, 1)[0]);
@@ -123,13 +135,23 @@ export function createQqRequestStore({ filePath, maxEntries = 200 }) {
 export function formatQqRequestEntry(entry) {
   if (!entry) return "未知申请";
   const kind = entry.requestType === "friend"
-    ? "好友申请"
+    ? entry.subType === "doubt" ? "可疑好友申请" : "好友申请"
     : entry.subType === "invite" ? "群邀请" : "入群申请";
   const target = entry.requestType === "friend"
-    ? `QQ ${entry.userId || "未知"}`
-    : `${entry.userId ? `QQ ${entry.userId}` : "未知用户"}${entry.groupId ? ` / 群 ${entry.groupId}` : ""}`;
+    ? `${entry.requesterNickname ? `${entry.requesterNickname} ` : ""}QQ ${entry.userId || "未知"}`
+    : `${entry.requesterNickname ? `${entry.requesterNickname} ` : ""}${entry.userId ? `QQ ${entry.userId}` : "未知用户"}${entry.groupId ? ` / ${entry.groupName ? `${entry.groupName} ` : ""}群 ${entry.groupId}` : ""}`;
   const status = { pending: "待处理", approved: "已同意", rejected: "已拒绝" }[entry.status] || entry.status;
-  return `#${entry.id} ${kind}｜${target}｜${status}${entry.comment ? `｜留言：${entry.comment}` : ""}`;
+  const commentLabel = entry.requestType === "friend"
+    ? entry.subType === "doubt" ? "可疑原因" : "验证信息"
+    : entry.subType === "invite" ? "附言" : "回答/申请说明";
+  const details = [
+    entry.verificationQuestion ? `问题：${entry.verificationQuestion}` : "",
+    entry.verificationAnswer && !entry.comment.includes(entry.verificationAnswer) ? `回答：${entry.verificationAnswer}` : "",
+    entry.comment ? `${commentLabel}：${entry.comment}` : "",
+    entry.source ? `来源：${entry.source}` : "",
+    entry.lastError ? `上次失败：${entry.lastError}` : ""
+  ].filter(Boolean);
+  return `#${entry.id} ${kind}｜${target}｜${status}${details.length ? `｜${details.join("｜")}` : ""}`;
 }
 
 function normalizeStoredEntries(value) {
@@ -141,7 +163,9 @@ function normalizeStoredEntries(value) {
 
 function normalizeStoredEntry(entry) {
   const requestType = entry?.requestType === "friend" || entry?.requestType === "group" ? entry.requestType : "";
-  const subType = requestType === "group" && entry?.subType === "invite" ? "invite" : "add";
+  const subType = requestType === "group"
+    ? entry?.subType === "invite" ? "invite" : "add"
+    : entry?.subType === "doubt" ? "doubt" : "add";
   const flag = boundedString(entry?.flag, 512);
   if (!requestType || !flag) return null;
   return {
@@ -154,6 +178,11 @@ function normalizeStoredEntry(entry) {
     groupId: normalizeQqId(entry.groupId),
     selfId: normalizeQqId(entry.selfId),
     comment: boundedString(entry.comment, 500).trim(),
+    verificationQuestion: boundedString(entry.verificationQuestion, 300).trim(),
+    verificationAnswer: boundedString(entry.verificationAnswer, 300).trim(),
+    requesterNickname: boundedString(entry.requesterNickname, 100).trim(),
+    groupName: boundedString(entry.groupName, 100).trim(),
+    source: boundedString(entry.source, 120).trim(),
     eventTime: Number.isFinite(Number(entry.eventTime)) ? Number(entry.eventTime) : null,
     receivedAt: boundedString(entry.receivedAt, 40) || new Date().toISOString(),
     updatedAt: boundedString(entry.updatedAt, 40) || new Date().toISOString(),
@@ -163,6 +192,13 @@ function normalizeStoredEntry(entry) {
     autoHandled: Boolean(entry.autoHandled),
     lastError: boundedString(entry.lastError, 500)
   };
+}
+
+function extractVerificationDetails(comment) {
+  const text = String(comment || "").trim();
+  const question = text.match(/(?:问题|题目)\s*[:：]\s*([^\n|｜]+)/i)?.[1]?.trim() || "";
+  const answer = text.match(/(?:答案|回答)\s*[:：]\s*([^\n|｜]+)/i)?.[1]?.trim() || "";
+  return { question, answer };
 }
 
 function normalizeQqId(value) {

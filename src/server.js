@@ -26,6 +26,11 @@ import { buildCodexChildEnv } from "./codex-child-env.js";
 import { resolveAllowedQqMarkerPath, resolveQqMarkerPath } from "./qq-output-policy.js";
 import { createQqZoneClient } from "./qq-qzone.js";
 import { createQqRequestStore, formatQqRequestEntry } from "./qq-request-store.js";
+import {
+  buildQqActiveAddPayload,
+  formatQqActiveAddFailure,
+  parseQqActiveAddCommand
+} from "./qq-social-command.js";
 import { createQqStickerLabelStore, normalizeQqStickerTags } from "./qq-sticker-label-store.js";
 import { createQqStickerInventory } from "./qq-sticker-inventory.js";
 import { inspectAnimatedSticker, probeAnimation } from "./qq-animated-sticker.js";
@@ -3843,8 +3848,8 @@ function formatQqBotInternalToolContext(event) {
     "- [[qq_command:/联网 查询词]] 或 [[qq_command:/搜索 查询词]] 使用 QQ 联网查询工具搜索网页摘要。",
     "- [[qq_command:/拍一拍 发送者]] 拍回当前触发者；也可以写具体 QQ 号或“自己”。只在你确实想执行拍一拍动作时调用。",
     "- [[qq_command:/点赞 发送者 1]] 给当前发送者点赞，次数 1 到 10；普通群友触发时只能点赞发送者、被 @ 或被引用的人。",
-    "- [[qq_command:/申请 列表]] 查看待处理的好友申请、入群申请和群邀请；[[qq_command:/申请 同意 最新]] 或 [[qq_command:/申请 拒绝 #申请ID 理由]] 处理申请。申请处理仅限主人上下文，可信主人发来的申请/群邀请会自动通过并通知主人。",
-    "- [[qq_command:/主动加好友 QQ号 验证信息]]、[[qq_command:/主动加群 群号 答案]] 发起好友或加群申请；仅限主人上下文。若当前 NapCat 没有相应扩展接口，工具会明确返回不支持，不能假装成功。",
+    "- [[qq_command:/申请 列表]] 查看待处理的好友申请、入群申请和群邀请；[[qq_command:/申请 同步]] 补取启动前遗漏的群申请和可疑好友申请；[[qq_command:/申请 同意 最新]] 或 [[qq_command:/申请 拒绝 #申请ID 理由]] 处理申请。申请处理仅限主人上下文，可信主人发来的申请/群邀请会自动通过并通知主人。可疑好友申请只能同意，QQ 当前没有对应的拒绝动作。",
+    "- [[qq_command:/主动加好友 QQ号 验证=验证信息 | 答案=正确答案 | 备注=好友备注]]、[[qq_command:/主动加群 群号 答案=正确答案]] 发起好友或加群申请；旧的单段验证信息/答案写法仍兼容。工具会识别无需验证、验证消息、正确答案、回答后审核、禁止申请、已是好友/群成员、群满和 QQ 风控，并返回问题或明确失败，不能假装成功。",
     "- [[qq_command:/动态 最近 10]] 或 [[qq_command:/动态 最近 QQ号 10]] 读取 QQ 空间最近动态；[[qq_command:/发动态 内容]] 发表文字动态；[[qq_command:/评论动态 QQ号 tid 内容]] 评论动态。空间写操作仅限主人上下文。",
     "- [[qq_command:/记忆 列表]] 查看 bot 自己维护的公共长期记忆。",
     "- [[qq_command:/记忆 添加 内容]] 添加一条公共长期记忆。",
@@ -4110,6 +4115,16 @@ async function executeQqLikeCommand(command, event) {
 async function executeQqRequestCommand(command, event) {
   if (!event.isOwner) return { ok: false, command, reply: "好友和群申请处理只允许主人触发。" };
   const body = String(command).replace(/^(申请|好友申请|群申请)\s*/i, "").trim();
+  if (/^(同步|刷新|补取|sync)$/i.test(body)) {
+    const synced = await syncPendingQqRequests();
+    const entries = qqRequestStore.list({ status: "pending", limit: 30 });
+    const detail = synced.errors.length ? `\n部分来源同步失败：${synced.errors.join("；")}` : "";
+    return {
+      ok: synced.errors.length === 0,
+      command,
+      reply: `已同步 QQ 申请：新增 ${synced.added} 条，重复 ${synced.duplicates} 条，当前待处理 ${entries.length} 条。${detail}`
+    };
+  }
   if (!body || /^(列表|待处理|查看|list)$/i.test(body) || /^列表\s*(待处理|全部)?$/i.test(body)) {
     const all = /全部/i.test(body);
     const entries = qqRequestStore.list({ status: all ? "all" : "pending", limit: 30 });
@@ -4122,14 +4137,14 @@ async function executeQqRequestCommand(command, event) {
     };
   }
   const match = body.match(/^(同意|通过|接受|拒绝|驳回)(?:\s+(#[a-f0-9]{10}|最新|latest|\S+))?(?:\s+([\s\S]+))?$/i);
-  if (!match) return { ok: false, command, reply: "用法：/申请 列表、/申请 同意 最新 [备注]、/申请 拒绝 #申请ID [理由]。" };
+  if (!match) return { ok: false, command, reply: "用法：/申请 列表、/申请 同步、/申请 同意 最新 [备注]、/申请 拒绝 #申请ID [理由]。" };
   const approve = /^(同意|通过|接受)$/i.test(match[1]);
   const selector = match[2] || "最新";
   const entry = qqRequestStore.find(selector, { pendingOnly: true });
   if (!entry) return { ok: false, command, reply: `没有找到待处理申请：${selector}` };
   const handled = await handleQqRequest(entry, {
     approve,
-    note: String(match[3] || "").trim(),
+    note: normalizeQqRequestNote(match[3]),
     handledBy: String(event.senderId || "owner"),
     autoHandled: false
   });
@@ -4138,9 +4153,18 @@ async function executeQqRequestCommand(command, event) {
 }
 
 async function handleQqRequest(entry, { approve, note = "", handledBy = "bot", autoHandled = false }) {
-  const endpoint = entry.requestType === "friend" ? "set_friend_add_request" : "set_group_add_request";
+  if (entry.requestType === "friend" && entry.subType === "doubt" && !approve) {
+    const error = "QQ 当前只提供同意可疑好友申请的动作，无法可靠拒绝；申请仍保持待处理。";
+    const updated = await qqRequestStore.update(entry.id, { lastError: error, handledBy, autoHandled });
+    return { ok: false, entry: updated || entry, error, reply: error };
+  }
+  const endpoint = entry.requestType === "friend"
+    ? entry.subType === "doubt" ? "set_doubt_friends_add_request" : "set_friend_add_request"
+    : "set_group_add_request";
   const payload = entry.requestType === "friend"
-    ? { flag: entry.flag, approve, remark: approve ? note : "" }
+    ? entry.subType === "doubt"
+      ? { flag: entry.flag, approve: true }
+      : { flag: entry.flag, approve, remark: approve ? note : "" }
     : { flag: entry.flag, sub_type: entry.subType, approve, reason: approve ? "" : note };
   const result = await callOneBotAction(endpoint, payload);
   if (!result.ok) {
@@ -4166,9 +4190,9 @@ async function handleQqRequest(entry, { approve, note = "", handledBy = "bot", a
 
 async function executeQqActiveAddCommand(command, event) {
   if (!event.isOwner) return { ok: false, command, reply: "主动加好友或群只允许主人触发。" };
-  const match = String(command).match(/^(主动加好友|主动加群)\s+([1-9][0-9]{4,12})(?:\s+([\s\S]+))?$/i);
-  if (!match) return { ok: false, command, reply: "用法：/主动加好友 QQ号 [验证信息]，或 /主动加群 群号 [答案]。" };
-  const kind = match[1] === "主动加好友" ? "friend" : "group";
+  const parsed = parseQqActiveAddCommand(command);
+  if (!parsed) return { ok: false, command, reply: "用法：/主动加好友 QQ号 [验证=验证信息 | 答案=正确答案 | 备注=好友备注]，或 /主动加群 群号 [答案=正确答案]。" };
+  const { kind, targetId } = parsed;
   if (!qqSocialExtensionBase) {
     return {
       ok: false,
@@ -4180,23 +4204,114 @@ async function executeQqActiveAddCommand(command, event) {
     const response = await fetch(`${qqSocialExtensionBase}/${kind === "friend" ? "add-friend" : "join-group"}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ target_id: match[2], message: String(match[3] || "").trim() })
+      body: JSON.stringify(buildQqActiveAddPayload(parsed))
     });
     const result = await readResponseJson(response).catch(() => ({}));
     const ok = response.ok && (result.ok === true || result.status === "ok" || Number(result.code) === 0);
     const alreadyFriend = kind === "friend" && result.status === "already_friend";
+    const alreadyMember = kind === "group" && result.status === "already_member";
+    const pendingApproval = result.status === "pending_approval";
     return {
       ok,
       command,
       reply: ok
         ? alreadyFriend
-          ? `${match[2]} 已经是 Bot 好友，不重复发送申请。`
-          : `已发起${kind === "friend" ? "好友" : "加群"}申请：${match[2]}。`
-        : `发起申请失败：${result.error || `HTTP ${response.status}`}`
+          ? `${targetId} 已经是 Bot 好友，不重复发送申请。`
+          : alreadyMember
+            ? `Bot 已经在群 ${targetId} 中，不重复发送申请。`
+            : pendingApproval
+              ? `已提交${kind === "friend" ? "好友" : "加群"}申请：${targetId}，正在等待对方审核。`
+              : `已向 QQ 提交${kind === "friend" ? "加好友" : "加群"}操作：${targetId}${result?.verification_mode ? `（${result.verification_mode}）` : ""}。`
+        : formatQqActiveAddFailure(kind, targetId, result, response.status)
     };
   } catch (error) {
     return { ok: false, command, reply: `发起申请失败：${error.message}` };
   }
+}
+
+async function syncPendingQqRequests() {
+  let added = 0;
+  let duplicates = 0;
+  const errors = [];
+  const record = async (payload) => {
+    const result = await qqRequestStore.record(payload);
+    if (!result.entry) return;
+    if (result.isNew) added += 1;
+    else duplicates += 1;
+  };
+
+  const groupResult = await callOneBotAction("get_group_system_msg", { count: 100 }).catch((error) => ({ ok: false, error: error.message }));
+  if (groupResult.ok) {
+    const data = groupResult.body?.data || {};
+    const invited = Array.isArray(data.invited_requests) ? data.invited_requests : Array.isArray(data.InvitedRequest) ? data.InvitedRequest : [];
+    const joined = Array.isArray(data.join_requests) ? data.join_requests : [];
+    for (const item of invited) {
+      if (item?.checked) continue;
+      await record({
+        post_type: "request",
+        request_type: "group",
+        sub_type: "invite",
+        flag: String(item?.request_id || ""),
+        user_id: item?.invitor_uin,
+        group_id: item?.group_id,
+        comment: item?.message,
+        requester_nickname: item?.invitor_nick,
+        group_name: item?.group_name,
+        time: normalizeQqRequestTime(item?.request_id)
+      });
+    }
+    for (const item of joined) {
+      if (item?.checked) continue;
+      await record({
+        post_type: "request",
+        request_type: "group",
+        sub_type: "add",
+        flag: String(item?.request_id || ""),
+        user_id: item?.invitor_uin,
+        group_id: item?.group_id,
+        comment: item?.message,
+        requester_nickname: item?.requester_nick || item?.invitor_nick,
+        group_name: item?.group_name,
+        time: normalizeQqRequestTime(item?.request_id)
+      });
+    }
+  } else {
+    errors.push(formatOneBotActionFailure("同步群申请", groupResult));
+  }
+
+  const doubtResult = await callOneBotAction("get_doubt_friends_add_request", { count: 50 }).catch((error) => ({ ok: false, error: error.message }));
+  if (doubtResult.ok) {
+    const items = Array.isArray(doubtResult.body?.data) ? doubtResult.body.data : [];
+    for (const item of items) {
+      await record({
+        post_type: "request",
+        request_type: "friend",
+        sub_type: "doubt",
+        flag: String(item?.flag || item?.uid || ""),
+        user_id: item?.user_id || item?.uin,
+        group_id: item?.group_code,
+        comment: item?.reason || item?.msg || "",
+        requester_nickname: item?.nickname || item?.nick,
+        source: item?.source,
+        time: item?.time
+      });
+    }
+  } else {
+    errors.push(formatOneBotActionFailure("同步可疑好友申请", doubtResult));
+  }
+  return { added, duplicates, errors };
+}
+
+function normalizeQqRequestNote(value) {
+  return String(value || "").trim().replace(/^(?:备注|理由|原因)\s*[:=：]\s*/i, "").slice(0, 300);
+}
+
+function normalizeQqRequestTime(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number) || number <= 0) return undefined;
+  if (number > 10_000_000_000_000) return Math.floor(number / 1_000_000);
+  if (number > 10_000_000_000) return Math.floor(number / 1_000);
+  return Math.floor(number);
 }
 
 async function executeQqZoneCommand(command, event) {
