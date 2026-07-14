@@ -388,10 +388,11 @@ Unified memory and recent Codex context search are built into `src/unified-memor
 
 ### QQ Social Actions and Group Administration
 
-The Bot also has built-in social tools that stay out of `/菜单`: likes, friend/group request review, QQ Space mood reading, text mood publishing, and mood comments. Incoming friend requests, group join requests, and group invitations are persisted in `data/qq-requests.json` and reported to every configured owner. Requests sent by a configured owner are trusted, automatically approved, and still reported; all other requests wait for an owner/Bot decision.
+The Bot also has built-in social tools that stay out of `/菜单`: likes, friend/group request review, QQ Space mood reading, text mood publishing, and mood comments. Incoming friend requests, group join requests, and group invitations are persisted in `data/qq-requests.json` and reported to every configured owner. Requests sent by a configured owner are trusted, automatically approved, and still reported; all other requests wait for an owner/Bot decision. `/申请 同步` backfills group requests missed before startup plus QQ's separate suspicious-friend queue. Suspicious friend requests can be approved but cannot be reliably rejected because NapCat exposes no reject operation for that queue.
 
 - `[[qq_command:/点赞 发送者 1]]`
 - `[[qq_command:/申请 列表]]`
+- `[[qq_command:/申请 同步]]`
 - `[[qq_command:/申请 同意 最新]]`
 - `[[qq_command:/申请 拒绝 #申请ID 理由]]`
 - `[[qq_command:/动态 最近 QQ号 10]]`
@@ -409,7 +410,14 @@ Group administration is visible and permission-controlled under the `groupAdmin`
 /群禁言列表
 ```
 
-NapCat 4.18.9 does not expose public OneBot actions for initiating a friend or group request. `/主动加好友` and `/主动加群` therefore return an explicit unsupported result unless a local extension bridge is configured through `CODEX_REMOTE_CONTACT_QQ_SOCIAL_API_BASE`; the Bot never reports success without a successful upstream response.
+NapCat 4.18.9 does not expose public OneBot actions for initiating a friend or group request, so `ncc connect` deploys the loopback-only bridge configured through `CODEX_REMOTE_CONTACT_QQ_SOCIAL_API_BASE`. The bridge supports QQNT friend verification modes (no verification, verification message, correct answer, answer plus approval, or requests disabled) and group modes (direct join, admin approval, join disabled, correct answer, or answer plus approval). It reports questions, disabled/full/already-member states, and QQ risk-control failures without claiming success prematurely.
+
+```text
+/主动加好友 QQ号 验证=验证信息 | 答案=正确答案 | 备注=好友备注 | 分组=3
+/主动加群 群号 答案=正确答案
+```
+
+The legacy single trailing argument remains valid as a friend verification message or group answer.
 
 Custom data paths:
 
