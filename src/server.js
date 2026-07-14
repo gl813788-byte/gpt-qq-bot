@@ -1,11 +1,20 @@
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
-import { access, copyFile, mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, open, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { brotliDecompressSync } from "node:zlib";
-import { corsHeaders, readBody, sendJson } from "./http-utils.js";
+import { brotliDecompress } from "node:zlib";
+import { promisify } from "node:util";
+import {
+  corsHeaders,
+  isLoopbackHost,
+  isLoopbackRequestHost,
+  isRequestOriginAllowed,
+  parseAllowedOrigins,
+  readBody,
+  sendJson
+} from "./http-utils.js";
 import { createLogger } from "./logger.js";
 import { buildLogsResponse } from "./log-api.js";
 import { importOptionalModule } from "./optional-modules.js";
@@ -53,9 +62,19 @@ import {
 import { createRuntimePaths } from "./runtime-paths.js";
 import { createScopedReplyScheduler } from "./scoped-reply-scheduler.js";
 import { serializeFileOperation, writeJsonAtomically } from "./file-store.js";
+import { createWebSearch, formatWebSearchProviderName } from "./web-search.js";
+import { isSupportedImageContentType, readResponseJson, writeResponseBodyToFile } from "./bounded-stream.js";
+import { runJsonProcess, runProcess } from "./process-runner.js";
+import { createDashboardAssetHandler } from "./dashboard-assets.js";
+import { requestHasValidToken } from "./request-auth.js";
+import { fetchWithUrlPolicy } from "./safe-fetch.js";
+import { createCoalescingWriter } from "./coalescing-writer.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const projectDir = join(__dirname, "..");
+const dashboardAssetDir = join(projectDir, "modules", "mac-client", "Resources");
+const handleDashboardAsset = createDashboardAssetHandler({ directory: dashboardAssetDir });
+const brotliDecompressAsync = promisify(brotliDecompress);
 const qqSendableImageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 const {
   codexWorkspaceDir,
@@ -215,7 +234,20 @@ if (qqEnhancerModule) {
 }
 
 const oneBotApiBase = process.env.ONEBOT_API_BASE || "http://127.0.0.1:3000";
+const oneBotAccessToken = String(process.env.ONEBOT_ACCESS_TOKEN || process.env.CODEX_REMOTE_CONTACT_ONEBOT_TOKEN || "").trim();
+const managementApiToken = String(process.env.CODEX_REMOTE_CONTACT_API_TOKEN || "").trim();
 const oneBotRequestTimeoutMs = Math.max(1000, Math.min(30000, Number(process.env.CODEX_REMOTE_CONTACT_ONEBOT_TIMEOUT_MS || 10000) || 10000));
+const oneBotHealthTtlMs = Math.max(5_000, Math.min(60_000, Number(process.env.CODEX_REMOTE_CONTACT_ONEBOT_HEALTH_TTL_MS || 15_000) || 15_000));
+const oneBotMaxConcurrencyValue = String(process.env.CODEX_REMOTE_CONTACT_ONEBOT_MAX_CONCURRENCY ?? "").trim();
+const oneBotMaxConcurrencyRaw = oneBotMaxConcurrencyValue ? Number(oneBotMaxConcurrencyValue) : 8;
+const oneBotMaxConcurrency = Number.isFinite(oneBotMaxConcurrencyRaw)
+  ? Math.max(1, Math.min(32, Math.floor(oneBotMaxConcurrencyRaw)))
+  : 8;
+const oneBotMaxPendingValue = String(process.env.CODEX_REMOTE_CONTACT_ONEBOT_MAX_PENDING ?? "").trim();
+const oneBotMaxPendingRaw = oneBotMaxPendingValue ? Number(oneBotMaxPendingValue) : 32;
+const oneBotMaxPending = Number.isFinite(oneBotMaxPendingRaw)
+  ? Math.max(0, Math.min(256, Math.floor(oneBotMaxPendingRaw)))
+  : 32;
 const codexCliPath = process.env.CODEX_CLI_PATH || "/Applications/Codex.app/Contents/Resources/codex";
 const codexModelCatalog = createCodexModelCatalog({
   codexPath: codexCliPath,
@@ -227,6 +259,10 @@ const codexMaxConcurrencyRaw = Number(process.env.CODEX_REMOTE_CONTACT_CODEX_MAX
 const codexMaxConcurrency = Number.isFinite(codexMaxConcurrencyRaw)
   ? Math.max(1, Math.min(8, Math.floor(codexMaxConcurrencyRaw)))
   : 2;
+const codexMaxPendingRaw = Number(process.env.CODEX_REMOTE_CONTACT_CODEX_MAX_PENDING || 32);
+const codexMaxPending = Number.isFinite(codexMaxPendingRaw)
+  ? Math.max(0, Math.min(256, Math.floor(codexMaxPendingRaw)))
+  : 32;
 const imessageCodexModel = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_CODEX_MODEL || "gpt-5.4";
 const imessageCodexReasoningEffort = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_REASONING_EFFORT || "medium";
 const qqEnhancerEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_ENHANCER !== "0";
@@ -249,6 +285,18 @@ const openRouterBaseUrl = process.env.OPENROUTER_BASE_URL || process.env.CODEX_R
 const imessageMemoryLimit = Number(process.env.CODEX_REMOTE_CONTACT_IMESSAGE_MEMORY_LIMIT || 120);
 const remoteExecutionMemoryLimit = Number(process.env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MEMORY_LIMIT || 160);
 const remoteExecutionIdleTtlMs = Number(process.env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_IDLE_TTL_MS || 15 * 60 * 1000);
+const sqliteTimeoutMsRaw = Number(process.env.CODEX_REMOTE_CONTACT_SQLITE_TIMEOUT_MS || 8_000);
+const sqliteTimeoutMs = Number.isFinite(sqliteTimeoutMsRaw)
+  ? Math.max(1_000, Math.min(30_000, Math.floor(sqliteTimeoutMsRaw)))
+  : 8_000;
+const sqliteMaxOutputBytesRaw = Number(process.env.CODEX_REMOTE_CONTACT_SQLITE_MAX_OUTPUT_BYTES || 2 * 1024 * 1024);
+const sqliteMaxOutputBytes = Number.isFinite(sqliteMaxOutputBytesRaw)
+  ? Math.max(64 * 1024, Math.min(16 * 1024 * 1024, Math.floor(sqliteMaxOutputBytesRaw)))
+  : 2 * 1024 * 1024;
+const codexQuotaCacheTtlMsRaw = Number(process.env.CODEX_REMOTE_CONTACT_QUOTA_CACHE_TTL_MS || 30_000);
+const codexQuotaCacheTtlMs = Number.isFinite(codexQuotaCacheTtlMsRaw)
+  ? Math.max(5_000, Math.min(5 * 60_000, Math.floor(codexQuotaCacheTtlMsRaw)))
+  : 30_000;
 const qqWebLookupEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP !== "0";
 const qqWebLookupTimeoutMs = Number(
   process.env.CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS
@@ -265,12 +313,31 @@ const qqWebSearchProviderConfig = String(process.env.CODEX_REMOTE_CONTACT_QQ_WEB
 const qqSocialExtensionBase = String(process.env.CODEX_REMOTE_CONTACT_QQ_SOCIAL_API_BASE || "").trim().replace(/\/$/, "");
 const tavilyApiKey = process.env.TAVILY_API_KEY || process.env.CODEX_REMOTE_CONTACT_TAVILY_API_KEY || "";
 const qqOwnerFileImageTasksEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_OWNER_FILE_IMAGE_TASKS !== "0";
+const qqImageMaxBytesRaw = Number(process.env.CODEX_REMOTE_CONTACT_QQ_IMAGE_MAX_BYTES || 20 * 1024 * 1024);
+const qqImageMaxBytes = Number.isFinite(qqImageMaxBytesRaw)
+  ? Math.max(256 * 1024, Math.min(100 * 1024 * 1024, Math.floor(qqImageMaxBytesRaw)))
+  : 20 * 1024 * 1024;
 const qqBubbleSeparator = normalizeQqBubbleSeparator(process.env.CODEX_REMOTE_CONTACT_QQ_BUBBLE_SEPARATOR || "|||");
 const qqBubbleSendDelayMs = Math.max(0, Number(process.env.CODEX_REMOTE_CONTACT_QQ_BUBBLE_SEND_DELAY_MS || 650));
 const qqBubbleMaxCount = Math.max(1, Number(process.env.CODEX_REMOTE_CONTACT_QQ_BUBBLE_MAX_COUNT || 6));
 const hubPortRaw = Number(process.env.CODEX_REMOTE_CONTACT_PORT || 3789);
 const hubPort = Number.isInteger(hubPortRaw) && hubPortRaw > 0 && hubPortRaw <= 65535 ? hubPortRaw : 3789;
 const hubHost = process.env.CODEX_REMOTE_CONTACT_HOST || "127.0.0.1";
+const hubAllowedOrigins = parseAllowedOrigins(process.env.CODEX_REMOTE_CONTACT_CORS_ORIGINS, [
+  `http://127.0.0.1:${hubPort}`,
+  `http://localhost:${hubPort}`,
+  `http://[::1]:${hubPort}`
+]);
+const allowRemoteHubBinding = process.env.CODEX_REMOTE_CONTACT_ALLOW_REMOTE === "1";
+if (!isLoopbackHost(hubHost) && !allowRemoteHubBinding) {
+  throw new Error("Refusing non-loopback Hub binding without CODEX_REMOTE_CONTACT_ALLOW_REMOTE=1");
+}
+if (!isLoopbackHost(hubHost) && !managementApiToken) {
+  throw new Error("Refusing non-loopback Hub binding without CODEX_REMOTE_CONTACT_API_TOKEN");
+}
+if (hubAllowedOrigins.includes("*") && !managementApiToken) {
+  throw new Error("Refusing wildcard CORS without CODEX_REMOTE_CONTACT_API_TOKEN");
+}
 const proxyShortcutName = process.env.CODEX_REMOTE_CONTACT_PROXY_TOGGLE_SHORTCUT || "切换VPN";
 const proxyConfirmTtlMs = Number(process.env.CODEX_REMOTE_CONTACT_PROXY_CONFIRM_TTL_MS || 3 * 60 * 1000);
 const imessageAttachmentSendingEnabled = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_ATTACHMENTS === "1";
@@ -411,7 +478,7 @@ const state = {
     allowedGroups: [],
     ownerUserIds: [],
     bannedUserIds: [],
-    bannedUntilByUserId: {},
+    bannedUntilByUserId: createSafeRecord(),
     enhancer: {
       enabled: qqEnhancerEnabled
     },
@@ -422,10 +489,10 @@ const state = {
       enabled: qqEnhancerEnabled && qqProactiveReplyEnabled,
       judgeEveryMessages: qqProactiveJudgeEveryMessages,
       judgeEveryMinutes: qqProactiveJudgeEveryMinutes,
-      messageCountByGroupId: {},
-      lastJudgeAtByGroupId: {},
-      judgeInFlightByGroupId: {},
-      pendingImageRequests: {},
+      messageCountByGroupId: createSafeRecord(),
+      lastJudgeAtByGroupId: createSafeRecord(),
+      judgeInFlightByGroupId: createSafeRecord(),
+      pendingImageRequests: createSafeRecord(),
       judge: {
         enabled: qqProactiveJudgeEnabled,
         provider: "openrouter",
@@ -439,19 +506,19 @@ const state = {
       }
     },
     commandPermissions: {
-      publicCommands: {},
-      userCommands: {}
+      publicCommands: createSafeRecord(),
+      userCommands: createSafeRecord()
     },
     activeGeneration: null,
-    activeGenerations: {},
-    pendingReplies: {},
+    activeGenerations: createSafeRecord(),
+    pendingReplies: createSafeRecord(),
     events: [],
     memory: {
       enabled: true,
       perGroupLimit: qqMemoryLimit,
       groupRecentLimit: qqGroupMemoryLimit,
-      entries: {},
-      recentMessages: {}
+      entries: createSafeRecord(),
+      recentMessages: createSafeRecord()
     },
     publicMemory: {
       enabled: true,
@@ -459,7 +526,7 @@ const state = {
       entries: []
     },
     personas: {
-      groups: {}
+      groups: createSafeRecord()
     },
     conversationMemory: createEmptyQqConversationMemory()
   },
@@ -474,7 +541,7 @@ const state = {
     events: [],
     memory: {
       perHandleLimit: imessageMemoryLimit,
-      entries: {}
+      entries: createSafeRecord()
     }
   },
   proxy: {
@@ -538,19 +605,42 @@ const qqProactiveLatestEventByGroupId = new Map();
 const qqGroupActivityVersionByGroupId = new Map();
 const seenMessageTtlMs = 10 * 60 * 1000;
 const stoppedQqGenerationIds = new Set();
+const activeCodexChildren = new Set();
+const backgroundTasks = new Set();
+const shutdownController = new AbortController();
 const qqReplyScheduler = createScopedReplyScheduler();
-const codexRunLimiter = createConcurrencyLimiter(codexMaxConcurrency);
+const codexRunLimiter = createConcurrencyLimiter(codexMaxConcurrency, { maxPending: codexMaxPending });
+const oneBotWebhookLimiter = createConcurrencyLimiter(oneBotMaxConcurrency, { maxPending: oneBotMaxPending });
 const qqPendingReplyLimit = 8;
 const qqPendingReplyMaxTextLength = 1200;
+const qqStateScopeLimit = Math.max(50, Math.min(5_000, Number(process.env.CODEX_REMOTE_CONTACT_QQ_SCOPE_LIMIT || 500) || 500));
+const qqPersonaMemberLimit = Math.max(50, Math.min(2_000, Number(process.env.CODEX_REMOTE_CONTACT_QQ_PERSONA_MEMBER_LIMIT || 500) || 500));
 let imessagePollTimer = null;
 let remoteExecutionIdleTimer = null;
 let qqProactiveMinuteTimer = null;
 let qqProactiveMinuteChecking = false;
 let imessagePolling = false;
+let shuttingDown = false;
 const seenIMessageGuids = new Map();
 const recentIMessageReplies = new Map();
 const recentIMessageRequests = new Map();
 const imessageReplyEchoTtlMs = 5 * 60 * 1000;
+
+function trackBackgroundTask(task, onError = null) {
+  const handled = Promise.resolve(task).catch((error) => {
+    if (onError) return onError(error);
+    throw error;
+  });
+  const tracked = handled.finally(() => backgroundTasks.delete(tracked));
+  backgroundTasks.add(tracked);
+  return tracked;
+}
+
+async function waitForBackgroundTasks() {
+  while (backgroundTasks.size > 0) {
+    await Promise.allSettled([...backgroundTasks]);
+  }
+}
 const imessageSeenTtlMs = 30 * 60 * 1000;
 const imessageRequestDedupeTtlMs = 45 * 1000;
 const imessageStartupGraceMs = 10 * 1000;
@@ -569,10 +659,10 @@ async function loadQqMemory() {
   try {
     const body = JSON.parse(await readFile(qqMemoryPath, "utf8"));
     if (body && typeof body === "object" && body.entries && typeof body.entries === "object") {
-      state.qq.memory.entries = body.entries;
+      state.qq.memory.entries = createSafeRecord(body.entries);
     }
     if (body && typeof body === "object" && body.recentMessages && typeof body.recentMessages === "object") {
-      state.qq.memory.recentMessages = body.recentMessages;
+      state.qq.memory.recentMessages = createSafeRecord(body.recentMessages);
     }
   } catch (error) {
     if (error.code !== "ENOENT") {
@@ -603,7 +693,7 @@ async function loadQqPersonas() {
   try {
     const body = JSON.parse(await readFile(qqPersonasPath, "utf8"));
     if (body && typeof body === "object" && body.groups && typeof body.groups === "object") {
-      state.qq.personas.groups = body.groups;
+      state.qq.personas.groups = createSafeRecord(body.groups);
     }
   } catch (error) {
     if (error.code !== "ENOENT") {
@@ -633,10 +723,10 @@ async function loadSettings() {
       state.qq.allowedGroups = normalizeAllowedGroups(body.qq.allowedGroups);
     }
     if (Array.isArray(body.qq?.ownerUserIds)) {
-      state.qq.ownerUserIds = normalizeList(body.qq.ownerUserIds);
+      state.qq.ownerUserIds = normalizeList(body.qq.ownerUserIds).filter(isValidQqUserId);
     }
     if (Array.isArray(body.qq?.bannedUserIds)) {
-      state.qq.bannedUserIds = normalizeList(body.qq.bannedUserIds);
+      state.qq.bannedUserIds = normalizeList(body.qq.bannedUserIds).filter(isValidQqUserId);
     }
     if (body.qq?.bannedUntilByUserId && typeof body.qq.bannedUntilByUserId === "object") {
       state.qq.bannedUntilByUserId = normalizeQqBanExpiryMap(body.qq.bannedUntilByUserId);
@@ -831,7 +921,7 @@ function isValidRemoteExecutionSkill(value) {
 }
 
 function normalizeAllowedGroups(groups) {
-  return normalizeList(groups);
+  return normalizeList(groups).filter((id) => Boolean(normalizeQqIdentifier(id)));
 }
 
 function normalizeQqPublicCommandPermissions(value) {
@@ -848,7 +938,7 @@ function normalizeQqPublicCommandPermissions(value) {
 
 function normalizeQqUserCommandPermissions(value) {
   const source = value && typeof value === "object" ? value : {};
-  const output = {};
+  const output = createSafeRecord();
   for (const command of qqCommandCatalog) {
     if (!command.configurable) continue;
     const ids = normalizeQqUserPermissionIds(source[command.key]);
@@ -867,7 +957,7 @@ function isValidQqUserId(value) {
 }
 
 function normalizeQqBanExpiryMap(value) {
-  const output = {};
+  const output = createSafeRecord();
   for (const [rawId, rawUntil] of Object.entries(value || {})) {
     const id = String(rawId || "").trim();
     if (!/^[1-9][0-9]{4,12}$/.test(id)) continue;
@@ -878,12 +968,23 @@ function normalizeQqBanExpiryMap(value) {
 }
 
 function normalizeQqProactiveMessageCounts(value) {
-  const output = {};
+  const output = createSafeRecord();
   for (const [rawGroupId, rawCount] of Object.entries(value || {})) {
     const groupId = String(rawGroupId || "").trim();
     const count = Number(rawCount);
-    if (!groupId || !Number.isFinite(count) || count < 0) continue;
+    if (!/^\d{4,20}$/.test(groupId) || !Number.isFinite(count) || count < 0) continue;
     output[groupId] = Math.floor(count);
+  }
+  return output;
+}
+
+function createSafeRecord(value) {
+  if (value && typeof value === "object" && !Array.isArray(value) && Object.getPrototypeOf(value) === null) return value;
+  const output = Object.create(null);
+  if (!value || typeof value !== "object" || Array.isArray(value)) return output;
+  for (const [key, entry] of Object.entries(value)) {
+    if (["__proto__", "prototype", "constructor"].includes(key)) continue;
+    output[key] = entry;
   }
   return output;
 }
@@ -1038,7 +1139,18 @@ function createQqReplyStoppedError() {
 }
 
 function assertQqReplyScopeActive(scope) {
+  assertHubAcceptingOutbound();
   if (scope?.cancelled) throw createQqReplyStoppedError();
+}
+
+function createHubShuttingDownError() {
+  const error = new Error("Hub is shutting down");
+  error.code = "HUB_SHUTTING_DOWN";
+  return error;
+}
+
+function assertHubAcceptingOutbound() {
+  if (shuttingDown) throw createHubShuttingDownError();
 }
 
 function shouldQueueQqEventDuringGeneration(event, decision, commandAction) {
@@ -1151,8 +1263,61 @@ function formatQueuedQqReplyContext(event) {
 }
 
 function recordQqEvent(record) {
-  state.qq.events.unshift(record);
+  state.qq.events.unshift(sanitizePublicQqEvent(record));
   state.qq.events = state.qq.events.slice(0, 30);
+}
+
+function pruneQqStateScopes() {
+  const scopeIds = new Set([
+    ...Object.keys(state.qq.memory.entries),
+    ...Object.keys(state.qq.memory.recentMessages),
+    ...Object.keys(state.qq.personas.groups),
+    ...Object.keys(state.qq.conversationMemory.groups || {}).map(String),
+    ...Object.keys(state.qq.conversationMemory.privateChats || {}).map((id) => `private:${id}`)
+  ]);
+  if (scopeIds.size <= qqStateScopeLimit) return false;
+  const protectedScopes = new Set([
+    ...state.qq.allowedGroups,
+    ...Object.keys(state.qq.activeGenerations),
+    ...Object.keys(state.qq.pendingReplies)
+  ]);
+  const candidates = [...scopeIds]
+    .filter((scopeId) => !protectedScopes.has(scopeId))
+    .map((scopeId) => ({ scopeId, updatedAt: getQqScopeUpdatedAt(scopeId) }))
+    .sort((left, right) => left.updatedAt - right.updatedAt);
+  let changed = false;
+  while (scopeIds.size > qqStateScopeLimit && candidates.length > 0) {
+    const { scopeId } = candidates.shift();
+    scopeIds.delete(scopeId);
+    delete state.qq.memory.entries[scopeId];
+    delete state.qq.memory.recentMessages[scopeId];
+    delete state.qq.pendingReplies[scopeId];
+    if (scopeId.startsWith("private:")) {
+      delete state.qq.conversationMemory.privateChats[scopeId.slice("private:".length)];
+    } else {
+      delete state.qq.personas.groups[scopeId];
+      delete state.qq.conversationMemory.groups[scopeId];
+      delete state.qq.proactive.messageCountByGroupId[scopeId];
+      delete state.qq.proactive.lastJudgeAtByGroupId[scopeId];
+      qqProactiveLatestEventByGroupId.delete(scopeId);
+      qqGroupActivityVersionByGroupId.delete(scopeId);
+    }
+    changed = true;
+  }
+  return changed;
+}
+
+function getQqScopeUpdatedAt(scopeId) {
+  const recentAt = state.qq.memory.recentMessages[scopeId]?.at(-1)?.at;
+  const exchangeAt = state.qq.memory.entries[scopeId]?.at(-1)?.at;
+  const memoryRecord = scopeId.startsWith("private:")
+    ? state.qq.conversationMemory.privateChats?.[scopeId.slice("private:".length)]
+    : state.qq.conversationMemory.groups?.[scopeId];
+  const persona = state.qq.personas.groups[scopeId];
+  const values = [recentAt, exchangeAt, memoryRecord?.updatedAt, persona?.updatedAt]
+    .map((value) => Date.parse(value || ""))
+    .filter(Number.isFinite);
+  return values.length > 0 ? Math.max(...values) : 0;
 }
 
 async function processQueuedQqRepliesForScope(scopeId, source = "queued") {
@@ -1167,8 +1332,8 @@ async function processQueuedQqRepliesForScope(scopeId, source = "queued") {
   });
 }
 
-async function saveQqMemory() {
-  return serializeFileOperation(qqMemoryPath, async () => {
+const qqMemoryWriter = createCoalescingWriter(async () => {
+  await serializeFileOperation(qqMemoryPath, async () => {
     await writeJsonAtomically(qqMemoryPath, {
       version: 1,
       updatedAt: new Date().toISOString(),
@@ -1178,6 +1343,10 @@ async function saveQqMemory() {
       recentMessages: state.qq.memory.recentMessages
     });
   });
+}, { delayMs: 100 });
+
+async function saveQqMemory() {
+  return qqMemoryWriter.schedule();
 }
 
 async function saveQqPublicMemory() {
@@ -1191,24 +1360,32 @@ async function saveQqPublicMemory() {
   });
 }
 
-async function saveQqPersonas() {
-  return serializeFileOperation(qqPersonasPath, async () => {
+const qqPersonasWriter = createCoalescingWriter(async () => {
+  await serializeFileOperation(qqPersonasPath, async () => {
     await writeJsonAtomically(qqPersonasPath, {
       version: 1,
       updatedAt: new Date().toISOString(),
       groups: state.qq.personas.groups
     });
   });
+}, { delayMs: 150 });
+
+async function saveQqPersonas() {
+  return qqPersonasWriter.schedule();
 }
 
-async function saveQqConversationMemory() {
-  return serializeFileOperation(qqConversationMemoryPath, async () => {
+const qqConversationMemoryWriter = createCoalescingWriter(async () => {
+  await serializeFileOperation(qqConversationMemoryPath, async () => {
     await writeJsonAtomically(qqConversationMemoryPath, {
       ...state.qq.conversationMemory,
       version: 1,
       updatedAt: new Date().toISOString()
     });
   });
+}, { delayMs: 150 });
+
+async function saveQqConversationMemory() {
+  return qqConversationMemoryWriter.schedule();
 }
 
 async function loadIMessageMemory() {
@@ -1216,7 +1393,7 @@ async function loadIMessageMemory() {
   try {
     const body = JSON.parse(await readFile(imessageMemoryPath, "utf8"));
     if (body && typeof body === "object" && body.entries && typeof body.entries === "object") {
-      state.imessage.memory.entries = body.entries;
+      state.imessage.memory.entries = createSafeRecord(body.entries);
     }
   } catch (error) {
     if (error.code !== "ENOENT") {
@@ -1301,10 +1478,29 @@ function buildPublicState() {
         }];
       })
   );
+  const activeGenerations = Object.fromEntries(
+    Object.entries(state.qq.activeGenerations).map(([scopeId, generation]) => [scopeId, sanitizeActiveGeneration(generation)])
+  );
   return {
-    ...state,
+    ai: {
+      provider: state.ai.provider,
+      model: state.ai.model,
+      reasoningEffort: state.ai.reasoningEffort,
+      imessageModel: state.ai.imessageModel,
+      imessageReasoningEffort: state.ai.imessageReasoningEffort
+    },
+    channels: { ...state.channels },
     qq: {
-      ...state.qq,
+      groupMode: state.qq.groupMode,
+      allowedGroups: [...state.qq.allowedGroups],
+      enhancer: { enabled: state.qq.enhancer.enabled },
+      webLookup: { enabled: state.qq.webLookup.enabled },
+      proactive: {
+        enabled: state.qq.proactive.enabled,
+        judgeEveryMessages: state.qq.proactive.judgeEveryMessages,
+        judgeEveryMinutes: state.qq.proactive.judgeEveryMinutes
+      },
+      events: state.qq.events.slice(0, 30).map(sanitizePublicQqEvent),
       memory: {
         enabled: state.qq.memory.enabled,
         perGroupLimit: state.qq.memory.perGroupLimit,
@@ -1317,44 +1513,21 @@ function buildPublicState() {
         maxEntries: state.qq.publicMemory.maxEntries,
         count: state.qq.publicMemory.entries.length
       },
-      activeGenerations: Object.fromEntries(
-        Object.entries(state.qq.activeGenerations).map(([scopeId, generation]) => [scopeId, {
-          id: generation.id,
-          scopeId: generation.scopeId,
-          groupId: generation.groupId,
-          senderId: generation.senderId,
-          startedAt: generation.startedAt,
-          mode: generation.mode
-        }])
-      ),
-      activeGeneration: state.qq.activeGeneration
-        ? {
-          id: state.qq.activeGeneration.id,
-          scopeId: state.qq.activeGeneration.scopeId,
-          groupId: state.qq.activeGeneration.groupId,
-          senderId: state.qq.activeGeneration.senderId,
-          startedAt: state.qq.activeGeneration.startedAt,
-          mode: state.qq.activeGeneration.mode
-        }
-        : null,
+      activeGenerations,
+      activeGeneration: sanitizeActiveGeneration(state.qq.activeGeneration),
       activeGenerationCounts,
       pendingReplies: pendingReplyCounts,
       pendingReplyCounts,
-      personas: {
-        groupMemberCounts: personaCounts
-      },
+      personas: { groupMemberCounts: personaCounts },
       conversationMemory: summarizeQqConversationMemory(state.qq.conversationMemory),
-      humanBehavior: {
-        groupStyles: humanGroupStyles
-      }
+      humanBehavior: { groupStyles: humanGroupStyles }
     },
     imessage: {
-      trustedHandles: state.imessage.trustedHandles,
+      trustedHandles: [...state.imessage.trustedHandles],
       replyHandle: state.imessage.replyHandle,
-      lastRowId: state.imessage.lastRowId,
       status: state.imessage.status,
       lastError: state.imessage.lastError,
-      events: state.imessage.events,
+      events: state.imessage.events.slice(0, 30).map(sanitizePublicIMessageEvent),
       memory: {
         perHandleLimit: state.imessage.memory.perHandleLimit,
         handleCounts: Object.fromEntries(
@@ -1362,6 +1535,7 @@ function buildPublicState() {
         )
       }
     },
+    unifiedMemory: { ...state.unifiedMemory },
     remoteExecution: {
       enabled: state.remoteExecution.enabled,
       model: state.remoteExecution.model,
@@ -1376,6 +1550,73 @@ function buildPublicState() {
       } : null,
       memoryCount: state.remoteExecution.memory.entries.length
     }
+  };
+}
+
+function sanitizeActiveGeneration(generation) {
+  if (!generation) return null;
+  return {
+    id: String(generation.id || "").slice(0, 120),
+    scopeId: String(generation.scopeId || "").slice(0, 80),
+    groupId: normalizeQqIdentifier(generation.groupId) || null,
+    senderId: normalizeQqIdentifier(generation.senderId) || null,
+    startedAt: generation.startedAt || null,
+    mode: String(generation.mode || "").slice(0, 80)
+  };
+}
+
+function sanitizePublicQqEvent(record) {
+  const event = record?.event || {};
+  return {
+    id: String(record?.id || "").slice(0, 120),
+    receivedAt: record?.receivedAt || null,
+    source: String(record?.source || "").slice(0, 40),
+    event: {
+      type: String(event.type || "").slice(0, 40),
+      groupId: normalizeQqIdentifier(event.groupId) || null,
+      senderId: normalizeQqIdentifier(event.senderId) || null,
+      senderName: String(event.senderName || "").slice(0, 80),
+      senderLabel: String(event.senderLabel || "").slice(0, 80),
+      text: String(event.text || "").slice(0, 1_200),
+      imageCount: Number.isFinite(Number(event.imageCount))
+        ? Math.max(0, Math.floor(Number(event.imageCount)))
+        : (Array.isArray(event.images) ? event.images.length : 0),
+      hasReplySegment: Boolean(event.hasReplySegment)
+    },
+    decision: record?.decision ? {
+      ok: Boolean(record.decision.ok),
+      reason: String(record.decision.reason || "").slice(0, 300)
+    } : null,
+    reply: record?.reply == null ? null : String(record.reply).slice(0, 2_000),
+    error: record?.error ? String(record.error?.message || record.error).slice(0, 500) : null,
+    send: record?.send ? {
+      ok: record.send.ok !== false,
+      status: record.send.status ?? null
+    } : null
+  };
+}
+
+function sanitizePublicIMessageEvent(record) {
+  const event = record?.event || {};
+  return {
+    id: String(record?.id || "").slice(0, 120),
+    receivedAt: record?.receivedAt || null,
+    trusted: Boolean(record?.trusted),
+    event: {
+      handle: String(event.handle || "").slice(0, 160),
+      text: String(event.text || "").slice(0, 1_200),
+      attachments: Array.isArray(event.attachments) ? event.attachments.slice(0, 8).map((attachment) => ({
+        transferName: String(attachment?.transferName || "").slice(0, 160),
+        mimeType: String(attachment?.mimeType || "").slice(0, 100),
+        totalBytes: Number(attachment?.totalBytes || 0)
+      })) : []
+    },
+    result: record?.result ? {
+      ok: record.result.ok !== false,
+      summary: String(record.result.summary || "").slice(0, 300)
+    } : null,
+    send: record?.send ? { ok: record.send.ok !== false, status: record.send.status ?? null } : null,
+    reply: record?.reply == null ? null : String(record.reply).slice(0, 2_000)
   };
 }
 
@@ -1461,13 +1702,17 @@ function normalizeMemoryEntries(entries, limit) {
   })).filter((entry) => entry.text);
 }
 
-async function buildMaintenanceStatus() {
+async function buildMaintenanceStatus({ force = false } = {}) {
   const codexPathOk = await access(codexCliPath).then(() => true).catch(() => false);
-  const quota = await getCachedCodexQuotaSnapshot();
-  await checkOneBotHealth();
+  const [quota] = await Promise.all([
+    getCachedCodexQuotaSnapshot({ force }),
+    checkOneBotHealth({ force })
+  ]);
   const webLookupProviderPlan = buildWebSearchProviderPlan();
+  const { path: _privateCodexPath, ...codexMaintenance } = state.maintenance.codex;
   return {
-    ...state.maintenance,
+    startedAt: state.maintenance.startedAt,
+    oneBot: { ...state.maintenance.oneBot },
     webLookup: {
       ...state.maintenance.webLookup,
       providerPreset: qqWebSearchPreset,
@@ -1475,8 +1720,9 @@ async function buildMaintenanceStatus() {
       effectiveProvider: state.maintenance.webLookup.effectiveProvider || webLookupProviderPlan[0] || null
     },
     codex: {
-      ...state.maintenance.codex,
+      ...codexMaintenance,
       pathExists: codexPathOk,
+      queue: codexRunLimiter.snapshot(),
       quota
     },
     channels: {
@@ -1524,10 +1770,49 @@ async function buildMaintenanceStatus() {
   };
 }
 
-async function getCachedCodexQuotaSnapshot() {
-  const snapshot = await readLatestCodexQuotaSnapshot();
-  state.maintenance.codex.quota = snapshot;
-  return snapshot;
+let codexQuotaRefreshedAt = 0;
+let codexQuotaRefreshPromise = null;
+
+async function getCachedCodexQuotaSnapshot({ force = false } = {}) {
+  const cached = state.maintenance.codex.quota;
+  const fresh = cached && Date.now() - codexQuotaRefreshedAt < codexQuotaCacheTtlMs;
+  if (!force && fresh) return cached;
+  if (!force && cached) {
+    trackBackgroundTask(refreshCodexQuotaCache(), (error) => {
+      logger.warn("Codex quota background refresh failed", { error }, "codex");
+      return cached;
+    });
+    return cached;
+  }
+  return refreshCodexQuotaCache();
+}
+
+function refreshCodexQuotaCache() {
+  if (codexQuotaRefreshPromise) return codexQuotaRefreshPromise;
+  const refresh = readLatestCodexQuotaSnapshot()
+    .then((snapshot) => {
+      state.maintenance.codex.quota = snapshot;
+      codexQuotaRefreshedAt = Date.now();
+      return snapshot;
+    });
+  const trackedRefresh = refresh.finally(() => {
+    if (codexQuotaRefreshPromise === trackedRefresh) codexQuotaRefreshPromise = null;
+  });
+  codexQuotaRefreshPromise = trackedRefresh;
+  return trackedRefresh;
+}
+
+async function readUtf8FileTail(filePath, maxBytes) {
+  const handle = await open(filePath, "r");
+  try {
+    const stats = await handle.stat();
+    const readSize = Math.min(stats.size, Math.max(1, Math.floor(maxBytes)));
+    const buffer = Buffer.allocUnsafe(readSize);
+    const { bytesRead } = await handle.read(buffer, 0, readSize, Math.max(0, stats.size - readSize));
+    return buffer.subarray(0, bytesRead).toString("utf8");
+  } finally {
+    await handle.close();
+  }
 }
 
 async function readLatestCodexQuotaSnapshot() {
@@ -1562,7 +1847,7 @@ async function readLatestCodexQuotaSnapshot() {
 
 async function readCodexQuotaSnapshotFromRollout(rolloutPath) {
   try {
-    const body = await readFile(rolloutPath, "utf8");
+    const body = await readUtf8FileTail(rolloutPath, 512 * 1024);
     const lines = body.split(/\r?\n/).filter(Boolean);
     let latestRateLimits = null;
     let latestUsageInfo = null;
@@ -1670,15 +1955,16 @@ async function readDesktopCodexQuotaSnapshot() {
     const fullPath = join(codexDesktopCacheDir, entry.name);
     const stats = await stat(fullPath).catch(() => null);
     if (!stats?.isFile()) continue;
-    candidates.push({ fullPath, mtimeMs: stats.mtimeMs || 0 });
+    candidates.push({ fullPath, mtimeMs: stats.mtimeMs || 0, size: stats.size || 0 });
   }
   candidates.sort((left, right) => right.mtimeMs - left.mtimeMs);
 
-  for (const candidate of candidates.slice(0, 120)) {
+  for (const candidate of candidates.slice(0, 40)) {
     try {
+      if (candidate.size > 8 * 1024 * 1024) continue;
       const buffer = await readFile(candidate.fullPath);
       if (!buffer.includes(usageUrlMarker)) continue;
-      const payload = extractDesktopWhamUsagePayload(buffer);
+      const payload = await extractDesktopWhamUsagePayload(buffer);
       const primary = normalizeRateLimitWindow(payload?.rate_limit?.primary_window);
       const secondary = normalizeRateLimitWindow(payload?.rate_limit?.secondary_window);
       const hasWindows = Boolean(primary || secondary);
@@ -1711,11 +1997,11 @@ async function readDesktopCodexQuotaSnapshot() {
   };
 }
 
-function extractDesktopWhamUsagePayload(buffer) {
-  const maxStart = Math.min(buffer.length, 1024);
+async function extractDesktopWhamUsagePayload(buffer) {
+  const maxStart = Math.min(buffer.length, 64);
   for (let start = 0; start < maxStart; start += 1) {
     try {
-      const text = brotliDecompressSync(buffer.subarray(start)).toString("utf8");
+      const text = (await brotliDecompressAsync(buffer.subarray(start))).toString("utf8");
       const payload = JSON.parse(text);
       if (payload?.rate_limit && (payload?.plan_type || payload?.user_id || payload?.account_id)) {
         return payload;
@@ -1785,32 +2071,9 @@ async function readLiveCodexQuotaSnapshot() {
 }
 
 async function refreshCodexQuotaSnapshotAfterRun({ startedAtMs, previousQuota = null, timeoutMs = 7000 } = {}) {
-  const deadline = Date.now() + timeoutMs;
-  const previousUpdatedAtMs = previousQuota?.updatedAt ? Date.parse(previousQuota.updatedAt) : 0;
-  const previousTotalTokens = previousQuota?.totalTokens;
-  const previousPrimaryUsedPercent = previousQuota?.primary?.usedPercent ?? null;
-  const previousSecondaryUsedPercent = previousQuota?.secondary?.usedPercent ?? null;
-  let latestSnapshot = null;
-
-  while (Date.now() <= deadline) {
-    latestSnapshot = await readLatestCodexQuotaSnapshot().catch(() => null);
-    if (latestSnapshot?.available && didQuotaSnapshotAdvance(latestSnapshot, {
-      startedAtMs,
-      previousUpdatedAtMs,
-      previousTotalTokens,
-      previousPrimaryUsedPercent,
-      previousSecondaryUsedPercent
-    })) {
-      state.maintenance.codex.quota = latestSnapshot;
-      return latestSnapshot;
-    }
-    await sleep(350);
-  }
-
-  if (latestSnapshot?.available) {
-    state.maintenance.codex.quota = latestSnapshot;
-  }
-  return latestSnapshot;
+  const delayMs = Math.max(250, Math.min(2_000, Math.floor(timeoutMs / 4)));
+  await sleep(delayMs);
+  return getCachedCodexQuotaSnapshot({ force: true }).catch(() => previousQuota);
 }
 
 function didQuotaSnapshotAdvance(snapshot, {
@@ -1868,32 +2131,10 @@ function parseCodexTokenUsageLog(body) {
 }
 
 async function querySqliteRows(dbPath, query) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("/usr/bin/sqlite3", ["-json", dbPath, query], {
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error((stderr || stdout || `sqlite3 exited ${code}`).trim()));
-        return;
-      }
-      try {
-        resolve(stdout.trim() ? JSON.parse(stdout) : []);
-      } catch (error) {
-        reject(error);
-      }
-    });
+  return runJsonProcess("/usr/bin/sqlite3", ["-json", dbPath, query], {
+    timeoutMs: sqliteTimeoutMs,
+    maxOutputBytes: sqliteMaxOutputBytes,
+    signal: shutdownController.signal
   });
 }
 
@@ -2005,11 +2246,27 @@ function normalizeRateLimitWindow(window) {
   };
 }
 
-async function checkOneBotHealth() {
+let oneBotHealthCheckPromise = null;
+
+async function checkOneBotHealth({ force = false } = {}) {
+  const checkedAtMs = Date.parse(state.maintenance.oneBot.lastCheckedAt || "");
+  if (!force && Number.isFinite(checkedAtMs) && Date.now() - checkedAtMs < oneBotHealthTtlMs) {
+    return state.maintenance.oneBot;
+  }
+  if (oneBotHealthCheckPromise) return oneBotHealthCheckPromise;
+  const tracked = performOneBotHealthCheck().finally(() => {
+    if (oneBotHealthCheckPromise === tracked) oneBotHealthCheckPromise = null;
+  });
+  oneBotHealthCheckPromise = tracked;
+  return tracked;
+}
+
+async function performOneBotHealthCheck() {
   const checkedAt = new Date().toISOString();
+  const previous = state.maintenance.oneBot;
   try {
-    const response = await fetch(`${oneBotApiBase}/get_login_info`, { signal: AbortSignal.timeout(2500) });
-    const body = await response.json().catch(() => ({}));
+    const response = await oneBotFetch("get_login_info", { signal: AbortSignal.timeout(2500) });
+    const body = await readResponseJson(response).catch(() => ({}));
     if (!response.ok || (body.status != null && body.status !== "ok")) {
       throw new Error(`HTTP ${response.status}: ${JSON.stringify(body).slice(0, 240)}`);
     }
@@ -2020,10 +2277,12 @@ async function checkOneBotHealth() {
       selfId: body.data?.user_id == null ? null : String(body.data.user_id),
       nickname: body.data?.nickname || null
     };
-    logger.debug("OneBot health check succeeded", {
-      selfId: state.maintenance.oneBot.selfId,
-      nickname: state.maintenance.oneBot.nickname
-    }, "onebot");
+    if (!previous.ok || previous.selfId !== state.maintenance.oneBot.selfId) {
+      logger.debug("OneBot health check succeeded", {
+        selfId: state.maintenance.oneBot.selfId,
+        nickname: state.maintenance.oneBot.nickname
+      }, "onebot");
+    }
   } catch (error) {
     state.maintenance.oneBot = {
       ...state.maintenance.oneBot,
@@ -2031,8 +2290,11 @@ async function checkOneBotHealth() {
       lastCheckedAt: checkedAt,
       lastError: error.message
     };
-    logger.warn("OneBot health check failed", { error }, "onebot");
+    if (previous.ok || previous.lastError !== error.message) {
+      logger.warn("OneBot health check failed", { error }, "onebot");
+    }
   }
+  return state.maintenance.oneBot;
 }
 
 async function fetchOneBotImage(file) {
@@ -2041,7 +2303,7 @@ async function fetchOneBotImage(file) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ file: String(file || ""), download: true })
   });
-  const body = await response.json().catch(() => ({}));
+  const body = await readResponseJson(response).catch(() => ({}));
   if (!response.ok || (body.status != null && body.status !== "ok")) {
     throw new Error(`Unable to fetch QQ image ${file}`);
   }
@@ -2051,8 +2313,13 @@ async function fetchOneBotImage(file) {
 function oneBotFetch(endpoint, options = {}) {
   const { signal, ...requestOptions } = options;
   const timeoutSignal = AbortSignal.timeout(oneBotRequestTimeoutMs);
+  const headers = new Headers(requestOptions.headers || {});
+  if (oneBotAccessToken && !headers.has("authorization")) {
+    headers.set("authorization", `Bearer ${oneBotAccessToken}`);
+  }
   return fetch(`${oneBotApiBase}/${String(endpoint || "").replace(/^\/+/, "")}`, {
     ...requestOptions,
+    headers,
     signal: mergeAbortSignals(signal, timeoutSignal)
   });
 }
@@ -2168,6 +2435,9 @@ async function cleanupQqEventTaskWorkspaceByBot(event, reason = "QQ send finishe
 }
 
 async function prepareSingleQqModelImage(image, { outputDir, fetchOneBotImage: fetchImage } = {}) {
+  if (Number(image?.fileSize || 0) > qqImageMaxBytes) {
+    throw new Error(`QQ image exceeds ${qqImageMaxBytes} bytes`);
+  }
   const directPath = getExistingQqImagePath(image);
   if (directPath && await fileExists(directPath)) {
     return copyQqImageToTemp(directPath, outputDir);
@@ -2198,6 +2468,11 @@ async function prepareSingleQqModelImage(image, { outputDir, fetchOneBotImage: f
 }
 
 async function copyQqImageToTemp(sourcePath, outputDir) {
+  const sourceStats = await stat(sourcePath);
+  if (!sourceStats.isFile()) throw new Error("QQ image source is not a regular file");
+  if (sourceStats.size > qqImageMaxBytes) {
+    throw new Error(`QQ image exceeds ${qqImageMaxBytes} bytes`);
+  }
   await mkdir(outputDir, { recursive: true });
   const sourceName = basename(sourcePath) || "qq-image";
   const extension = inferImageExtension(sourceName, "");
@@ -2228,17 +2503,22 @@ function getExistingQqImagePath(image) {
 }
 
 async function downloadQqImageUrl(url, outputDir, nameHint = "qq-image") {
-  const response = await fetch(url, {
+  const response = await fetchWithUrlPolicy(url, {
     headers: { "user-agent": userAgentName },
     signal: AbortSignal.timeout(15000)
+  }, {
+    allowedPrivateOrigins: [oneBotApiBase],
+    allowDataImages: true
   });
   if (!response.ok) throw new Error(`image download returned HTTP ${response.status}`);
   const contentType = response.headers.get("content-type") || "";
+  if (!isSupportedImageContentType(contentType)) {
+    throw new Error(`image download returned unsupported content type: ${contentType}`);
+  }
   const extension = inferImageExtension(nameHint, contentType);
   const safeName = String(nameHint || "qq-image").replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 80) || "qq-image";
   const outputPath = join(outputDir, `${Date.now()}-${crypto.randomUUID()}-${safeName}${safeName.toLowerCase().endsWith(extension) ? "" : extension}`);
-  const buffer = Buffer.from(await response.arrayBuffer());
-  await writeFile(outputPath, buffer);
+  await writeResponseBodyToFile(response, outputPath, { maxBytes: qqImageMaxBytes });
   return outputPath;
 }
 
@@ -2387,16 +2667,19 @@ function rememberLatestQqProactiveEvent(event) {
 }
 
 function resetQqProactiveRuntimeCycles() {
-  state.qq.proactive.messageCountByGroupId = {};
-  state.qq.proactive.lastJudgeAtByGroupId = {};
-  state.qq.proactive.judgeInFlightByGroupId = {};
+  state.qq.proactive.messageCountByGroupId = createSafeRecord();
+  state.qq.proactive.lastJudgeAtByGroupId = createSafeRecord();
+  state.qq.proactive.judgeInFlightByGroupId = createSafeRecord();
   qqProactiveLatestEventByGroupId.clear();
 }
 
 function updateQqProactiveMinuteScheduler() {
   if (qqProactiveMinuteTimer) clearInterval(qqProactiveMinuteTimer);
   qqProactiveMinuteTimer = setInterval(() => {
-    runQqProactiveMinuteChecks().catch((error) => logger.error("QQ proactive minute check failed", { error }, "interest"));
+    trackBackgroundTask(
+      runQqProactiveMinuteChecks(),
+      (error) => logger.error("QQ proactive minute check failed", { error }, "interest")
+    );
   }, qqProactiveMinutePollMs);
   qqProactiveMinuteTimer.unref?.();
 }
@@ -3008,13 +3291,13 @@ function clearQqContextForEvent(event, { silent = false } = {}) {
     qqProactiveLatestEventByGroupId.delete(String(event.groupId));
     return silent ? "" : "已开启新对话。";
   }
-  state.qq.memory.entries = {};
-  state.qq.memory.recentMessages = {};
-  state.qq.pendingReplies = {};
-  state.qq.proactive.pendingImageRequests = {};
-  state.qq.proactive.messageCountByGroupId = {};
-  state.qq.proactive.lastJudgeAtByGroupId = {};
-  state.qq.proactive.judgeInFlightByGroupId = {};
+  state.qq.memory.entries = createSafeRecord();
+  state.qq.memory.recentMessages = createSafeRecord();
+  state.qq.pendingReplies = createSafeRecord();
+  state.qq.proactive.pendingImageRequests = createSafeRecord();
+  state.qq.proactive.messageCountByGroupId = createSafeRecord();
+  state.qq.proactive.lastJudgeAtByGroupId = createSafeRecord();
+  state.qq.proactive.judgeInFlightByGroupId = createSafeRecord();
   qqProactiveLatestEventByGroupId.clear();
   return silent ? "" : "已开启新对话。";
 }
@@ -3564,7 +3847,7 @@ async function executeQqActiveAddCommand(command, event) {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ target_id: match[2], message: String(match[3] || "").trim() })
     });
-    const result = await response.json().catch(() => ({}));
+    const result = await readResponseJson(response).catch(() => ({}));
     const ok = response.ok && (result.ok === true || result.status === "ok" || Number(result.code) === 0);
     return {
       ok,
@@ -3619,13 +3902,13 @@ async function notifyQqOwners(message) {
   }).catch((error) => ({ ok: false, error: error.message }))));
 }
 
-async function handleIncomingOneBotRequest(payload) {
+async function handleIncomingOneBotRequest(payload, { trustedSource = false } = {}) {
   const recorded = await qqRequestStore.record(payload);
   if (!recorded.entry) return { ignored: true, reason: "Invalid OneBot request event" };
   if (!recorded.isNew) return { status: "ok", duplicate: true, requestId: recorded.entry.id };
 
   const entry = recorded.entry;
-  const trustedOwner = state.qq.ownerUserIds.includes(String(entry.userId || ""));
+  const trustedOwner = trustedSource && state.qq.ownerUserIds.includes(String(entry.userId || ""));
   let handled = null;
   if (trustedOwner) {
     handled = await handleQqRequest(entry, {
@@ -4645,7 +4928,7 @@ async function buildModelReply(event, { replyScope = null } = {}) {
       qqEvent: event
     });
     assertQqReplyScopeActive(replyScope);
-    return cleanCodexReply(await readFile(outputPath, "utf8"));
+    return cleanCodexReply(await readCodexOutputAndRemove(outputPath));
   };
   const buildReplyPrompt = async (memoryBlock, expandLevel = 0, forceLocalReply = false, botToolResults = "", priorDraft = "", toolRound = 0) => {
     const publicMemoryContext = formatQqPublicMemoryContext();
@@ -4833,7 +5116,7 @@ async function buildQqContextSummary(event, commandText = "") {
     },
     qqEvent: event
   });
-  const reply = cleanCodexReply(await readFile(outputPath, "utf8"));
+  const reply = cleanCodexReply(await readCodexOutputAndRemove(outputPath));
   return (reply || fallbackQqContextSummary(recentMessages, participationEntries)).slice(0, 900);
 }
 
@@ -4974,7 +5257,7 @@ async function buildQqOwnerFileImageReply(event, { replyScope = null } = {}) {
       qqEvent: event
     });
     assertQqReplyScopeActive(replyScope);
-    let reply = cleanCodexReply(await readFile(outputPath, "utf8"));
+    let reply = cleanCodexReply(await readCodexOutputAndRemove(outputPath));
     if (await shouldRetryQqImageGenerationReply(reply, { event, isImageGeneration, taskStartedAt, outputDir: taskWorkspace.outputDir })) {
       const retryStartedAt = Date.now();
       const retryOutputPath = join(codexTmpDir, `${id}.qq-owner-file-image-retry.txt`);
@@ -4998,7 +5281,7 @@ async function buildQqOwnerFileImageReply(event, { replyScope = null } = {}) {
         qqEvent: event
       });
       assertQqReplyScopeActive(replyScope);
-      reply = cleanCodexReply(await readFile(retryOutputPath, "utf8"));
+      reply = cleanCodexReply(await readCodexOutputAndRemove(retryOutputPath));
       const retryNormalizedReply = await normalizeQqImageGenerationReply(reply, { event, isImageGeneration, taskStartedAt: retryStartedAt, outputDir: taskWorkspace.outputDir });
       return (retryNormalizedReply || "执行完了，但没有生成可读回复。").slice(0, 1800);
     }
@@ -5533,666 +5816,21 @@ function isQqImageLookRequest(text) {
   return /(看图|看一下图|看看图|这图|这个图|这张|图片|截图|表情包|图里|图上|什么图|配图|识别|看得懂|看不懂|何意味|逆天|抽象|离谱|绷不住|典中典|味太冲|评价一下|锐评|说说|怎么看|看法)/i.test(String(text || ""));
 }
 
-async function searchWeb(query, { traceId = "" } = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), qqWebLookupTimeoutMs);
-  const startedAt = Date.now();
-  const providerPlan = buildWebSearchProviderPlan();
-  state.maintenance.webLookup.lastQuery = query;
-  state.maintenance.webLookup.lastRunAt = new Date().toISOString();
-  state.maintenance.webLookup.lastProviderErrors = [];
-  state.maintenance.webLookup.lastAttempts = [];
-  state.maintenance.webLookup.configuredProviders = providerPlan;
-  state.maintenance.webLookup.providerPreset = qqWebSearchPreset;
-  try {
-    const queryVariants = buildWebQueryVariants(query);
-    const wikipediaResults = [];
-    const webResults = [];
-    const preferredProvider = providerPlan[0] || chooseWebSearchProvider();
-    state.maintenance.webLookup.effectiveProvider = preferredProvider;
-    logger.info("QQ web lookup started", {
-      query,
-      preset: qqWebSearchPreset,
-      providers: providerPlan.map(formatWebSearchProviderName),
-      timeoutMs: qqWebLookupTimeoutMs,
-      attemptTimeoutMs: qqWebLookupAttemptTimeoutMs
-    }, "search", { traceId });
-
-    if (preferredProvider !== "tavily" && shouldUseWikipediaForQuery(query)) {
-      for (const variant of queryVariants.slice(0, 2)) {
-        const hits = await searchWikipedia(variant, controller.signal).catch(() => []);
-        wikipediaResults.push(...hits);
-        if (wikipediaResults.length >= 2) break;
-      }
-    }
-
-    await collectSearchProviderResults(providerPlan, queryVariants, controller.signal, webResults, { traceId });
-    const results = mergeSearchResults([...wikipediaResults, ...webResults]).slice(0, 5);
-    const enriched = await enrichWebResults(results, controller.signal);
-    state.maintenance.webLookup.lastOk = true;
-    state.maintenance.webLookup.lastError = null;
-    state.maintenance.webLookup.lastDurationMs = Date.now() - startedAt;
-    logger.success("QQ web lookup succeeded", {
-      query,
-      provider: formatWebSearchProviderName(state.maintenance.webLookup.effectiveProvider),
-      resultCount: enriched.length,
-      durationMs: state.maintenance.webLookup.lastDurationMs
-    }, "search", { traceId });
-    return enriched;
-  } catch (error) {
-    state.maintenance.webLookup.lastOk = false;
-    state.maintenance.webLookup.lastError = error.message;
-    state.maintenance.webLookup.lastDurationMs = Date.now() - startedAt;
-    logger.warn("QQ web lookup failed", {
-      query,
-      provider: state.maintenance.webLookup.effectiveProvider,
-      durationMs: state.maintenance.webLookup.lastDurationMs,
-      error: error.message,
-      providerErrors: state.maintenance.webLookup.lastProviderErrors
-    }, "search", { traceId });
-    if (error.name === "AbortError") throw new Error("search timed out");
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-function chooseWebSearchProvider() {
-  if (qqWebSearchProvider === "tavily") return "tavily";
-  if (qqWebSearchProvider === "duckduckgo" || qqWebSearchProvider === "ddg") return "duckduckgo";
-  if (qqWebSearchProvider === "bing") return "bing";
-  if (qqWebSearchProvider === "baidu") return "baidu";
-  if (qqWebSearchProvider === "so360" || qqWebSearchProvider === "360") return "so360";
-  if (qqWebSearchProvider === "sogou") return "sogou";
-  return tavilyApiKey ? "tavily" : "bing";
-}
-
-function buildWebSearchProviderPlan() {
-  const configured = parseWebSearchProviders(qqWebSearchProviderConfig);
-  const preset = configured.length > 0
-    ? configured
-    : webSearchPresetProviders(qqWebSearchPreset);
-  const preferred = normalizeWebSearchProvider(qqWebSearchProvider);
-  const providers = preferred && preferred !== "auto"
-    ? [preferred, ...preset.filter((item) => item !== preferred)]
-    : preset;
-  const normalized = [...new Set(providers.map(normalizeWebSearchProvider).filter(Boolean))];
-  if (tavilyApiKey) return normalized;
-  return normalized.filter((provider) => provider !== "tavily");
-}
-
-function parseWebSearchProviders(value) {
-  return String(value || "")
-    .split(/[,\s，、|>]+/g)
-    .map(normalizeWebSearchProvider)
-    .filter(Boolean);
-}
-
-function webSearchPresetProviders(preset) {
-  if (preset === "tavily") return ["tavily", "bing", "baidu", "so360"];
-  if (preset === "china" || preset === "cn") return ["baidu", "so360", "bing", "sogou"];
-  if (preset === "global") return ["tavily", "bing", "duckduckgo", "baidu", "so360"];
-  if (preset === "privacy") return ["duckduckgo", "bing", "baidu", "so360"];
-  return ["tavily", "bing", "baidu", "so360", "sogou", "duckduckgo"];
-}
-
-function normalizeWebSearchProvider(provider) {
-  const value = String(provider || "").trim().toLowerCase();
-  if (!value || value === "auto") return value || "";
-  if (value === "ddg") return "duckduckgo";
-  if (value === "360" || value === "so" || value === "so.com") return "so360";
-  if (["tavily", "bing", "baidu", "so360", "sogou", "duckduckgo"].includes(value)) return value;
-  return "";
-}
-
-function formatWebSearchProviderName(provider) {
-  return {
-    tavily: "Tavily",
-    bing: "Bing",
-    baidu: "Baidu",
-    so360: "360 Search",
-    sogou: "Sogou",
-    duckduckgo: "DuckDuckGo"
-  }[provider] || String(provider || "unknown");
-}
-
-async function collectSearchProviderResults(providers, queryVariants, signal, output, { traceId = "" } = {}) {
-  if (!Array.isArray(queryVariants) || queryVariants.length === 0) return;
-  const providerList = Array.isArray(providers) && providers.length > 0 ? providers : buildWebSearchProviderPlan();
-  const errors = [];
-  for (const currentProvider of providerList) {
-    const outputLengthBeforeProvider = output.length;
-    let providerReturnedEmpty = false;
-    let providerFailed = false;
-    state.maintenance.webLookup.effectiveProvider = currentProvider;
-    for (const variant of queryVariants.slice(0, 4)) {
-      const attemptStartedAt = Date.now();
-      try {
-        const hits = await runWebSearchAttempt(
-          (attemptSignal) => searchWithProvider(currentProvider, variant, attemptSignal),
-          signal,
-          providerAttemptTimeoutMs(currentProvider)
-        );
-        recordWebLookupAttempt({
-          provider: currentProvider,
-          query: variant,
-          ok: hits.length > 0,
-          resultCount: hits.length,
-          durationMs: Date.now() - attemptStartedAt
-        });
-        logger.debug("QQ web lookup provider attempt", {
-          provider: formatWebSearchProviderName(currentProvider),
-          rawProvider: currentProvider,
-          query: variant,
-          resultCount: hits.length,
-          durationMs: Date.now() - attemptStartedAt,
-          status: hits.length > 0 ? "found_results" : "no_results"
-        }, "search", { traceId });
-        if (hits.length === 0) {
-          providerReturnedEmpty = true;
-          continue;
-        }
-        output.push(...hits);
-        if (output.length >= 5) return;
-      } catch (error) {
-        providerFailed = true;
-        const message = `${currentProvider}: ${error.message}`;
-        errors.push(message);
-        state.maintenance.webLookup.lastProviderErrors = errors.slice(-8);
-        recordWebLookupAttempt({
-          provider: currentProvider,
-          query: variant,
-          ok: false,
-          error: error.message,
-          durationMs: Date.now() - attemptStartedAt
-        });
-        logger.warn("QQ web lookup provider failed", {
-          provider: formatWebSearchProviderName(currentProvider),
-          query: variant,
-          durationMs: Date.now() - attemptStartedAt,
-          error: error.message
-        }, "search", { traceId });
-        if (error.name === "AbortError") throw error;
-      }
-    }
-    if (output.length > 0) return;
-    if (output.length === outputLengthBeforeProvider && providerReturnedEmpty && !providerFailed) {
-      errors.push(`${currentProvider}: no results`);
-      state.maintenance.webLookup.lastProviderErrors = errors.slice(-8);
-    }
-  }
-  if (errors.length > 0) {
-    throw new Error(`all search providers failed (${errors.join("; ")})`);
-  } else {
-    throw new Error("all search providers returned no results");
-  }
-}
-
-function recordWebLookupAttempt(attempt) {
-  const entry = {
-    provider: formatWebSearchProviderName(attempt.provider),
-    rawProvider: attempt.provider,
-    query: String(attempt.query || "").slice(0, 200),
-    ok: Boolean(attempt.ok),
-    resultCount: Number(attempt.resultCount || 0),
-    durationMs: Number(attempt.durationMs || 0),
-    error: attempt.error ? String(attempt.error).slice(0, 300) : null
-  };
-  state.maintenance.webLookup.lastAttempts.push(entry);
-  state.maintenance.webLookup.lastAttempts = state.maintenance.webLookup.lastAttempts.slice(-20);
-}
-
-async function runWebSearchAttempt(fn, parentSignal, timeoutMs) {
-  if (parentSignal?.aborted) throw createAbortError("search timed out");
-  const controller = new AbortController();
-  let timedOut = false;
-  const timeout = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-  const abortFromParent = () => controller.abort();
-  parentSignal?.addEventListener("abort", abortFromParent, { once: true });
-  try {
-    return await fn(controller.signal);
-  } catch (error) {
-    if (timedOut && error.name === "AbortError") {
-      throw new Error(`attempt timed out after ${timeoutMs}ms`);
-    }
-    throw error;
-  } finally {
-    clearTimeout(timeout);
-    parentSignal?.removeEventListener("abort", abortFromParent);
-  }
-}
-
-function providerAttemptTimeoutMs(provider) {
-  if (provider === "tavily") {
-    return Math.min(qqWebLookupTimeoutMs, Math.max(qqWebLookupAttemptTimeoutMs, 5000));
-  }
-  return qqWebLookupAttemptTimeoutMs;
-}
-
-function createAbortError(message) {
-  const error = new Error(message);
-  error.name = "AbortError";
-  return error;
-}
-
-async function searchWithProvider(provider, query, signal) {
-  if (provider === "tavily") return searchTavily(query, signal);
-  if (provider === "bing") return searchBing(query, signal);
-  if (provider === "baidu") return searchBaidu(query, signal);
-  if (provider === "so360") return searchSo360(query, signal);
-  if (provider === "sogou") return searchSogou(query, signal);
-  return searchDuckDuckGo(query, signal);
-}
-
-function buildWebQueryVariants(query) {
-  const raw = String(query || "").trim();
-  if (!raw) return [];
-  const stripped = stripSearchLeadWords(raw);
-  const base = stripQuestionTail(stripped);
-  const variants = [
-    raw,
-    stripped,
-    base,
-    isTimeSensitiveWebQuery(raw) ? `${base} 最新` : "",
-    /(攻略|配装|打法|角色|装备|技能|流派|版本|补丁)/i.test(raw) ? `${base} 攻略` : "",
-    /(是什么|什么意思|什么梗|定义|出处|来源)/i.test(raw) ? `${base} 解释` : "",
-    /(谁是|是谁)/i.test(raw) ? `${base} wiki` : ""
-  ];
-  return [...new Set(variants.map((item) => item.trim()).filter(Boolean))].slice(0, 5);
-}
-
-function shouldUseWikipediaForQuery(query) {
-  return isDefinitionStyleQuery(query);
-}
-
-function isDefinitionStyleQuery(query) {
-  return /(是什么意思|什么意思|啥意思|什么梗|啥梗|定义|百科|出处|来源|是什么)/i.test(String(query || ""));
-}
-
-function stripSearchLeadWords(query) {
-  return String(query || "")
-    .replace(/^(查一下|搜一下|帮我查一下|帮我搜一下|网上查一下|网上搜一下|给我查一下|给我搜一下|你查一下|你搜一下)\s*/i, "")
-    .trim();
-}
-
-function stripQuestionTail(query) {
-  return String(query || "")
-    .replace(/[？?。！!，,：:]+$/g, "")
-    .replace(/(是什么意思|什么意思|啥意思|什么梗|啥梗|是什么梗|什么定义|的定义是什么|定义是什么|是什么东西|是什么|是谁|谁是|出处是什么|来源是什么|最近怎么样|最新消息)$/i, "")
-    .trim() || String(query || "").trim();
-}
-
-function isTimeSensitiveWebQuery(text) {
-  return /(最近|最新|现在|今天|本周|本月|版本|补丁|更新|新闻|热搜|刚出|新出的|什么时候上线|什么时候更新)/i.test(String(text || ""));
-}
-
-async function searchWikipedia(query, signal) {
-  const wikipediaQuery = buildWikipediaQuery(query);
-  const titles = await searchWikipediaTitles(wikipediaQuery, signal, "zh");
-  const fallbackTitles = titles.length > 0 ? [] : await searchWikipediaTitles(query, signal, "en");
-  const candidates = [...titles, ...fallbackTitles].slice(0, 2);
-  const results = [];
-  for (const candidate of candidates) {
-    const summary = await fetchWikipediaSummary(candidate.title, signal, candidate.lang).catch(() => null);
-    if (summary?.title) results.push(summary);
-  }
-  return results;
-}
-
-function buildWikipediaQuery(query) {
-  return stripMentionText(query)
-    .replace(/[？?。！!，,：:]+$/g, "")
-    .trim()
-    .replace(/^(查一下|搜一下|百科一下|百科|网上查一下|帮我查一下)\s*/, "")
-    .replace(/^谁是\s*/, "")
-    .replace(/(是什么意思|什么意思|啥意思|什么梗|啥梗|是什么梗|什么定义|的定义是什么|定义是什么|是什么东西|是什么|是谁|谁是|出处是什么|来源是什么|最近怎么样|最新消息)$/i, "")
-    .trim() || String(query || "").trim();
-}
-
-async function searchWikipediaTitles(query, signal, lang) {
-  const url = `https://${lang}.wikipedia.org/w/api.php?action=opensearch&search=${encodeURIComponent(query)}&limit=3&namespace=0&format=json&origin=*`;
-  const response = await fetch(url, {
-    signal,
-    headers: { "user-agent": userAgentName }
-  });
-  if (!response.ok) return [];
-  const data = await response.json();
-  const titles = Array.isArray(data?.[1]) ? data[1] : [];
-  return titles.map((title) => ({ title, lang }));
-}
-
-async function fetchWikipediaSummary(title, signal, lang) {
-  const url = `https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`;
-  const response = await fetch(url, {
-    signal,
-    headers: { "user-agent": userAgentName }
-  });
-  if (!response.ok) return null;
-  const data = await response.json();
-  if (data.type === "disambiguation" && !data.extract) return null;
-  return {
-    title: `Wikipedia：${data.title || title}`,
-    url: data.content_urls?.desktop?.page || `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title)}`,
-    snippet: data.extract || "",
-    source: "wikipedia"
-  };
-}
-
-async function searchDuckDuckGo(query, signal) {
-  const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-  const response = await fetch(url, {
-    signal,
-    headers: {
-      "user-agent": webSearchUserAgent()
-    }
-  });
-  if (!response.ok) throw new Error(`search returned HTTP ${response.status}`);
-  const html = await response.text();
-  if (response.status === 202 || /anomaly|challenge-form|Please prove you are human/i.test(html)) {
-    throw new Error("duckduckgo returned verification page");
-  }
-  return parseDuckDuckGoResults(html).slice(0, 3);
-}
-
-async function searchTavily(query, signal) {
-  if (!tavilyApiKey) throw new Error("Tavily API key is not configured");
-  const response = await fetch("https://api.tavily.com/search", {
-    method: "POST",
-    signal,
-    headers: {
-      "content-type": "application/json",
-      "authorization": `Bearer ${tavilyApiKey}`
-    },
-    body: JSON.stringify({
-      query,
-      search_depth: "basic",
-      max_results: 5,
-      include_answer: false
-    })
-  });
-  if (!response.ok) throw new Error(`tavily returned HTTP ${response.status}`);
-  const data = await response.json();
-  return Array.isArray(data?.results)
-    ? data.results.map((result) => ({
-      title: String(result.title || result.url || "").trim(),
-      url: String(result.url || "").trim(),
-      snippet: String(result.content || result.snippet || "").trim(),
-      source: "tavily"
-    })).filter((result) => result.title && result.url)
-    : [];
-}
-
-async function searchBing(query, signal) {
-  const url = `https://www.bing.com/search?q=${encodeURIComponent(query)}`;
-  const response = await fetch(url, {
-    signal,
-    headers: {
-      "user-agent": webSearchUserAgent(),
-      "accept-language": "zh-CN,zh;q=0.9,en;q=0.7"
-    }
-  });
-  if (!response.ok) throw new Error(`bing returned HTTP ${response.status}`);
-  return parseBingResults(await response.text()).slice(0, 5);
-}
-
-async function searchBaidu(query, signal) {
-  const url = `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`;
-  const response = await fetch(url, {
-    signal,
-    headers: {
-      "user-agent": webSearchUserAgent(),
-      "accept-language": "zh-CN,zh;q=0.9,en;q=0.7"
-    }
-  });
-  if (!response.ok) throw new Error(`baidu returned HTTP ${response.status}`);
-  const html = await response.text();
-  if (/请输入验证码|安全验证|verify.baidu.com/i.test(html)) {
-    throw new Error("baidu returned verification page");
-  }
-  return parseBaiduResults(html).slice(0, 5);
-}
-
-async function searchSo360(query, signal) {
-  const url = `https://www.so.com/s?q=${encodeURIComponent(query)}`;
-  const response = await fetch(url, {
-    signal,
-    headers: {
-      "user-agent": webSearchUserAgent(),
-      "accept-language": "zh-CN,zh;q=0.9,en;q=0.7"
-    }
-  });
-  if (!response.ok) throw new Error(`so360 returned HTTP ${response.status}`);
-  const html = await response.text();
-  if (/请输入验证码|安全验证|检测到异常请求/i.test(html)) {
-    throw new Error("so360 returned verification page");
-  }
-  return parseSo360Results(html).slice(0, 5);
-}
-
-async function searchSogou(query, signal) {
-  const url = `https://www.sogou.com/web?query=${encodeURIComponent(query)}`;
-  const response = await fetch(url, {
-    signal,
-    headers: {
-      "user-agent": webSearchUserAgent(),
-      "accept-language": "zh-CN,zh;q=0.9,en;q=0.7"
-    }
-  });
-  if (!response.ok) throw new Error(`sogou returned HTTP ${response.status}`);
-  const html = await response.text();
-  if (/anti\.min\.css|antispider|请输入验证码|搜狗搜索验证/i.test(html)) {
-    throw new Error("sogou returned verification page");
-  }
-  return parseSogouResults(html).slice(0, 5);
-}
-
-function webSearchUserAgent() {
-  return process.env.CODEX_REMOTE_CONTACT_QQ_WEB_USER_AGENT
-    || "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
-}
-
-function mergeSearchResults(results) {
-  const seen = new Set();
-  return results.filter((result) => {
-    const key = result.url || result.title;
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
-async function enrichWebResults(results, signal) {
-  const enriched = [];
-  for (const result of results) {
-    if (!result.snippet && result.source !== "wikipedia" && enriched.length < 2 && result.url) {
-      enriched.push({
-        ...result,
-        snippet: await fetchPageSnippet(result.url, signal).catch(() => "")
-      });
-    } else {
-      enriched.push(result);
-    }
-  }
-  return enriched;
-}
-
-async function fetchPageSnippet(url, parentSignal) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), Math.min(3500, qqWebLookupTimeoutMs));
-  const abortFromParent = () => controller.abort();
-  parentSignal?.addEventListener("abort", abortFromParent, { once: true });
-  try {
-    if (parentSignal?.aborted) return "";
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: { "user-agent": userAgentName }
-    });
-    if (!response.ok) return "";
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("text/html")) return "";
-    const text = htmlToPlainText(await response.text());
-    return text.slice(0, 420);
-  } finally {
-    clearTimeout(timeout);
-    parentSignal?.removeEventListener("abort", abortFromParent);
-  }
-}
-
-function htmlToPlainText(html) {
-  return cleanHtml(String(html || "")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " "));
-}
-
-function parseDuckDuckGoResults(html) {
-  return String(html || "")
-    .split(/<div class="result(?: result--ad)?/g)
-    .map((block) => {
-      const titleMatch = block.match(/<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/);
-      if (!titleMatch) return null;
-      const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/(?:a|div)>/);
-      return {
-        title: cleanHtml(titleMatch[2]),
-        url: normalizeDuckDuckGoUrl(htmlDecode(titleMatch[1])),
-        snippet: snippetMatch ? cleanHtml(snippetMatch[1]) : ""
-      };
-    })
-    .filter((result) => result?.title)
-    .filter((result, index, list) => list.findIndex((item) => item.url === result.url) === index);
-}
-
-function parseBingResults(html) {
-  return String(html || "")
-    .split(/<li class="b_algo"/g)
-    .map((block) => {
-      const titleMatch = block.match(/<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*<\/h2>/i);
-      if (!titleMatch) return null;
-      const snippetMatch = block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-      return {
-        title: cleanHtml(titleMatch[2]),
-        url: htmlDecode(titleMatch[1]),
-        snippet: snippetMatch ? cleanHtml(snippetMatch[1]) : ""
-      };
-    })
-    .filter((result) => result?.title && result.url)
-    .filter((result, index, list) => list.findIndex((item) => item.url === result.url) === index);
-}
-
-function parseBaiduResults(html) {
-  return String(html || "")
-    .split(/<h3\b/gi)
-    .map((block) => {
-      const h3 = `<h3${block.split(/<\/h3>/i)[0] || ""}</h3>`;
-      const linkMatch = h3.match(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
-      if (!linkMatch) return null;
-      const title = cleanHtml(linkMatch[2]);
-      if (!isUsableSearchResultTitle(title)) return null;
-      const after = block.slice(block.indexOf("</h3>") + 5, block.indexOf("</h3>") + 1600);
-      const snippetMatch = after.match(/<!--s-text-->([\s\S]*?)<!--\/s-text-->/i)
-        || after.match(/<(?:div|span|p)[^>]*class="[^"]*(?:content|abstract|summary|c-abstract|paragraph)[^"]*"[^>]*>([\s\S]*?)<\/(?:div|span|p)>/i);
-      return {
-        title,
-        url: htmlDecode(linkMatch[1]),
-        snippet: snippetMatch ? cleanHtml(snippetMatch[1]) : "",
-        source: "baidu"
-      };
-    })
-    .filter((result) => result?.title && result.url)
-    .filter((result, index, list) => list.findIndex((item) => item.url === result.url) === index);
-}
-
-function parseSo360Results(html) {
-  return String(html || "")
-    .split(/<h3\b/gi)
-    .map((block) => {
-      const h3 = `<h3${block.split(/<\/h3>/i)[0] || ""}</h3>`;
-      const linkMatch = h3.match(/<a\b[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
-      if (!linkMatch) return null;
-      const title = cleanHtml(linkMatch[2]);
-      if (!isUsableSearchResultTitle(title)) return null;
-      const url = extractHtmlAttribute(linkMatch[0], "data-mdurl") || htmlDecode(linkMatch[1]);
-      const after = block.slice(block.indexOf("</h3>") + 5, block.indexOf("</h3>") + 1600);
-      const snippetMatch = after.match(/<(?:p|div)[^>]*class="[^"]*(?:res-desc|g-desc|mh-summary|cont|summary)[^"]*"[^>]*>([\s\S]*?)<\/(?:p|div)>/i)
-        || after.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-      return {
-        title,
-        url,
-        snippet: snippetMatch ? cleanHtml(snippetMatch[1]) : "",
-        source: "so360"
-      };
-    })
-    .filter((result) => result?.title && result.url)
-    .filter((result, index, list) => list.findIndex((item) => item.url === result.url) === index);
-}
-
-function parseSogouResults(html) {
-  return String(html || "")
-    .split(/<div class="vrwrap|<div class="rb"/g)
-    .map((block) => {
-      const titleMatch = block.match(/<h3[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>\s*<\/h3>/i)
-        || block.match(/<a[^>]*class="[^"]*vr-title[^"]*"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
-      if (!titleMatch) return null;
-      const snippetMatch = block.match(/<(?:p|div)[^>]*class="[^"]*(?:str_info|ft|text-layout|content-right_8Zs40)[^"]*"[^>]*>([\s\S]*?)<\/(?:p|div)>/i)
-        || block.match(/<p[^>]*>([\s\S]*?)<\/p>/i);
-      return {
-        title: cleanHtml(titleMatch[2]),
-        url: normalizeSogouUrl(htmlDecode(titleMatch[1])),
-        snippet: snippetMatch ? cleanHtml(snippetMatch[1]) : ""
-      };
-    })
-    .filter((result) => result?.title && result.url)
-    .filter((result, index, list) => list.findIndex((item) => item.url === result.url) === index);
-}
-
-function isUsableSearchResultTitle(title) {
-  return Boolean(title)
-    && !/^(首页|其他人还搜了|相关搜索|大家还在搜|网页搜索|搜索结果)$/i.test(title);
-}
-
-function extractHtmlAttribute(html, name) {
-  const match = String(html || "").match(new RegExp(`${name}="([^"]+)"`, "i"));
-  return match ? htmlDecode(match[1]) : "";
-}
-
-function cleanHtml(value) {
-  return htmlDecode(String(value || "")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/\s+/g, " ")
-    .trim());
-}
-
-function htmlDecode(value) {
-  return String(value || "")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#39;/g, "'")
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, num) => String.fromCodePoint(Number(num)));
-}
-
-function normalizeDuckDuckGoUrl(url) {
-  try {
-    const parsed = new URL(url, "https://duckduckgo.com");
-    const redirected = parsed.searchParams.get("uddg");
-    return redirected ? decodeURIComponent(redirected) : parsed.href;
-  } catch {
-    return url;
-  }
-}
-
-function normalizeSogouUrl(url) {
-  try {
-    return new URL(url, "https://www.sogou.com").href;
-  } catch {
-    return url;
-  }
-}
+const webSearch = createWebSearch({
+  maintenance: state.maintenance.webLookup,
+  logger,
+  timeoutMs: qqWebLookupTimeoutMs,
+  attemptTimeoutMs: qqWebLookupAttemptTimeoutMs,
+  provider: qqWebSearchProvider,
+  preset: qqWebSearchPreset,
+  providerConfig: qqWebSearchProviderConfig,
+  tavilyApiKey,
+  userAgent: userAgentName,
+  browserUserAgent: process.env.CODEX_REMOTE_CONTACT_QQ_WEB_USER_AGENT,
+  normalizeQuery: stripMentionText
+});
+const searchWeb = webSearch.search;
+const buildWebSearchProviderPlan = webSearch.buildProviderPlan;
 
 function formatMemoryContext(event, { expandLevel = 0 } = {}) {
   const scopeId = getQqMemoryScopeId(event);
@@ -6354,12 +5992,16 @@ async function rememberQqGroupMessage(event) {
   state.qq.memory.recentMessages[scopeId] = [...current, entry].slice(-state.qq.memory.groupRecentLimit);
   const personaChanged = event.groupId ? updateQqPersonaFromEvent(event) : false;
   state.qq.conversationMemory = updateQqConversationMemoryFromEvent(state.qq.conversationMemory, event);
-  await saveQqMemory();
-  await saveQqConversationMemory();
-  if (personaChanged) await saveQqPersonas();
+  const scopesPruned = pruneQqStateScopes();
+  await Promise.all([
+    saveQqMemory(),
+    saveQqConversationMemory(),
+    personaChanged || scopesPruned ? saveQqPersonas() : Promise.resolve()
+  ]);
 }
 
 async function processQqReplyEvent(event, options = {}) {
+  if (shuttingDown) return;
   const source = options.source || "qq";
   const lifecycleStartedAt = Date.now();
   const traceId = ensureQqTraceId(event);
@@ -6438,7 +6080,7 @@ async function processQqReplyEvent(event, options = {}) {
       if (reply) reply = normalizeVisibleQqReply(reply, event);
     } catch (caught) {
       error = caught.message;
-      reply = ["QQ_GENERATION_STOPPED", "QQ_REPLY_STOPPED"].includes(caught.code)
+      reply = ["QQ_GENERATION_STOPPED", "QQ_REPLY_STOPPED", "HUB_SHUTTING_DOWN"].includes(caught.code)
         ? null
         : "这边刚刚卡了一下，等我再试一次。";
     } finally {
@@ -6466,6 +6108,7 @@ async function processQqReplyEvent(event, options = {}) {
     const sendStartedAt = Date.now();
     try {
       if (record.reply && source === "onebot") {
+        assertHubAcceptingOutbound();
         if (isQqPrivateEvent(event)) {
           try {
             assertQqReplyScopeActive(replyScope);
@@ -6712,22 +6355,35 @@ function compactMemoryText(text) {
 }
 
 function getQqPersonaGroup(groupId) {
-  if (!groupId) return null;
-  const id = String(groupId);
+  const id = normalizeQqIdentifier(groupId);
+  if (!id) return null;
   if (!state.qq.personas.groups[id]) {
     state.qq.personas.groups[id] = {
       updatedAt: null,
-      members: {}
+      members: createSafeRecord()
     };
   }
+  state.qq.personas.groups[id].members = createSafeRecord(state.qq.personas.groups[id].members);
   return state.qq.personas.groups[id];
 }
 
 function getQqPersonaMember(groupId, senderId, senderName = "") {
   if (!groupId || !senderId) return null;
   const group = getQqPersonaGroup(groupId);
-  const id = String(senderId);
+  const id = normalizeQqIdentifier(senderId);
+  if (!group || !id) return null;
   if (!group.members[id]) {
+    const memberIds = Object.keys(group.members);
+    if (memberIds.length >= qqPersonaMemberLimit) {
+      const oldestId = memberIds
+        .filter((memberId) => !state.qq.ownerUserIds.includes(memberId))
+        .sort((left, right) => {
+          const leftAt = Date.parse(group.members[left]?.lastSeenAt || group.members[left]?.updatedAt || "") || 0;
+          const rightAt = Date.parse(group.members[right]?.lastSeenAt || group.members[right]?.updatedAt || "") || 0;
+          return leftAt - rightAt;
+        })[0];
+      if (oldestId) delete group.members[oldestId];
+    }
     group.members[id] = {
       userId: id,
       aliases: [],
@@ -6870,32 +6526,14 @@ function formatQqPersonaContext(event) {
 }
 
 function sqliteJson(query) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("/usr/bin/sqlite3", ["-json", `${process.env.HOME}/Library/Messages/chat.db`, query], {
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code !== 0) {
-        reject(new Error((stderr || stdout || `sqlite3 exited ${code}`).trim()));
-        return;
-      }
-      try {
-        resolve(stdout.trim() ? JSON.parse(stdout) : []);
-      } catch (error) {
-        reject(new Error(`Unable to parse sqlite output: ${error.message}`));
-      }
-    });
+  return runJsonProcess("/usr/bin/sqlite3", [
+    "-json",
+    `${process.env.HOME}/Library/Messages/chat.db`,
+    query
+  ], {
+    timeoutMs: sqliteTimeoutMs,
+    maxOutputBytes: sqliteMaxOutputBytes,
+    signal: shutdownController.signal
   });
 }
 
@@ -6947,13 +6585,13 @@ function updateIMessagePoller() {
     return;
   }
   if (imessagePollTimer) return;
-  initializeIMessageCursor().catch((error) => {
+  trackBackgroundTask(initializeIMessageCursor(), (error) => {
     if (shouldResetIMessageCursorOnError(error)) resetIMessageCursor();
     state.imessage.status = "error";
     state.imessage.lastError = explainIMessageError(error);
   });
   imessagePollTimer = setInterval(() => {
-    pollIMessage().catch((error) => {
+    trackBackgroundTask(pollIMessage(), (error) => {
       if (shouldResetIMessageCursorOnError(error)) resetIMessageCursor();
       state.imessage.status = "error";
       state.imessage.lastError = explainIMessageError(error);
@@ -7291,13 +6929,18 @@ async function handleIMessageCommand(event) {
       }
     } catch (error) {
       result = { ok: false, summary: error.message };
-      reply = event.text.trim().startsWith("/")
-        ? `执行失败：${error.message.slice(0, 180)}`
-        : "回应超时。";
-      try {
-        send = await sendIMessageReply(getIMessageReplyHandle(event), reply);
-      } catch (sendError) {
-        send = { ok: false, error: sendError.message };
+      if (shuttingDown || error.code === "HUB_SHUTTING_DOWN") {
+        reply = null;
+        send = { ok: false, skipped: true, error: "Hub is shutting down" };
+      } else {
+        reply = event.text.trim().startsWith("/")
+          ? `执行失败：${error.message.slice(0, 180)}`
+          : "回应超时。";
+        try {
+          send = await sendIMessageReply(getIMessageReplyHandle(event), reply);
+        } catch (sendError) {
+          send = { ok: false, error: sendError.message };
+        }
       }
     }
   }
@@ -7508,13 +7151,13 @@ async function executeIMessageCommand(text, event = null) {
   const unifiedMemoryResult = await executeUnifiedMemoryCommand(command, normalized, event);
   if (unifiedMemoryResult) return unifiedMemoryResult;
   if (/清空.*qq.*记忆/.test(normalized)) {
-    state.qq.memory.entries = {};
-    state.qq.memory.recentMessages = {};
+    state.qq.memory.entries = createSafeRecord();
+    state.qq.memory.recentMessages = createSafeRecord();
     await saveQqMemory();
     return { ok: true, summary: "QQ memory cleared", reply: "QQ 轻量记忆已清空。" };
   }
   if (/^(清除记忆|清空记忆|清理记忆|重置记忆|忘记上下文)$/.test(normalized)) {
-    state.imessage.memory.entries = {};
+    state.imessage.memory.entries = createSafeRecord();
     await saveIMessageMemory();
     return { ok: true, summary: "iMessage memory cleared", reply: "iMessage 私聊记忆已清除。" };
   }
@@ -7842,7 +7485,7 @@ async function buildUnifiedMemoryHandoffSummary(commandText, imessageContext) {
         CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_HANDOFF: "1"
       }
     });
-    return cleanCodexReply(await readFile(outputPath, "utf8")).slice(0, 800) || fallback;
+    return cleanCodexReply(await readCodexOutputAndRemove(outputPath)).slice(0, 800) || fallback;
   } catch {
     return fallback;
   }
@@ -8277,7 +7920,7 @@ function touchRemoteExecutionActivity() {
 function startRemoteExecutionIdleTimer() {
   if (remoteExecutionIdleTimer) return;
   remoteExecutionIdleTimer = setInterval(() => {
-    expireRemoteExecutionIfIdle({ notify: true }).catch((error) => {
+    trackBackgroundTask(expireRemoteExecutionIfIdle({ notify: true }), (error) => {
       state.maintenance.codex.lastError = `Remote execution idle timer failed: ${error.message}`;
     });
   }, 30 * 1000);
@@ -8416,44 +8059,14 @@ function scheduleSystemSleep() {
   child.unref();
 }
 
-function runCommand(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const child = spawn(command, args, {
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    let output = "";
-    let settled = false;
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      output += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      output += chunk;
-    });
-    const timeout = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      child.kill("SIGTERM");
-      reject(new Error(`${command} timed out`));
-    }, options.timeout || 15000);
-    child.on("error", (error) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      reject(error);
-    });
-    child.on("close", (status) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timeout);
-      if (status !== 0 && !options.allowFailure) {
-        reject(new Error(`${command} exited ${status}: ${output.trim()}`));
-        return;
-      }
-      resolve({ status, output });
-    });
+async function runCommand(command, args, options = {}) {
+  const result = await runProcess(command, args, {
+    timeoutMs: options.timeout || 15_000,
+    maxOutputBytes: options.maxOutputBytes || 1024 * 1024,
+    allowFailure: options.allowFailure,
+    signal: shutdownController.signal
   });
+  return { status: result.code, output: result.output };
 }
 
 async function captureDesktopScreenshot() {
@@ -8537,7 +8150,7 @@ async function buildRemoteExecutionReply(event) {
         CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MODE: "1"
       }
     });
-    const reply = cleanCodexReply(await readFile(outputPath, "utf8")) || "远程执行模式执行完了，但没有生成可读回复。";
+    const reply = cleanCodexReply(await readCodexOutputAndRemove(outputPath)) || "远程执行模式执行完了，但没有生成可读回复。";
     await rememberRemoteExecutionTurn(event.text, reply);
     await rememberUnifiedMemoryFromRemoteExecution(event.text, reply);
     return reply.slice(0, 1800);
@@ -8672,7 +8285,7 @@ async function buildIMessagePrivateReply(event, unifiedMemoryContext = "", optio
       CODEX_REMOTE_CONTACT_IMESSAGE_MODE: "1"
     }
   });
-  const reply = cleanCodexReply(await readFile(outputPath, "utf8"));
+  const reply = cleanCodexReply(await readCodexOutputAndRemove(outputPath));
   return (reply || "我在。").slice(0, 1200);
 }
 
@@ -9155,7 +8768,7 @@ async function runUnifiedMemoryRecallRouteModel(text) {
       CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_RECALL_ROUTE: "1"
     }
   });
-  return readFile(outputPath, "utf8");
+  return readCodexOutputAndRemove(outputPath);
 }
 
 function parseUnifiedMemoryRecallRoute(raw) {
@@ -9223,7 +8836,7 @@ async function runUnifiedMemoryJudgeModel(text) {
       CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_JUDGE: "1"
     }
   });
-  return readFile(outputPath, "utf8");
+  return readCodexOutputAndRemove(outputPath);
 }
 
 async function applyUnifiedMemoryDecision(event, reply) {
@@ -9324,76 +8937,49 @@ async function buildIMessageInstructions() {
   ].join("\n");
 }
 
-function sendIMessageReply(handle, text) {
-  return new Promise((resolve, reject) => {
-    rememberIMessageReply(text);
-    const script = [
-      "on run argv",
-      "set targetHandle to item 1 of argv",
-      "set replyText to item 2 of argv",
-      "tell application \"Messages\"",
-      "set targetService to 1st service whose service type = iMessage",
-      "set targetBuddy to buddy targetHandle of targetService",
-      "send replyText to targetBuddy",
-      "end tell",
-      "end run"
-    ].join("\n");
-    const child = spawn("/usr/bin/osascript", ["-e", script, handle, text], {
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve({ ok: true });
-      else reject(new Error((stderr || stdout || `osascript exited ${code}`).trim()));
-    });
+async function sendIMessageReply(handle, text) {
+  assertHubAcceptingOutbound();
+  rememberIMessageReply(text);
+  const script = [
+    "on run argv",
+    "set targetHandle to item 1 of argv",
+    "set replyText to item 2 of argv",
+    "tell application \"Messages\"",
+    "set targetService to 1st service whose service type = iMessage",
+    "set targetBuddy to buddy targetHandle of targetService",
+    "send replyText to targetBuddy",
+    "end tell",
+    "end run"
+  ].join("\n");
+  await runProcess("/usr/bin/osascript", ["-e", script, handle, text], {
+    timeoutMs: 15_000,
+    maxOutputBytes: 256 * 1024,
+    signal: shutdownController.signal
   });
+  return { ok: true };
 }
 
-function sendIMessageAttachment(handle, filePath) {
-  return new Promise((resolve, reject) => {
-    prepareIMessageAttachment(filePath).then((preparedPath) => {
-    const script = [
-      "on run argv",
-      "set targetHandle to item 1 of argv",
-      "set attachmentPath to item 2 of argv",
-      "set attachmentFile to POSIX file attachmentPath",
-      "tell application \"Messages\"",
-      "set targetService to 1st service whose service type = iMessage",
-      "set targetBuddy to buddy targetHandle of targetService",
-      "send attachmentFile to targetBuddy",
-      "end tell",
-      "end run"
-    ].join("\n");
-    const child = spawn("/usr/bin/osascript", ["-e", script, handle, preparedPath], {
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve({ ok: true });
-      else reject(new Error((stderr || stdout || `osascript exited ${code}`).trim()));
-    });
-    }).catch(reject);
+async function sendIMessageAttachment(handle, filePath) {
+  assertHubAcceptingOutbound();
+  const preparedPath = await prepareIMessageAttachment(filePath);
+  const script = [
+    "on run argv",
+    "set targetHandle to item 1 of argv",
+    "set attachmentPath to item 2 of argv",
+    "set attachmentFile to POSIX file attachmentPath",
+    "tell application \"Messages\"",
+    "set targetService to 1st service whose service type = iMessage",
+    "set targetBuddy to buddy targetHandle of targetService",
+    "send attachmentFile to targetBuddy",
+    "end tell",
+    "end run"
+  ].join("\n");
+  await runProcess("/usr/bin/osascript", ["-e", script, handle, preparedPath], {
+    timeoutMs: 30_000,
+    maxOutputBytes: 256 * 1024,
+    signal: shutdownController.signal
   });
+  return { ok: true };
 }
 
 async function prepareIMessageAttachment(filePath) {
@@ -9412,37 +8998,24 @@ async function prepareIMessageAttachment(filePath) {
 }
 
 async function importImageToPhotos(filePath) {
+  assertHubAcceptingOutbound();
   const preparedPath = String(filePath || "").trim();
   await access(preparedPath);
-  return new Promise((resolve, reject) => {
-    const script = [
-      "on run argv",
-      "set imagePath to item 1 of argv",
-      "set imageFile to POSIX file imagePath as alias",
-      "tell application \"Photos\"",
-      "import {imageFile} skip check duplicates yes",
-      "end tell",
-      "end run"
-    ].join("\n");
-    const child = spawn("/usr/bin/osascript", ["-e", script, preparedPath], {
-      stdio: ["ignore", "pipe", "pipe"]
-    });
-    let stdout = "";
-    let stderr = "";
-    child.stdout.setEncoding("utf8");
-    child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => {
-      stdout += chunk;
-    });
-    child.stderr.on("data", (chunk) => {
-      stderr += chunk;
-    });
-    child.on("error", reject);
-    child.on("close", (code) => {
-      if (code === 0) resolve({ ok: true, output: stdout.trim(), path: preparedPath });
-      else reject(new Error((stderr || stdout || `osascript exited ${code}`).trim()));
-    });
+  const script = [
+    "on run argv",
+    "set imagePath to item 1 of argv",
+    "set imageFile to POSIX file imagePath as alias",
+    "tell application \"Photos\"",
+    "import {imageFile} skip check duplicates yes",
+    "end tell",
+    "end run"
+  ].join("\n");
+  const result = await runProcess("/usr/bin/osascript", ["-e", script, preparedPath], {
+    timeoutMs: 45_000,
+    maxOutputBytes: 256 * 1024,
+    signal: shutdownController.signal
   });
+  return { ok: true, output: result.stdout.trim(), path: preparedPath };
 }
 
 function formatQuotedContext(event) {
@@ -9519,22 +9092,30 @@ function stopActiveQqGeneration(id = null) {
 }
 
 function runCodexCli(args, input, options = {}) {
+  const replyScope = options.qqEvent ? getActiveQqReplyScopeForEvent(options.qqEvent) : null;
   return codexRunLimiter.run(() => {
-    const replyScope = options.qqEvent ? getActiveQqReplyScopeForEvent(options.qqEvent) : null;
     if (replyScope?.cancelled) return Promise.reject(createQqReplyStoppedError());
     return runCodexCliProcess(args, input, options);
-  });
+  }, { signal: replyScope?.signal });
 }
 
 function runCodexCliProcess(args, input, options) {
   return new Promise((resolve, reject) => {
     const startedAt = Date.now();
     const previousQuota = state.maintenance.codex.quota;
+    const outputArgumentIndex = args.indexOf("--output-last-message");
+    const partialOutputPath = outputArgumentIndex >= 0 ? String(args[outputArgumentIndex + 1] || "") : "";
+    const discardPartialOutput = () => {
+      if (partialOutputPath && isPathUnderAnyDir(partialOutputPath, [codexTmpDir])) {
+        void rm(partialOutputPath, { force: true }).catch(() => undefined);
+      }
+    };
     const child = spawn(codexCliPath, args, {
       cwd: options.cwd,
       env: buildCodexChildEnv({ overrides: options.env }),
       stdio: ["pipe", "pipe", "pipe"]
     });
+    activeCodexChildren.add(child);
     const qqGenerationId = options.env?.CODEX_REMOTE_CONTACT_QQ_MODE || options.env?.CODEX_REMOTE_CONTACT_QQ_OWNER_FILE_IMAGE_MODE
       ? trackQqGeneration(child, options)
       : null;
@@ -9584,6 +9165,7 @@ function runCodexCliProcess(args, input, options) {
       stderr = (stderr + chunk).slice(-8000);
     });
     child.on("error", (error) => {
+      activeCodexChildren.delete(child);
       if (settled) return;
       if (timedOutError) return;
       settled = true;
@@ -9600,15 +9182,18 @@ function runCodexCliProcess(args, input, options) {
         error
       }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
       clearTrackedQqGeneration(qqGenerationId);
+      discardPartialOutput();
       reject(error);
     });
     child.on("close", (code) => {
+      activeCodexChildren.delete(child);
       clearTimeout(timeout);
       if (forceKillTimer) clearTimeout(forceKillTimer);
       clearTrackedQqGeneration(qqGenerationId);
       if (settled) return;
       settled = true;
       if (timedOutError) {
+        discardPartialOutput();
         reject(timedOutError);
         return;
       }
@@ -9626,9 +9211,8 @@ function runCodexCliProcess(args, input, options) {
           senderId: options.qqEvent?.senderId || null,
           stderr: stderr.trim().slice(-1000) || null
         }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
-        refreshCodexQuotaSnapshotAfterRun({ startedAtMs: startedAt, previousQuota }).catch(() => null).finally(() => {
-          resolve({ stdout, stderr });
-        });
+        resolve({ stdout, stderr });
+        trackBackgroundTask(refreshCodexQuotaSnapshotAfterRun({ startedAtMs: startedAt, previousQuota }), () => null);
       } else if (qqGenerationId && stoppedQqGenerationIds.delete(qqGenerationId)) {
         state.maintenance.codex.lastOk = false;
         state.maintenance.codex.lastError = "QQ generation stopped by /stop";
@@ -9641,6 +9225,7 @@ function runCodexCliProcess(args, input, options) {
         }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
         const stoppedError = new Error("QQ generation stopped by /stop");
         stoppedError.code = "QQ_GENERATION_STOPPED";
+        discardPartialOutput();
         reject(stoppedError);
       } else {
         const message = `Codex CLI exited with ${code}: ${(stderr || stdout).trim()}`;
@@ -9656,11 +9241,22 @@ function runCodexCliProcess(args, input, options) {
           stderr: stderr.trim().slice(-2000),
           stdout: stdout.trim().slice(-1000)
         }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
+        discardPartialOutput();
         reject(new Error(message));
       }
     });
 
-    child.stdin.end(input);
+    child.stdin.on("error", (error) => {
+      if (error?.code === "EPIPE" || error?.code === "ERR_STREAM_DESTROYED") return;
+      stderr = (stderr + `\nstdin: ${error.message}`).slice(-8000);
+    });
+    try {
+      child.stdin.end(input);
+    } catch (error) {
+      if (error?.code !== "EPIPE" && error?.code !== "ERR_STREAM_DESTROYED") {
+        stderr = (stderr + `\nstdin: ${error.message}`).slice(-8000);
+      }
+    }
   });
 }
 
@@ -9706,6 +9302,14 @@ async function ensureCodexReplyWorkspace() {
       "不要写解释、分析、标题或 Markdown。"
     ].filter(Boolean).join("\n")
   );
+}
+
+async function readCodexOutputAndRemove(outputPath) {
+  try {
+    return await readFile(outputPath, "utf8");
+  } finally {
+    await rm(outputPath, { force: true }).catch(() => undefined);
+  }
 }
 
 async function sendOneBotGroupReply(event, reply, options = {}) {
@@ -9763,7 +9367,7 @@ async function sendOneBotGroupMessage(event, reply, options = {}) {
       })
     });
 
-    const body = await response.json().catch(() => ({}));
+    const body = await readResponseJson(response).catch(() => ({}));
     messageResult = {
       ok: response.ok && (body.status == null || body.status === "ok"),
       status: response.status,
@@ -9839,7 +9443,7 @@ async function sendOneBotPrivateMessage(event, reply, options = {}) {
       })
     });
 
-    const body = await response.json().catch(() => ({}));
+    const body = await readResponseJson(response).catch(() => ({}));
     messageResult = {
       ok: response.ok && (body.status == null || body.status === "ok"),
       status: response.status,
@@ -9942,7 +9546,7 @@ async function fetchOneBotMessage(messageId, selfId) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ message_id: Number(messageId) })
   });
-  const body = await response.json().catch(() => ({}));
+  const body = await readResponseJson(response).catch(() => ({}));
   if (!response.ok || body.status !== "ok" || !body.data) {
     throw new Error(`Unable to fetch quoted QQ message ${messageId}`);
   }
@@ -10046,7 +9650,7 @@ async function fetchOneBotForwardContent(forwardId, {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ id })
   });
-  const body = await response.json().catch(() => ({}));
+  const body = await readResponseJson(response).catch(() => ({}));
   const messages = Array.isArray(body.data?.messages)
     ? body.data.messages
     : Array.isArray(body.data)
@@ -10462,7 +10066,7 @@ async function uploadOneBotFile(endpoint, payload, { signal } = {}) {
     signal,
     body: JSON.stringify(payload)
   });
-  const body = await response.json().catch(() => ({}));
+  const body = await readResponseJson(response).catch(() => ({}));
   return {
     ok: response.ok && (body.status == null || body.status === "ok"),
     status: response.status,
@@ -10495,7 +10099,7 @@ async function callOneBotAction(endpoint, payload) {
     headers: { "content-type": "application/json" },
     body: JSON.stringify(payload)
   });
-  const body = await response.json().catch(() => ({}));
+  const body = await readResponseJson(response).catch(() => ({}));
   return {
     ok: response.ok && (body.status == null || body.status === "ok"),
     status: response.status,
@@ -10597,9 +10201,9 @@ function normalizeOneBotEvent(payload) {
 
   return {
     type: payload.message_type === "group" && hasSelfAtSegment ? "group_at" : messageType,
-    selfId: payload.self_id == null ? undefined : String(payload.self_id),
-    groupId: payload.group_id == null ? undefined : String(payload.group_id),
-    senderId: payload.user_id == null ? undefined : String(payload.user_id),
+    selfId: normalizeQqIdentifier(payload.self_id),
+    groupId: normalizeQqIdentifier(payload.group_id),
+    senderId: normalizeQqIdentifier(payload.user_id),
     senderName: payload.sender?.card || payload.sender?.nickname || String(payload.user_id || "群友"),
     text: contentContext.displayText || payload.raw_message || textFromSegments,
     contentContext: {
@@ -10626,25 +10230,25 @@ function isOneBotPokeNotice(payload) {
 
 function isOneBotPokeToSelf(payload) {
   if (!isOneBotPokeNotice(payload)) return false;
-  const selfId = payload.self_id == null ? "" : String(payload.self_id);
-  const targetId = payload.target_id == null ? "" : String(payload.target_id);
+  const selfId = normalizeQqIdentifier(payload.self_id) || "";
+  const targetId = normalizeQqIdentifier(payload.target_id) || "";
   const senderId = getOneBotPokeSenderId(payload);
   return Boolean(selfId && targetId === selfId && senderId && senderId !== selfId);
 }
 
 function getOneBotPokeSenderId(payload) {
-  return String(payload?.sender_id ?? payload?.user_id ?? payload?.operator_id ?? "").trim();
+  return normalizeQqIdentifier(payload?.sender_id ?? payload?.user_id ?? payload?.operator_id) || "";
 }
 
 function normalizeOneBotPokeEvent(payload) {
   const senderId = getOneBotPokeSenderId(payload);
-  const targetId = payload.target_id == null ? undefined : String(payload.target_id);
+  const targetId = normalizeQqIdentifier(payload.target_id);
   const isGroup = payload.group_id != null;
   const senderName = payload.sender?.card || payload.sender?.nickname || `QQ ${senderId || "群友"}`;
   return {
     type: isGroup ? "group_poke" : "private_poke",
-    selfId: payload.self_id == null ? undefined : String(payload.self_id),
-    groupId: isGroup ? String(payload.group_id) : undefined,
+    selfId: normalizeQqIdentifier(payload.self_id),
+    groupId: isGroup ? normalizeQqIdentifier(payload.group_id) : undefined,
     senderId,
     senderName,
     text: `${senderName} 拍了拍你。`,
@@ -10670,14 +10274,37 @@ function isSelfAtSegment(segment, selfId) {
   return target != null && String(target) === String(selfId);
 }
 
-function enrichQqEvent(event) {
-  const senderId = event.senderId == null ? undefined : String(event.senderId);
-  const isOwner = senderId ? state.qq.ownerUserIds.includes(senderId) : false;
+function enrichQqEvent(event, { allowOwner = event?.ownerSourceTrusted !== false } = {}) {
+  const senderId = normalizeQqIdentifier(event?.senderId);
+  const groupId = normalizeQqIdentifier(event?.groupId);
+  const selfId = normalizeQqIdentifier(event?.selfId);
+  const ownerSourceTrusted = Boolean(allowOwner);
+  const isOwner = ownerSourceTrusted && senderId ? state.qq.ownerUserIds.includes(senderId) : false;
   return {
     ...event,
     senderId,
+    groupId,
+    selfId,
+    ownerSourceTrusted,
     isOwner,
     senderLabel: getSenderLabel(senderId, event.senderName)
+  };
+}
+
+function normalizeQqIdentifier(value) {
+  const id = String(value ?? "").trim();
+  return /^\d{4,20}$/.test(id) ? id : undefined;
+}
+
+function stripUntrustedQqLocalImagePaths(event) {
+  if (!Array.isArray(event?.images)) return event;
+  return {
+    ...event,
+    images: event.images.map((image) => {
+      const file = String(image?.file || "").replace(/^file:\/\//, "");
+      if (!isAbsolute(file)) return image;
+      return { ...image, file: "", path: "", file_path: "", filePath: "" };
+    })
   };
 }
 
@@ -10698,29 +10325,60 @@ function getEventDedupeKey(event) {
 
 function rememberEvent(key) {
   if (!key) return false;
+  const normalizedKey = String(key).slice(0, 256);
   const now = Date.now();
-  for (const [seenKey, seenAt] of seenOneBotMessageIds) {
-    if (now - seenAt > seenMessageTtlMs) seenOneBotMessageIds.delete(seenKey);
+  while (seenOneBotMessageIds.size > 0) {
+    const [oldestKey, oldestAt] = seenOneBotMessageIds.entries().next().value;
+    if (now - oldestAt <= seenMessageTtlMs && seenOneBotMessageIds.size < 10_000) break;
+    seenOneBotMessageIds.delete(oldestKey);
   }
-  if (seenOneBotMessageIds.has(key)) return true;
-  seenOneBotMessageIds.set(key, now);
+  if (seenOneBotMessageIds.has(normalizedKey)) return true;
+  seenOneBotMessageIds.set(normalizedKey, now);
   return false;
 }
 
 async function handleApi(req, res) {
   const requestUrl = new URL(req.url || "/", "http://localhost");
+  if (!managementApiToken && !isLoopbackRequestHost(req.headers.host)) {
+    return sendJson(res, 403, { error: "Loopback Host header required" });
+  }
+  const requestOrigin = String(req.headers.origin || "").trim();
+  if (!isRequestOriginAllowed(requestOrigin, hubAllowedOrigins)) {
+    sendJson(res, 403, { error: "Origin is not allowed" });
+    return true;
+  }
+  const responseCorsHeaders = corsHeaders(requestOrigin, hubAllowedOrigins);
+  for (const [name, value] of Object.entries(responseCorsHeaders)) {
+    res.setHeader(name, value);
+  }
   if (req.method === "OPTIONS") {
-    res.writeHead(204, corsHeaders());
+    res.writeHead(204);
     res.end();
     return true;
+  }
+
+  const isOneBotWebhook = requestUrl.pathname === "/api/onebot/event";
+  let trustedOneBotRequest = false;
+  const oneBotWebhookToken = oneBotAccessToken || managementApiToken;
+  if (isOneBotWebhook && oneBotWebhookToken) {
+    trustedOneBotRequest = requestHasValidToken(req, oneBotWebhookToken, {
+      alternativeHeaders: oneBotAccessToken ? ["x-onebot-access-token"] : ["x-codex-api-token"]
+    });
+    if (!trustedOneBotRequest) return sendJson(res, 401, { error: "OneBot authentication required" });
+  } else if (!isOneBotWebhook && managementApiToken && !requestHasValidToken(req, managementApiToken, {
+    alternativeHeaders: ["x-codex-api-token"]
+  })) {
+    return sendJson(res, 401, { error: "API authentication required" });
   }
 
   if (req.method === "GET" && req.url === "/api/state") {
     return sendJson(res, 200, buildPublicState());
   }
 
-  if (req.method === "GET" && req.url === "/api/maintenance") {
-    return sendJson(res, 200, await buildMaintenanceStatus());
+  if (req.method === "GET" && requestUrl.pathname === "/api/maintenance") {
+    return sendJson(res, 200, await buildMaintenanceStatus({
+      force: requestUrl.searchParams.get("force") === "1"
+    }));
   }
 
   if (req.method === "GET" && requestUrl.pathname === "/api/logs") {
@@ -10732,7 +10390,7 @@ async function handleApi(req, res) {
   }
 
   if (req.method === "POST" && req.url === "/api/channel") {
-    const body = await readBody(req);
+    const body = await readBody(req, { requireJson: true });
     if (!["qq", "imessage"].includes(body.channel)) {
       return sendJson(res, 400, { error: "Unknown channel" });
     }
@@ -10742,7 +10400,7 @@ async function handleApi(req, res) {
   }
 
   if (req.method === "POST" && req.url === "/api/qq/groups") {
-    const body = await readBody(req);
+    const body = await readBody(req, { requireJson: true });
     if (Array.isArray(body.allowedGroups)) {
       state.qq.allowedGroups = normalizeAllowedGroups(body.allowedGroups);
       await saveSettings();
@@ -10751,7 +10409,7 @@ async function handleApi(req, res) {
   }
 
   if (req.method === "POST" && req.url === "/api/imessage/trusted-handles") {
-    const body = await readBody(req);
+    const body = await readBody(req, { requireJson: true });
     if (Array.isArray(body.trustedHandles)) {
       state.imessage.trustedHandles = normalizeList(body.trustedHandles);
       await saveSettings();
@@ -10760,14 +10418,14 @@ async function handleApi(req, res) {
   }
 
   if (req.method === "POST" && req.url === "/api/imessage/reply-handle") {
-    const body = await readBody(req);
+    const body = await readBody(req, { requireJson: true });
     state.imessage.replyHandle = String(body.replyHandle || "").trim();
     await saveSettings();
     return sendJson(res, 200, buildPublicState());
   }
 
   if (req.method === "POST" && req.url === "/api/unified-memory/settings") {
-    const body = await readBody(req);
+    const body = await readBody(req, { requireJson: true });
     state.unifiedMemory.autoWriteOnSkillRecall = Boolean(body.autoWriteOnSkillRecall);
     state.unifiedMemory.autoWriteOnIMessageRecall = Boolean(body.autoWriteOnIMessageRecall);
     state.unifiedMemory.manualHandoffCommand = Boolean(body.manualHandoffCommand);
@@ -10776,7 +10434,7 @@ async function handleApi(req, res) {
   }
 
   if (req.method === "POST" && req.url === "/api/qq/memory/clear") {
-    const body = await readBody(req);
+    const body = await readBody(req, { requireJson: true });
     if (body.groupId) {
       delete state.qq.memory.entries[String(body.groupId)];
       delete state.qq.memory.recentMessages[String(body.groupId)];
@@ -10784,20 +10442,18 @@ async function handleApi(req, res) {
       delete state.qq.conversationMemory.groups[String(body.groupId)];
       delete state.qq.pendingReplies[String(body.groupId)];
     } else {
-      state.qq.memory.entries = {};
-      state.qq.memory.recentMessages = {};
-      state.qq.personas.groups = {};
+      state.qq.memory.entries = createSafeRecord();
+      state.qq.memory.recentMessages = createSafeRecord();
+      state.qq.personas.groups = createSafeRecord();
       state.qq.conversationMemory = createEmptyQqConversationMemory();
-      state.qq.pendingReplies = {};
+      state.qq.pendingReplies = createSafeRecord();
     }
-    await saveQqMemory();
-    await saveQqPersonas();
-    await saveQqConversationMemory();
+    await Promise.all([saveQqMemory(), saveQqPersonas(), saveQqConversationMemory()]);
     return sendJson(res, 200, buildPublicState());
   }
 
   if (req.method === "POST" && req.url === "/api/memory/clear") {
-    const body = await readBody(req);
+    const body = await readBody(req, { requireJson: true });
     const scope = String(body.scope || "").trim();
     const id = body.id == null ? "" : String(body.id);
     if (scope === "remoteExecution") {
@@ -10807,7 +10463,7 @@ async function handleApi(req, res) {
     }
     if (scope === "imessage") {
       if (id) delete state.imessage.memory.entries[id];
-      else state.imessage.memory.entries = {};
+      else state.imessage.memory.entries = createSafeRecord();
       await saveIMessageMemory();
       return sendJson(res, 200, await buildMemorySnapshot());
     }
@@ -10820,15 +10476,13 @@ async function handleApi(req, res) {
         else delete state.qq.conversationMemory.groups[id];
         delete state.qq.pendingReplies[id];
       } else {
-        state.qq.memory.entries = {};
-        state.qq.memory.recentMessages = {};
-        state.qq.personas.groups = {};
+        state.qq.memory.entries = createSafeRecord();
+        state.qq.memory.recentMessages = createSafeRecord();
+        state.qq.personas.groups = createSafeRecord();
         state.qq.conversationMemory = createEmptyQqConversationMemory();
-        state.qq.pendingReplies = {};
+        state.qq.pendingReplies = createSafeRecord();
       }
-      await saveQqMemory();
-      await saveQqPersonas();
-      await saveQqConversationMemory();
+      await Promise.all([saveQqMemory(), saveQqPersonas(), saveQqConversationMemory()]);
       return sendJson(res, 200, await buildMemorySnapshot());
     }
     if (scope === "qqPublicMemory") {
@@ -10845,7 +10499,11 @@ async function handleApi(req, res) {
   }
 
   if (req.method === "POST" && req.url === "/api/qq/event") {
-    const event = enrichQqEvent(await readBody(req));
+    const body = await readBody(req, { requireJson: true });
+    const event = enrichQqEvent(stripUntrustedQqLocalImagePaths(body), { allowOwner: false });
+    if (!event.senderId || (body.groupId != null && !event.groupId)) {
+      return sendJson(res, 400, { error: "QQ senderId and groupId must be numeric identifiers" });
+    }
     ensureQqTraceId(event);
     logger.debug("QQ event received", {
       source: "qq",
@@ -10859,9 +10517,9 @@ async function handleApi(req, res) {
   }
 
   if (req.method === "POST" && req.url === "/api/onebot/event") {
-    const payload = await readBody(req);
+    const payload = await readBody(req, { requireJson: true, maxBytes: 256 * 1024 });
     if (payload.post_type === "request") {
-      return sendJson(res, 200, await handleIncomingOneBotRequest(payload));
+      return sendJson(res, 200, await handleIncomingOneBotRequest(payload, { trustedSource: trustedOneBotRequest }));
     }
     if (isOneBotPokeNotice(payload)) {
       if (!isOneBotPokeToSelf(payload)) {
@@ -10871,7 +10529,10 @@ async function handleApi(req, res) {
         }, "onebot");
         return sendJson(res, 200, { ignored: true, reason: "Only poke events targeting the bot are handled" });
       }
-      const event = enrichQqEvent(normalizeOneBotPokeEvent(payload));
+      const event = enrichQqEvent(normalizeOneBotPokeEvent(payload), { allowOwner: trustedOneBotRequest });
+      if (!event.senderId || (payload.group_id != null && !event.groupId)) {
+        return sendJson(res, 400, { error: "Invalid OneBot QQ identifier" });
+      }
       ensureQqTraceId(event);
       const dedupeKey = getEventDedupeKey(event);
       if (rememberEvent(dedupeKey)) {
@@ -10885,8 +10546,7 @@ async function handleApi(req, res) {
           error: null,
           send: null
         };
-        state.qq.events.unshift(record);
-        state.qq.events = state.qq.events.slice(0, 30);
+        recordQqEvent(record);
         logger.debug("Duplicate OneBot poke ignored", { dedupeKey, groupId: event.groupId || null, senderId: event.senderId || null }, "onebot", qqLogContext(event));
         return sendJson(res, 200, { status: "ok", duplicate: true, traceId: event.traceId });
       }
@@ -10903,8 +10563,14 @@ async function handleApi(req, res) {
       return sendJson(res, 200, { ignored: true, reason: "Only group/private message events are handled" });
     }
 
-    const normalizedEvent = await attachQqRichMessageContext(normalizeOneBotEvent(payload));
-    const event = enrichQqEvent(await attachReplyContext(normalizedEvent));
+    const normalizedOneBotEvent = normalizeOneBotEvent(payload);
+    const normalizedEvent = await attachQqRichMessageContext(
+      trustedOneBotRequest ? normalizedOneBotEvent : stripUntrustedQqLocalImagePaths(normalizedOneBotEvent)
+    );
+    const event = enrichQqEvent(await attachReplyContext(normalizedEvent), { allowOwner: trustedOneBotRequest });
+    if (!event.senderId || (payload.message_type === "group" && !event.groupId)) {
+      return sendJson(res, 400, { error: "Invalid OneBot QQ identifier" });
+    }
     ensureQqTraceId(event);
     const dedupeKey = getEventDedupeKey(event);
     if (rememberEvent(dedupeKey)) {
@@ -10918,8 +10584,7 @@ async function handleApi(req, res) {
         error: null,
         send: null
       };
-      state.qq.events.unshift(record);
-      state.qq.events = state.qq.events.slice(0, 30);
+      recordQqEvent(record);
       logger.debug("Duplicate OneBot message ignored", { dedupeKey, groupId: event.groupId || null, senderId: event.senderId || null }, "onebot", qqLogContext(event));
       return sendJson(res, 200, { status: "ok", duplicate: true, traceId: event.traceId });
     }
@@ -10970,9 +10635,13 @@ updateQqProactiveMinuteScheduler();
 const server = createServer(async (req, res) => {
   try {
     if (req.url?.startsWith("/api/")) {
-      const handled = await handleApi(req, res);
+      const requestPath = new URL(req.url, "http://localhost").pathname;
+      const handled = requestPath === "/api/onebot/event"
+        ? await oneBotWebhookLimiter.run(() => handleApi(req, res), { signal: shutdownController.signal })
+        : await handleApi(req, res);
       if (handled !== false) return;
     }
+    if (await handleDashboardAsset(req, res)) return;
     sendJson(res, 404, { error: "Not found" });
   } catch (error) {
     logger.error("HTTP API request failed", {
@@ -10993,6 +10662,81 @@ server.listen(hubPort, hubHost, () => {
     logFile: logFilePath
   }, "system");
 });
+
+let shutdownPromise = null;
+function shutdown(signal) {
+  if (shutdownPromise) return shutdownPromise;
+  shutdownPromise = (async () => {
+    shuttingDown = true;
+    logger.info("Codex QQ Bot hub shutting down", {
+      signal,
+      activeCodexChildren: activeCodexChildren.size,
+      activeQqGenerations: Object.keys(state.qq.activeGenerations).length
+    }, "system");
+    state.channels.qq = false;
+    state.channels.imessage = false;
+    if (imessagePollTimer) clearInterval(imessagePollTimer);
+    if (remoteExecutionIdleTimer) clearInterval(remoteExecutionIdleTimer);
+    if (qqProactiveMinuteTimer) clearInterval(qqProactiveMinuteTimer);
+    imessagePollTimer = null;
+    remoteExecutionIdleTimer = null;
+    qqProactiveMinuteTimer = null;
+    const shutdownError = new Error("Hub is shutting down");
+    shutdownError.code = "HUB_SHUTTING_DOWN";
+    codexRunLimiter.close(shutdownError);
+    oneBotWebhookLimiter.close(shutdownError);
+    qqReplyScheduler.close(shutdownError);
+    shutdownController.abort(shutdownError);
+
+    for (const child of activeCodexChildren) {
+      try {
+        child.kill("SIGTERM");
+      } catch {
+        // The child may have exited between iteration and termination.
+      }
+    }
+
+    const closeServer = new Promise((resolveClose) => {
+      server.close(() => resolveClose("closed"));
+    });
+    const forceClose = new Promise((resolveClose) => {
+      const timer = setTimeout(() => {
+        server.closeAllConnections?.();
+        for (const child of activeCodexChildren) {
+          try {
+            child.kill("SIGKILL");
+          } catch {
+            // The child has already exited.
+          }
+        }
+        resolveClose("forced");
+      }, 5_000);
+      timer.unref?.();
+    });
+    const closeMode = await Promise.race([closeServer, forceClose]);
+    await waitForBackgroundTasks();
+    await Promise.all([
+      qqMemoryWriter.close(),
+      qqPersonasWriter.close(),
+      qqConversationMemoryWriter.close()
+    ]);
+    await logger.info("Codex QQ Bot hub stopped", { signal, closeMode }, "system");
+    await logger.flush();
+  })();
+  return shutdownPromise;
+}
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => {
+    void shutdown(signal)
+      .then(() => process.exit(0))
+      .catch(async (error) => {
+        await logger.error("Hub shutdown failed", { signal, error }, "system");
+        await logger.flush().catch(() => undefined);
+        process.exit(1);
+      });
+  });
+}
 
 async function ensureAvailableQqModel() {
   try {

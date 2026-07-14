@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { findCodexModel, normalizeCodexModels } from "../src/codex-model-catalog.js";
+import { findCodexModel, normalizeCodexModels, readCodexModels } from "../src/codex-model-catalog.js";
 
 test("normalizes visible Codex models and their reasoning efforts", () => {
   const models = normalizeCodexModels([
@@ -40,4 +40,11 @@ test("finds a Codex model by picker number, id, or model slug", () => {
   assert.equal(findCodexModel(models, "FIRST"), models[0]);
   assert.equal(findCodexModel(models, "GPT-SECOND"), models[1]);
   assert.equal(findCodexModel(models, "3"), null);
+});
+
+test("rejects cleanly when the Codex app-server exits before reading stdin", async () => {
+  await assert.rejects(
+    readCodexModels({ codexPath: "/bin/false", timeoutMs: 1_000 }),
+    /EPIPE|exited with|stdin closed/
+  );
 });

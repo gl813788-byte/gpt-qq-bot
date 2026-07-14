@@ -5,6 +5,7 @@
 node_modules/
 .env
 .env.*
+config/local.env
 
 # Build outputs and local downloads
 build/
@@ -35,7 +36,10 @@ data/qq-memory.json
 data/qq-personas.json
 data/qq-public-memory.json
 data/qq-conversation-memory.json
+data/qq-requests.json
+data/qq-sticker-inventory.json
 data/qq-sticker-labels.json
+data/qq-stickers/
 data/keep-awake.pid
 data/previous-brightness.txt
 modules/system-control/bin/

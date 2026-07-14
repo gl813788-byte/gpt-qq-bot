@@ -46,8 +46,23 @@ export async function writeTextAtomically(filePath, content, { mode = 0o600 } = 
     await handle.close();
     handle = null;
     await rename(temporaryPath, filePath);
+    await syncDirectory(directory);
   } finally {
     await handle?.close().catch(() => undefined);
     await unlink(temporaryPath).catch(() => undefined);
+  }
+}
+
+export async function syncDirectory(directory) {
+  let handle = null;
+  try {
+    handle = await open(directory, "r");
+    await handle.sync();
+    return true;
+  } catch (error) {
+    if (["EACCES", "EINVAL", "EISDIR", "ENOTSUP", "EPERM"].includes(error?.code)) return false;
+    throw error;
+  } finally {
+    await handle?.close().catch(() => undefined);
   }
 }

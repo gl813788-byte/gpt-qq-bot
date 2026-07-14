@@ -25,12 +25,13 @@ Codex QQ Bot 运行在本机，把 QQ/OneBot、Codex CLI、本机自动化脚本
 
 主程序可以独立启动，并内置 QQ enhancer、统一记忆与最近 Codex 上下文检索。需要替换为更高级实现时，可以把外部升级包放到旁边覆盖默认模块。
 
-项目不再提供自己的浏览器 WebUI。日常控制统一通过 `ncc` 脚本完成。
+项目内置响应式浏览器仪表盘，日常控制既可以使用图形界面，也可以继续使用 `ncc` 脚本。
 
 ## 功能亮点
 
 | 模块 | 说明 |
 | :--- | :--- |
+| 浏览器仪表盘 | 在桌面端和移动端查看运行概览、通道、记忆、日志和设置；支持明暗主题、自动刷新、日志筛选以及常用配置操作。 |
 | iMessage 控制台 | 仅 macOS。接收可信联系人发来的 `/状态`、`/维护`、`/开启QQ`、`/关闭QQ`、`/节点检查`、`/切换节点`、`/远程执行` 等指令。 |
 | iMessage 私聊回复 | 仅 macOS。调用 Codex CLI 生成回复，保存独立滚动上下文，在数据库权限故障后自动恢复轮询游标，并支持单条消息临时切换模型。 |
 | QQ/OneBot 通道 | 接收 QQ 群聊和私聊，忽略尚未转写的语音消息，识别明确 @ 附图，在需要时继续向前翻上下文，并保存轻量群友画像。 |
@@ -240,9 +241,9 @@ ncc stop-hub
 /root/napcat-codex-control.sh all
 ```
 
-### 7. 后端 API
+### 7. 浏览器仪表盘与后端 API
 
-HTTP 服务只保留给 `ncc`、NapCat OneBot 回调和诊断使用。
+HTTP 服务同时提供同源仪表盘、`ncc`、NapCat OneBot 回调和诊断 API。
 
 开发模式：
 
@@ -256,6 +257,14 @@ npm start
 ```bash
 curl http://localhost:3789/api/state
 ```
+
+启动 Hub 后在浏览器打开：
+
+```text
+http://127.0.0.1:3789/
+```
+
+仪表盘包含概览、QQ/iMessage 通道管理、统一与会话记忆、结构化日志、主题与刷新设置。macOS WebKit 客户端也加载同一个地址，确保桌面 App 与浏览器行为一致。
 
 ### 8. 日志
 
@@ -457,6 +466,8 @@ export CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE="/absolute/path/to/unified-mem
 
 ```bash
 ONEBOT_API_BASE=http://127.0.0.1:3000
+# 推荐设置；同时保护 OneBot 入站回调，并自动用于出站请求
+ONEBOT_ACCESS_TOKEN=
 CODEX_CLI_PATH=/Applications/Codex.app/Contents/Resources/codex
 
 CODEX_REMOTE_CONTACT_CODEX_MODEL=gpt-5.4-mini
@@ -468,6 +479,9 @@ CODEX_REMOTE_CONTACT_IMESSAGE_MEMORY_LIMIT=120
 
 CODEX_REMOTE_CONTACT_QQ_MEMORY_LIMIT=10
 CODEX_REMOTE_CONTACT_QQ_GROUP_MEMORY_LIMIT=200
+CODEX_REMOTE_CONTACT_QQ_SCOPE_LIMIT=500
+CODEX_REMOTE_CONTACT_QQ_PERSONA_MEMBER_LIMIT=500
+CODEX_REMOTE_CONTACT_QQ_IMAGE_MAX_BYTES=20971520
 CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP=1
 CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS=12000
 CODEX_REMOTE_CONTACT_QQ_WEB_ATTEMPT_TIMEOUT_MS=6500
@@ -476,6 +490,23 @@ CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER=tavily
 CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS=tavily,bing,baidu,so360,sogou,duckduckgo
 CODEX_REMOTE_CONTACT_QQ_SOCIAL_API_BASE=
 TAVILY_API_KEY=tvly-...
+
+CODEX_REMOTE_CONTACT_HOST=127.0.0.1
+CODEX_REMOTE_CONTACT_PORT=3789
+CODEX_REMOTE_CONTACT_CORS_ORIGINS=http://127.0.0.1:3789,http://localhost:3789
+# 设置后，仪表盘会在首次 401 时请求令牌，并仅在当前标签页保存
+CODEX_REMOTE_CONTACT_API_TOKEN=
+# 只有明确需要监听局域网/公网地址时才设置为 1
+CODEX_REMOTE_CONTACT_ALLOW_REMOTE=0
+
+CODEX_REMOTE_CONTACT_CODEX_MAX_CONCURRENCY=2
+CODEX_REMOTE_CONTACT_CODEX_MAX_PENDING=32
+CODEX_REMOTE_CONTACT_ONEBOT_MAX_CONCURRENCY=8
+CODEX_REMOTE_CONTACT_ONEBOT_MAX_PENDING=32
+CODEX_REMOTE_CONTACT_QUOTA_CACHE_TTL_MS=30000
+CODEX_REMOTE_CONTACT_ONEBOT_HEALTH_TTL_MS=15000
+CODEX_REMOTE_CONTACT_SQLITE_TIMEOUT_MS=8000
+CODEX_REMOTE_CONTACT_SQLITE_MAX_OUTPUT_BYTES=2097152
 
 CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MODEL=gpt-5.4
 CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_REASONING_EFFORT=medium
@@ -495,6 +526,23 @@ CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE=/absolute/path/to/unified-memory/src/
 - `CODEX_REMOTE_CONTACT_QQ_WEB_PRESET`：预设顺序，可用 `balanced`、`china`、`global`、`tavily`、`privacy`。
 - `CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS`：完全自定义厂商顺序，逗号分隔；例如 `tavily,bing,baidu`。
 - `ncc search-config` 会把本机默认搜索配置写入 `config/local.env`；如果环境里有 `TAVILY_API_KEY`，会自动启用 Tavily 优先。
+
+OneBot 入站回调的处理规模由 `CODEX_REMOTE_CONTACT_ONEBOT_MAX_CONCURRENCY`（默认 `8`）和 `CODEX_REMOTE_CONTACT_ONEBOT_MAX_PENDING`（默认 `32`）限制。当并发与排队容量都已占满时，新增回调会收到 HTTP `429`，不会继续形成无上限的内存队列。
+
+Hub 默认只监听回环地址。非回环监听必须同时设置 `CODEX_REMOTE_CONTACT_ALLOW_REMOTE=1` 和非空 `CODEX_REMOTE_CONTACT_API_TOKEN`，外网访问仍建议放在 TLS 与访问控制完善的反向代理之后。未设置管理 API 令牌时，每个 `/api/*` 请求都必须使用字面量回环 `Host`（`localhost`、`127.0.0.1` 或 `[::1]`，可带端口）；即使任意域名通过 DNS 解析到回环地址也会被拒绝，从而阻断浏览器通过 DNS rebinding 访问本地 API。浏览器跨域访问仅允许 `CODEX_REMOTE_CONTACT_CORS_ORIGINS` 中列出的 Origin；未配置管理令牌时，服务也会拒绝通配符 CORS。同源仪表盘、原生 OneBot、`curl` 和 `ncc` 保持兼容。写接口只接受 `application/json`。
+
+OneBot webhook 在设置了 `ONEBOT_ACCESS_TOKEN` 时使用该令牌鉴权；否则会回退使用 `CODEX_REMOTE_CONTACT_API_TOKEN`，因此启用远程管理不会意外留下未鉴权的回调入口。只有两个令牌都为空时，回调才允许无鉴权进入；此类回调会被视为不可信来源，不能获得主人权限。
+
+## 开发验证
+
+```bash
+npm run check          # 检查项目内全部 JS/MJS 与示例 JSON
+npm test               # 完整测试
+npm run test:coverage  # 带覆盖率报告的完整测试
+npm run verify         # 提交前检查 + 完整测试
+```
+
+联网检索实现位于 `src/web-search.js`，与主服务编排分离。搜索页面和摘要抓取有响应体上限；摘要补全会拒绝 localhost、私网 IP 以及跳转到私网的 URL。
 
 ## 故障排查
 

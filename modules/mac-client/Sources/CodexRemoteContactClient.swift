@@ -14,6 +14,7 @@ final class DragRegionView: NSView {
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private let dashboardURL = "http://127.0.0.1:3789/"
     private let hubBaseURL = "http://127.0.0.1:3789/api/state"
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -93,11 +94,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     private func loadClient() {
-        guard let url = Bundle.main.url(forResource: "client", withExtension: "html") else {
-            presentFatalError("找不到客户端资源 client.html")
+        guard let url = URL(string: dashboardURL) else {
+            presentFatalError("本地仪表盘地址无效")
             return
         }
-        webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        webView.load(URLRequest(url: url, cachePolicy: .reloadRevalidatingCacheData))
     }
 
     private func buildMenu() {

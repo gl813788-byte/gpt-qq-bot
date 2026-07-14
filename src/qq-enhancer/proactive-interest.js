@@ -351,6 +351,9 @@ async function judgeProactiveInterestWithOpenRouter(event, assessment, config) {
         model: config.model,
         temperature: 0.2,
         max_tokens: 2048,
+        reasoning: {
+          effort: "none"
+        },
         stream: true,
         messages: buildJudgeMessages(event, assessment, config)
       }),
@@ -493,6 +496,7 @@ function buildJudgeMessages(event, assessment, config) {
         "兴趣不等于应该说话。先判断最新消息属于谁的对话、话题是否仍在继续、Bot 能否增加一个具体新信息或真正好笑的接点。",
         "如果是两个人的来回、已经有人回答、只是生活碎片/短反应、话题已转走，或 Bot 只能复述与泛泛赞同，应当不回复；Bot 不需要抢答群里的每个问题。",
         "只有插话不会打断当前节奏，而且内容比沉默更有价值时，才判定回复。",
+        "先在普通回复正文中输出一行简短的 ANALYSIS:，用不超过 200 个汉字完成判断；不要把分析放进 reasoning 字段。",
         "最后必须单独输出一行 FINAL_JSON: {\"shouldReply\":boolean,\"interest\":0-100,\"reason\":\"string\",\"replyStyle\":\"string\"}。",
         "Hub 只读取最后的 FINAL_JSON；shouldReply 和 interest 是最终依据。不要使用 Markdown。"
       ].join("\n")

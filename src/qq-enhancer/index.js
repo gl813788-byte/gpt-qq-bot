@@ -1,10 +1,17 @@
-import { copyFile, mkdir, readdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readdir, stat } from "node:fs/promises";
 import { basename, extname, isAbsolute, join } from "node:path";
 import crypto from "node:crypto";
+import { isSupportedImageContentType, writeResponseBodyToFile } from "../bounded-stream.js";
+import { fetchWithUrlPolicy } from "../safe-fetch.js";
 
 export { evaluateQqProactiveInterest, scoreQqTextInterest, shouldProactivelyReplyToQq } from "./proactive-interest.js";
 
 const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+const imageMaxBytesRaw = Number(process.env.CODEX_REMOTE_CONTACT_QQ_IMAGE_MAX_BYTES || 20 * 1024 * 1024);
+const imageMaxBytes = Number.isFinite(imageMaxBytesRaw)
+  ? Math.max(256 * 1024, Math.min(100 * 1024 * 1024, Math.floor(imageMaxBytesRaw)))
+  : 20 * 1024 * 1024;
+const oneBotApiBase = process.env.ONEBOT_API_BASE || "http://127.0.0.1:3000";
 
 export function buildQqChatStyleInstructions(event = {}) {
   return [
@@ -193,6 +200,9 @@ function splitLongReply(text) {
 }
 
 async function prepareSingleImage(image, { outputDir, fetchOneBotImage } = {}) {
+  if (Number(image?.fileSize || 0) > imageMaxBytes) {
+    throw new Error(`QQ image exceeds ${imageMaxBytes} bytes`);
+  }
   const direct = existingImagePath(image);
   if (direct) return copyImage(direct, outputDir);
   const file = image?.file ? String(image.file) : "";
@@ -219,6 +229,11 @@ function existingImagePath(image) {
 }
 
 async function copyImage(sourcePath, outputDir) {
+  const sourceStats = await stat(sourcePath);
+  if (!sourceStats.isFile()) throw new Error("QQ image source is not a regular file");
+  if (sourceStats.size > imageMaxBytes) {
+    throw new Error(`QQ image exceeds ${imageMaxBytes} bytes`);
+  }
   await mkdir(outputDir, { recursive: true });
   const extension = imageExtension(sourcePath, "");
   const safeName = basename(sourcePath).replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 80) || "qq-image";
@@ -229,16 +244,22 @@ async function copyImage(sourcePath, outputDir) {
 
 async function downloadImage(url, outputDir, nameHint = "qq-image") {
   await mkdir(outputDir, { recursive: true });
-  const response = await fetch(url, {
+  const response = await fetchWithUrlPolicy(url, {
     headers: { "user-agent": "codex-qq-bot/1.0" },
     signal: AbortSignal.timeout(15000)
+  }, {
+    allowedPrivateOrigins: [oneBotApiBase],
+    allowDataImages: true
   });
   if (!response.ok) throw new Error(`image download returned HTTP ${response.status}`);
   const contentType = response.headers.get("content-type") || "";
+  if (!isSupportedImageContentType(contentType)) {
+    throw new Error(`image download returned unsupported content type: ${contentType}`);
+  }
   const extension = imageExtension(nameHint, contentType);
   const safeName = String(nameHint || "qq-image").replace(/[^A-Za-z0-9._-]+/g, "-").slice(0, 80) || "qq-image";
   const outputPath = join(outputDir, `${Date.now()}-${crypto.randomUUID()}-${safeName}${safeName.toLowerCase().endsWith(extension) ? "" : extension}`);
-  await writeFile(outputPath, Buffer.from(await response.arrayBuffer()));
+  await writeResponseBodyToFile(response, outputPath, { maxBytes: imageMaxBytes });
   return outputPath;
 }
 

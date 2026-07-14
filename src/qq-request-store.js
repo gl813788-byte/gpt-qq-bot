@@ -9,21 +9,22 @@ export function normalizeOneBotRequest(payload, { now = () => new Date() } = {})
   const requestType = payload.request_type === "friend" || payload.request_type === "group"
     ? payload.request_type
     : "";
-  if (!requestType || !payload.flag) return null;
+  const flag = boundedString(payload.flag, 512);
+  if (!requestType || !flag) return null;
   const subType = requestType === "group"
     ? (payload.sub_type === "invite" ? "invite" : "add")
     : "add";
-  const key = `${requestType}:${subType}:${String(payload.flag)}`;
+  const key = `${requestType}:${subType}:${flag}`;
   const receivedAt = now().toISOString();
   return {
     id: createHash("sha256").update(key).digest("hex").slice(0, 10),
     key,
     requestType,
     subType,
-    flag: String(payload.flag),
-    userId: payload.user_id == null ? "" : String(payload.user_id),
-    groupId: payload.group_id == null ? "" : String(payload.group_id),
-    selfId: payload.self_id == null ? "" : String(payload.self_id),
+    flag,
+    userId: normalizeQqId(payload.user_id),
+    groupId: normalizeQqId(payload.group_id),
+    selfId: normalizeQqId(payload.self_id),
     comment: String(payload.comment || "").trim().slice(0, 500),
     eventTime: Number.isFinite(Number(payload.time)) ? Number(payload.time) : null,
     receivedAt,
@@ -91,9 +92,10 @@ export function createQqRequestStore({ filePath, maxEntries = 200 }) {
 
   function find(selector = "latest", { pendingOnly = false } = {}) {
     const candidates = pendingOnly ? entries.filter((entry) => entry.status === "pending") : entries;
-    const value = String(selector || "latest").trim().replace(/^#/, "").toLowerCase();
+    const rawSelector = boundedString(selector || "latest", 512).trim().replace(/^#/, "");
+    const value = rawSelector.toLowerCase();
     if (!value || /^(latest|newest|最新)$/.test(value)) return candidates[0] ? { ...candidates[0] } : null;
-    const found = candidates.find((entry) => entry.id.toLowerCase() === value || entry.flag === selector);
+    const found = candidates.find((entry) => entry.id.toLowerCase() === value || entry.flag === rawSelector);
     return found ? { ...found } : null;
   }
 
@@ -101,12 +103,15 @@ export function createQqRequestStore({ filePath, maxEntries = 200 }) {
     const index = entries.findIndex((entry) => entry.id === String(id));
     if (index < 0) return null;
     const nextStatus = patch?.status;
-    entries[index] = {
+    entries[index] = normalizeStoredEntry({
       ...entries[index],
-      ...patch,
       status: requestStatuses.has(nextStatus) ? nextStatus : entries[index].status,
+      handledAt: patch?.handledAt ?? entries[index].handledAt,
+      handledBy: patch?.handledBy ?? entries[index].handledBy,
+      autoHandled: patch?.autoHandled ?? entries[index].autoHandled,
+      lastError: patch?.lastError ?? entries[index].lastError,
       updatedAt: new Date().toISOString()
-    };
+    });
     entries.unshift(entries.splice(index, 1)[0]);
     await save();
     return { ...entries[0] };
@@ -129,14 +134,42 @@ export function formatQqRequestEntry(entry) {
 
 function normalizeStoredEntries(value) {
   if (!Array.isArray(value)) return [];
-  return value.filter((entry) => entry && typeof entry === "object" && entry.id && entry.flag).map((entry) => ({
-    ...entry,
-    id: String(entry.id),
-    key: String(entry.key || `${entry.requestType}:${entry.subType}:${entry.flag}`),
-    flag: String(entry.flag),
-    userId: String(entry.userId || ""),
-    groupId: String(entry.groupId || ""),
+  return value.filter((entry) => entry && typeof entry === "object" && entry.id && entry.flag)
+    .map(normalizeStoredEntry)
+    .filter(Boolean);
+}
+
+function normalizeStoredEntry(entry) {
+  const requestType = entry?.requestType === "friend" || entry?.requestType === "group" ? entry.requestType : "";
+  const subType = requestType === "group" && entry?.subType === "invite" ? "invite" : "add";
+  const flag = boundedString(entry?.flag, 512);
+  if (!requestType || !flag) return null;
+  return {
+    id: boundedString(entry.id, 64) || createHash("sha256").update(`${requestType}:${subType}:${flag}`).digest("hex").slice(0, 10),
+    key: boundedString(entry.key, 560) || `${requestType}:${subType}:${flag}`,
+    requestType,
+    subType,
+    flag,
+    userId: normalizeQqId(entry.userId),
+    groupId: normalizeQqId(entry.groupId),
+    selfId: normalizeQqId(entry.selfId),
+    comment: boundedString(entry.comment, 500).trim(),
+    eventTime: Number.isFinite(Number(entry.eventTime)) ? Number(entry.eventTime) : null,
+    receivedAt: boundedString(entry.receivedAt, 40) || new Date().toISOString(),
+    updatedAt: boundedString(entry.updatedAt, 40) || new Date().toISOString(),
+    handledAt: boundedString(entry.handledAt, 40) || null,
+    handledBy: boundedString(entry.handledBy, 120),
     status: requestStatuses.has(entry.status) ? entry.status : "pending",
-    lastError: String(entry.lastError || "")
-  }));
+    autoHandled: Boolean(entry.autoHandled),
+    lastError: boundedString(entry.lastError, 500)
+  };
+}
+
+function normalizeQqId(value) {
+  const id = String(value ?? "").trim();
+  return /^\d{4,20}$/.test(id) ? id : "";
+}
+
+function boundedString(value, maxLength) {
+  return String(value ?? "").slice(0, maxLength);
 }

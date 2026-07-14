@@ -53,6 +53,28 @@ test("logger serializes concurrent writes and preserves status booleans while re
   assert.match(normalized.details.error.message, /token=\[redacted\]/);
 });
 
+test("logger bounds its pending write backlog", async () => {
+  let release;
+  const gate = new Promise((resolve) => { release = resolve; });
+  const persisted = [];
+  const logger = createLogger({
+    filePath: "/unused/hub.jsonl",
+    consoleOutput: false,
+    maxPendingWrites: 2,
+    appendLine: async (_path, line) => {
+      await gate;
+      persisted.push(line);
+    }
+  });
+
+  for (let index = 0; index < 10; index += 1) logger.info(`queued-${index}`);
+  assert.deepEqual(logger.snapshot(), { pendingWrites: 2, maxPendingWrites: 2, droppedWrites: 8 });
+  release();
+  await logger.flush();
+  assert.equal(persisted.length, 2);
+  assert.equal(logger.snapshot().pendingWrites, 0);
+});
+
 test("logger rotates concurrent writes without corrupting retained JSONL files", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "codex-qq-logger-"));
   t.after(() => rm(directory, { recursive: true, force: true }));

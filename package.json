@@ -1,14 +1,16 @@
 {
   "name": "codex-qq-bot",
-  "version": "1.1.5",
+  "version": "1.1.6",
   "private": true,
   "type": "module",
   "scripts": {
     "start": "node src/server.js",
     "deploy": "zsh scripts/deploy.command",
     "ncc": "zsh scripts/ncc.command",
-    "check": "node --check src/server.js",
-    "test": "node --test"
+    "check": "node scripts/check.mjs",
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage",
+    "verify": "npm run check && npm test"
   },
   "engines": {
     "node": ">=20"

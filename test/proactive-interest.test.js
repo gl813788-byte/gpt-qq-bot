@@ -82,7 +82,7 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
     return streamResponse([
       { data: sse({ choices: [{ delta: { reasoning: "分析一" } }] }) },
       { delayMs: 900, data: sse({ choices: [{ delta: { reasoning: "分析二" } }] }) },
-      { delayMs: 900, data: sse({ choices: [{ delta: { content: "FINAL_JSON: " } }] }) },
+      { delayMs: 900, data: sse({ choices: [{ delta: { content: "ANALYSIS: 话题相关，可以自然补充。\nFINAL_JSON: " } }] }) },
       { delayMs: 900, data: sse({ choices: [{ delta: { content: "{\"shouldReply\":true,\"interest\":88,\"reason\":\"相关\",\"replyStyle\":\"简短\"}" }, finish_reason: "stop" }] }) },
       { data: sse("[DONE]") }
     ], options.signal);
@@ -118,6 +118,9 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
   assert.ok(result.modelJudge.durationMs >= 2500);
   assert.equal(requestBody.stream, true);
   assert.equal(requestBody.max_tokens, 2048);
+  assert.deepEqual(requestBody.reasoning, { effort: "none" });
+  assert.match(requestBody.messages[0].content, /先在普通回复正文中输出一行简短的 ANALYSIS:/);
+  assert.match(requestBody.messages[0].content, /最后必须单独输出一行 FINAL_JSON:/);
   const judgeInput = JSON.parse(requestBody.messages[1].content);
   assert.equal(judgeInput.groupHumanRhythm.multiMessageRunRatio, 0.38);
 });

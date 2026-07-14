@@ -30,6 +30,17 @@ test("normalizeOneBotRequest normalizes friend and group requests", () => {
   assert.equal(invite.requestType, "group");
   assert.equal(invite.subType, "invite");
   assert.equal(invite.groupId, "10001");
+
+  const bounded = normalizeOneBotRequest({
+    post_type: "request",
+    request_type: "friend",
+    flag: "x".repeat(20_000),
+    user_id: "1234567890123456789012345",
+    comment: "y".repeat(10_000)
+  });
+  assert.equal(bounded.flag.length, 512);
+  assert.equal(bounded.comment.length, 500);
+  assert.equal(bounded.userId, "");
 });
 
 test("QQ request store persists, deduplicates and updates requests", async () => {

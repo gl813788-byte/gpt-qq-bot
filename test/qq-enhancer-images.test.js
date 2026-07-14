@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, truncate, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { prepareQqModelImages } from "../src/qq-enhancer/index.js";
@@ -28,4 +28,16 @@ test("falls back to a sticker URL when OneBot cannot resolve its display filenam
   assert.equal(paths.length, 1);
   const image = await readFile(paths[0]);
   assert.equal(image.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+});
+
+test("rejects an oversized local image before copying it", async () => {
+  const outputDir = await mkdtemp(join(tmpdir(), "qq-large-image-output-"));
+  const sourceDir = await mkdtemp(join(tmpdir(), "qq-large-image-source-"));
+  const sourcePath = join(sourceDir, "oversized.png");
+  await writeFile(sourcePath, "x");
+  await truncate(sourcePath, (20 * 1024 * 1024) + 1);
+
+  const paths = await prepareQqModelImages([{ file: sourcePath }], { outputDir });
+
+  assert.deepEqual(paths, []);
 });

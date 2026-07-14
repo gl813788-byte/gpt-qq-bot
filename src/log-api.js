@@ -32,7 +32,6 @@ export async function buildLogsResponse(logFilePath, searchParams) {
     .slice(-normalizedLimit)
     .map((entry) => verbose ? entry : compactEntry(entry));
   return {
-    logFile: logFilePath,
     limit: normalizedLimit,
     level: level || null,
     category: category || null,

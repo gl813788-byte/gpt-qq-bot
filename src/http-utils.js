@@ -1,17 +1,55 @@
-export function sendJson(res, code, body) {
+export function sendJson(res, code, body, headers = {}) {
   res.writeHead(code, {
     "content-type": "application/json; charset=utf-8",
-    ...corsHeaders()
+    "x-content-type-options": "nosniff",
+    "cache-control": "no-store",
+    ...headers
   });
-  res.end(JSON.stringify(body, null, 2));
+  res.end(JSON.stringify(body));
 }
 
-export function corsHeaders() {
+export function corsHeaders(origin, allowedOrigins = []) {
+  const normalizedOrigin = String(origin || "").trim();
+  if (!normalizedOrigin || !isRequestOriginAllowed(normalizedOrigin, allowedOrigins)) return {};
   return {
-    "access-control-allow-origin": "*",
+    "access-control-allow-origin": normalizedOrigin,
     "access-control-allow-methods": "GET,POST,OPTIONS",
-    "access-control-allow-headers": "content-type"
+    "access-control-allow-headers": "authorization,content-type,x-codex-api-token,x-onebot-access-token",
+    "access-control-max-age": "600",
+    "vary": "origin"
   };
+}
+
+export function isRequestOriginAllowed(origin, allowedOrigins = []) {
+  const normalizedOrigin = String(origin || "").trim();
+  if (!normalizedOrigin) return true;
+  const allowed = new Set((Array.isArray(allowedOrigins) ? allowedOrigins : [])
+    .map((value) => String(value || "").trim())
+    .filter(Boolean));
+  return allowed.has("*") || allowed.has(normalizedOrigin);
+}
+
+export function parseAllowedOrigins(value, defaults = []) {
+  const configured = String(value || "")
+    .split(/[,\s]+/g)
+    .map((item) => item.trim().replace(/\/$/, ""))
+    .filter(Boolean);
+  return [...new Set(configured.length > 0 ? configured : defaults)];
+}
+
+export function isLoopbackHost(host) {
+  const value = String(host || "").trim().toLowerCase().replace(/^\[|\]$/g, "");
+  return value === "localhost" || value === "127.0.0.1" || value === "::1";
+}
+
+export function isLoopbackRequestHost(hostHeader) {
+  const value = String(hostHeader || "").trim();
+  if (!value || /[\s\\/@]/.test(value)) return false;
+  try {
+    return isLoopbackHost(new URL(`http://${value}`).hostname);
+  } catch {
+    return false;
+  }
 }
 
 export class HttpError extends Error {
@@ -21,7 +59,11 @@ export class HttpError extends Error {
   }
 }
 
-export async function readBody(req, { maxBytes = 1024 * 1024 } = {}) {
+export async function readBody(req, { maxBytes = 1024 * 1024, requireJson = false } = {}) {
+  const contentType = String(req.headers?.["content-type"] || "").split(";", 1)[0].trim().toLowerCase();
+  if (requireJson && contentType !== "application/json") {
+    throw new HttpError(415, "Content-Type must be application/json");
+  }
   const contentLength = Number(req.headers?.["content-length"] || 0);
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
     throw new HttpError(413, "Request body is too large");

@@ -11,16 +11,21 @@ export function createLogger({
   filePath,
   maxBytes = 5 * 1024 * 1024,
   maxFiles = 5,
+  maxPendingWrites = 5000,
   minLevel = "debug",
   consoleOutput = true,
-  consoleLevels = defaultConsoleLevels
+  consoleLevels = defaultConsoleLevels,
+  appendLine = appendLogLine
 } = {}) {
   if (!filePath) throw new Error("Logger filePath is required");
   const normalizedMaxBytes = normalizePositiveInteger(maxBytes, 5 * 1024 * 1024);
   const normalizedMaxFiles = normalizePositiveInteger(maxFiles, 5);
+  const normalizedMaxPendingWrites = normalizePositiveInteger(maxPendingWrites, 5000);
   const minimumLevel = normalizeLevel(minLevel, "debug");
   const enabledConsoleLevels = normalizeLevelSet(consoleLevels, defaultConsoleLevels);
   let writeChain = Promise.resolve();
+  let pendingWrites = 0;
+  let droppedWrites = 0;
 
   async function write(entry) {
     const normalized = normalizeEntry({
@@ -30,13 +35,23 @@ export function createLogger({
     });
     if (shouldPersist(normalized.level, minimumLevel)) {
       const line = `${JSON.stringify(normalized)}\n`;
-      const append = writeChain.then(() => appendLogLine(filePath, line, {
-        maxBytes: normalizedMaxBytes,
-        maxFiles: normalizedMaxFiles
-      }));
-      writeChain = append.catch((error) => {
-        if (consoleOutput) console.warn(`Unable to write structured log: ${error.message}`);
-      });
+      if (pendingWrites >= normalizedMaxPendingWrites) {
+        droppedWrites += 1;
+        if (consoleOutput && (droppedWrites === 1 || (droppedWrites & (droppedWrites - 1)) === 0)) {
+          console.warn(`Structured log backlog full; dropped ${droppedWrites} entries`);
+        }
+      } else {
+        pendingWrites += 1;
+        const append = writeChain.then(() => appendLine(filePath, line, {
+          maxBytes: normalizedMaxBytes,
+          maxFiles: normalizedMaxFiles
+        }));
+        writeChain = append.catch((error) => {
+          if (consoleOutput) console.warn(`Unable to write structured log: ${error.message}`);
+        }).finally(() => {
+          pendingWrites = Math.max(0, pendingWrites - 1);
+        });
+      }
     }
     if (consoleOutput && enabledConsoleLevels.has(normalized.level)) writeConsole(normalized);
     return normalized;
@@ -73,6 +88,13 @@ export function createLogger({
       },
       async flush() {
         await writeChain;
+      },
+      snapshot() {
+        return {
+          pendingWrites,
+          maxPendingWrites: normalizedMaxPendingWrites,
+          droppedWrites
+        };
       }
     };
   }

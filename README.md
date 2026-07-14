@@ -25,12 +25,13 @@ Codex QQ Bot runs locally and connects QQ/OneBot, Codex CLI, local automation sc
 
 The main program is intentionally usable by itself and includes built-in QQ enhancer, unified memory, and recent Codex context search. External packages can still be placed next to it when you want to override the default modules.
 
-The project no longer serves its own browser WebUI. Normal operation is controlled through the single `ncc` script.
+The project includes a responsive browser dashboard. Daily control is available through either the visual interface or the `ncc` script.
 
 ## Highlights
 
 | Module | Description |
 | :--- | :--- |
+| Browser dashboard | Monitor overview, channels, memory, logs, and settings on desktop or mobile, with light/dark themes, polling, log filters, and common configuration actions. |
 | iMessage console | macOS-only. Receive trusted commands such as `/状态`, `/维护`, `/开启QQ`, `/关闭QQ`, `/节点检查`, `/切换节点`, and `/远程执行`. |
 | iMessage private replies | macOS-only. Generate replies through Codex CLI, keep independent rolling context, recover the polling cursor after database permission failures, and support one-message model overrides. |
 | QQ/OneBot channel | Receive QQ group and private messages, ignore untranscribed voice messages, inspect explicitly mentioned images, expand recent context when needed, and keep lightweight member personas. |
@@ -240,9 +241,9 @@ Equivalent full path:
 /root/napcat-codex-control.sh all
 ```
 
-### 7. Backend API
+### 7. Browser Dashboard And Backend API
 
-The HTTP service is kept for `ncc`, NapCat OneBot callbacks, and diagnostics.
+The HTTP service hosts the same-origin dashboard as well as the `ncc`, NapCat OneBot callback, and diagnostic APIs.
 
 Development mode:
 
@@ -256,6 +257,14 @@ Health check:
 ```bash
 curl http://localhost:3789/api/state
 ```
+
+After starting the Hub, open:
+
+```text
+http://127.0.0.1:3789/
+```
+
+The dashboard includes overview, QQ/iMessage channel management, unified and conversation memory, structured logs, themes, and refresh settings. The macOS WebKit client loads this same URL so the desktop app and browser stay consistent.
 
 ### 8. Logs
 
@@ -457,6 +466,8 @@ export CODEX_REMOTE_CONTACT_UNIFIED_MEMORY_MODULE="/absolute/path/to/unified-mem
 
 ```bash
 ONEBOT_API_BASE=http://127.0.0.1:3000
+# Recommended: authenticates inbound callbacks and is sent on outbound requests
+ONEBOT_ACCESS_TOKEN=
 CODEX_CLI_PATH=/Applications/Codex.app/Contents/Resources/codex
 
 CODEX_REMOTE_CONTACT_CODEX_MODEL=gpt-5.4-mini
@@ -468,6 +479,9 @@ CODEX_REMOTE_CONTACT_IMESSAGE_MEMORY_LIMIT=120
 
 CODEX_REMOTE_CONTACT_QQ_MEMORY_LIMIT=10
 CODEX_REMOTE_CONTACT_QQ_GROUP_MEMORY_LIMIT=200
+CODEX_REMOTE_CONTACT_QQ_SCOPE_LIMIT=500
+CODEX_REMOTE_CONTACT_QQ_PERSONA_MEMBER_LIMIT=500
+CODEX_REMOTE_CONTACT_QQ_IMAGE_MAX_BYTES=20971520
 CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP=1
 CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS=12000
 CODEX_REMOTE_CONTACT_QQ_WEB_ATTEMPT_TIMEOUT_MS=6500
@@ -476,6 +490,23 @@ CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER=tavily
 CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS=tavily,bing,baidu,so360,sogou,duckduckgo
 CODEX_REMOTE_CONTACT_QQ_SOCIAL_API_BASE=
 TAVILY_API_KEY=tvly-...
+
+CODEX_REMOTE_CONTACT_HOST=127.0.0.1
+CODEX_REMOTE_CONTACT_PORT=3789
+CODEX_REMOTE_CONTACT_CORS_ORIGINS=http://127.0.0.1:3789,http://localhost:3789
+# When set, the dashboard asks once after a 401 and stores it for the current tab only
+CODEX_REMOTE_CONTACT_API_TOKEN=
+# Set to 1 only when you intentionally need a LAN/public bind address
+CODEX_REMOTE_CONTACT_ALLOW_REMOTE=0
+
+CODEX_REMOTE_CONTACT_CODEX_MAX_CONCURRENCY=2
+CODEX_REMOTE_CONTACT_CODEX_MAX_PENDING=32
+CODEX_REMOTE_CONTACT_ONEBOT_MAX_CONCURRENCY=8
+CODEX_REMOTE_CONTACT_ONEBOT_MAX_PENDING=32
+CODEX_REMOTE_CONTACT_QUOTA_CACHE_TTL_MS=30000
+CODEX_REMOTE_CONTACT_ONEBOT_HEALTH_TTL_MS=15000
+CODEX_REMOTE_CONTACT_SQLITE_TIMEOUT_MS=8000
+CODEX_REMOTE_CONTACT_SQLITE_MAX_OUTPUT_BYTES=2097152
 
 CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MODEL=gpt-5.4
 CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_REASONING_EFFORT=medium
@@ -495,6 +526,23 @@ Web lookup is configurable:
 - `CODEX_REMOTE_CONTACT_QQ_WEB_PRESET`: provider preset, one of `balanced`, `china`, `global`, `tavily`, `privacy`.
 - `CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS`: fully custom provider order, comma-separated, such as `tavily,bing,baidu`.
 - `ncc search-config` writes the local default search config into `config/local.env`. If `TAVILY_API_KEY` is present, Tavily is used first.
+
+Inbound OneBot callback handling is bounded by `CODEX_REMOTE_CONTACT_ONEBOT_MAX_CONCURRENCY` (default `8`) and `CODEX_REMOTE_CONTACT_ONEBOT_MAX_PENDING` (default `32`). When both limits are occupied, additional callbacks receive HTTP `429` instead of growing an unbounded in-memory queue.
+
+The Hub binds to loopback by default. A non-loopback bind requires both `CODEX_REMOTE_CONTACT_ALLOW_REMOTE=1` and a non-empty `CODEX_REMOTE_CONTACT_API_TOKEN`; public access should still sit behind a reverse proxy with TLS and access control. Without a management API token, every `/api/*` request must use a literal loopback `Host` (`localhost`, `127.0.0.1`, or `[::1]`, with an optional port). An arbitrary hostname is rejected even if DNS resolves it to loopback, which blocks browser DNS-rebinding access to the local API. Cross-origin browser requests are limited to `CODEX_REMOTE_CONTACT_CORS_ORIGINS`, and wildcard CORS is refused unless a management token is configured; the same-origin dashboard, native OneBot, `curl`, and `ncc` remain compatible. State-changing endpoints only accept `application/json`.
+
+OneBot webhook authentication uses `ONEBOT_ACCESS_TOKEN` when it is set. Otherwise, it falls back to `CODEX_REMOTE_CONTACT_API_TOKEN`, so enabling remote management does not accidentally leave the callback endpoint unauthenticated. Only when both tokens are empty are callbacks accepted without authentication; those callbacks are treated as untrusted and cannot receive owner privileges.
+
+## Development Verification
+
+```bash
+npm run check          # Check every project JS/MJS file and example JSON file
+npm test               # Run the complete test suite
+npm run test:coverage  # Run the suite with coverage reporting
+npm run verify         # Run source checks and the complete suite
+```
+
+Web search lives in `src/web-search.js`, separate from the main service orchestration. Search and snippet responses have bounded body sizes, and snippet enrichment rejects localhost, private IP addresses, and redirects into private networks.
 
 ## Troubleshooting
 

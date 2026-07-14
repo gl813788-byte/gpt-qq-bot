@@ -59,9 +59,19 @@ export async function readCodexModels({
       if (error) reject(error);
       else resolve(normalizeCodexModels(models));
     };
-    const send = (message) => child.stdin.write(`${JSON.stringify(message)}\n`);
+    const send = (message) => {
+      if (settled) return;
+      if (!child.stdin?.writable || child.stdin.destroyed) {
+        finish(new Error("Codex model catalog stdin closed before the request was sent"));
+        return;
+      }
+      child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
+        if (error) finish(error);
+      });
+    };
     const timer = setTimeout(() => finish(new Error("Timed out while reading the Codex model catalog")), timeoutMs);
 
+    child.stdin.on("error", (error) => finish(error));
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString("utf8");
     });

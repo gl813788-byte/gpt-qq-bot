@@ -2,13 +2,14 @@ import { extractQqUrls } from "./qq-message-content.js";
 
 const markerPattern = /\[\[qq_memory:(\{[^\n]*?\})\]\]/g;
 const anyMarkerPattern = /\[\[qq_memory:[\s\S]*?\]\]/g;
+const maxPeoplePerGroup = 500;
 
 export function createEmptyQqConversationMemory() {
   return {
     version: 1,
     updatedAt: null,
-    groups: {},
-    privateChats: {}
+    groups: Object.create(null),
+    privateChats: Object.create(null)
   };
 }
 
@@ -33,6 +34,7 @@ export function updateQqConversationMemoryFromEvent(memory, event, { now = () =>
   const topic = inferConversationTopic(reusableText, event);
   if (event?.groupId) {
     const group = getGroup(state, event.groupId);
+    if (!group) return state;
     group.updatedAt = at;
     group.messageCount = Number(group.messageCount || 0) + 1;
     if (topic) group.recentTopics = pushTopic(group.recentTopics, topic, event, at);
@@ -62,6 +64,7 @@ export function updateQqConversationMemoryFromEvent(memory, event, { now = () =>
     }
   } else if (event?.senderId) {
     const chat = getPrivateChat(state, event.senderId, event.senderLabel || event.senderName);
+    if (!chat) return state;
     chat.updatedAt = at;
     chat.messageCount = Number(chat.messageCount || 0) + 1;
     if (topic) chat.recentTopics = pushTopic(chat.recentTopics, topic, event, at, 10);
@@ -85,6 +88,7 @@ export function updateQqConversationMemoryFromExchange(memory, event, reply, pat
   const assistantText = memoryText(reply, 300);
   if (event?.groupId) {
     const group = getGroup(state, event.groupId);
+    if (!group) return state;
     group.updatedAt = at;
     group.recentInteractions = pushLimited(group.recentInteractions, {
       at,
@@ -100,6 +104,7 @@ export function updateQqConversationMemoryFromExchange(memory, event, reply, pat
     for (const patch of patches) applyPatchToGroup(group, person, patch, at);
   } else if (event?.senderId) {
     const chat = getPrivateChat(state, event.senderId, event.senderLabel || event.senderName);
+    if (!chat) return state;
     chat.updatedAt = at;
     if (assistantText) chat.recentMessages = pushLimited(chat.recentMessages, { at, role: "assistant", text: assistantText }, 12);
     chat.recentConversations = pushLimited(chat.recentConversations, { at, userText, assistantText }, 8);
@@ -169,13 +174,14 @@ export function summarizeQqConversationMemory(memory) {
 
 function ensureMemory(memory) {
   if (!memory || typeof memory !== "object") return createEmptyQqConversationMemory();
-  memory.groups ||= {};
-  memory.privateChats ||= {};
+  memory.groups = normalizeRecord(memory.groups);
+  memory.privateChats = normalizeRecord(memory.privateChats);
   return memory;
 }
 
 function getGroup(state, groupId) {
   const id = String(groupId);
+  if (!isSafeRecordKey(id)) return null;
   state.groups[id] ||= {
     groupId: id,
     messageCount: 0,
@@ -186,15 +192,24 @@ function getGroup(state, groupId) {
     recentLinks: [],
     recentSharedContent: [],
     recentInteractions: [],
-    people: {}
+    people: Object.create(null)
   };
-  state.groups[id].people ||= {};
+  state.groups[id].people = normalizeRecord(state.groups[id].people);
   return state.groups[id];
 }
 
 function getGroupPerson(group, senderId, senderName = "") {
   if (!senderId) return null;
   const id = String(senderId);
+  if (!isSafeRecordKey(id)) return null;
+  if (!group.people[id] && Object.keys(group.people).length >= maxPeoplePerGroup) {
+    const oldestId = Object.keys(group.people).sort((left, right) => {
+      const leftAt = Date.parse(group.people[left]?.updatedAt || "") || 0;
+      const rightAt = Date.parse(group.people[right]?.updatedAt || "") || 0;
+      return leftAt - rightAt;
+    })[0];
+    if (oldestId) delete group.people[oldestId];
+  }
   group.people[id] ||= {
     userId: id,
     aliases: [],
@@ -211,6 +226,7 @@ function getGroupPerson(group, senderId, senderName = "") {
 
 function getPrivateChat(state, senderId, senderName = "") {
   const id = String(senderId);
+  if (!isSafeRecordKey(id)) return null;
   state.privateChats[id] ||= {
     userId: id,
     aliases: [],
@@ -360,7 +376,18 @@ function pushLimited(items, entry, limit) {
 }
 
 function normalizeRecord(value) {
-  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  if (!value || typeof value !== "object" || Array.isArray(value)) return Object.create(null);
+  if (Object.getPrototypeOf(value) === null) return value;
+  const output = Object.create(null);
+  for (const [key, entry] of Object.entries(value)) {
+    if (isSafeRecordKey(key)) output[key] = entry;
+  }
+  return output;
+}
+
+function isSafeRecordKey(value) {
+  const key = String(value || "");
+  return Boolean(key) && !["__proto__", "prototype", "constructor"].includes(key);
 }
 
 function memoryText(value, limit) {

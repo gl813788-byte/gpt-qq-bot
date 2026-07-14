@@ -85,3 +85,30 @@ test("does not persist likely secrets and strips sensitive URL parameters", () =
   assert.deepEqual(chat.recentMessages, []);
   assert.equal(chat.recentLinks[0].url, "https://example.test/callback?article=8");
 });
+
+test("rejects prototype keys from events and persisted records", () => {
+  const before = Object.prototype.people;
+  const memory = updateQqConversationMemoryFromEvent(createEmptyQqConversationMemory(), {
+    groupId: "__proto__",
+    senderId: "constructor",
+    text: "malicious key"
+  });
+
+  assert.equal(Object.prototype.people, before);
+  assert.equal(Object.hasOwn(memory.groups, "__proto__"), false);
+  assert.equal(Object.getPrototypeOf(memory.groups), null);
+});
+
+test("bounds remembered people per group", () => {
+  let memory = createEmptyQqConversationMemory();
+  for (let index = 0; index < 501; index += 1) {
+    memory = updateQqConversationMemoryFromEvent(memory, {
+      groupId: "10001",
+      senderId: String(10000 + index),
+      text: `message ${index}`
+    }, { now: () => new Date(index * 1_000) });
+  }
+  assert.equal(Object.keys(memory.groups["10001"].people).length, 500);
+  assert.equal(memory.groups["10001"].people["10000"], undefined);
+  assert.ok(memory.groups["10001"].people["10500"]);
+});
