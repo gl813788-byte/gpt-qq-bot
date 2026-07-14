@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import crypto from "node:crypto";
 import { access, copyFile, mkdir, open, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { basename, extname, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { brotliDecompress } from "node:zlib";
@@ -12,6 +13,7 @@ import {
   isLoopbackHost,
   isLoopbackRequestHost,
   isRequestOriginAllowed,
+  isRequestOriginSameHost,
   parseAllowedOrigins,
   readBody,
   sendJson
@@ -265,7 +267,9 @@ if (qqEnhancerModule) {
 
 const oneBotApiBase = process.env.ONEBOT_API_BASE || "http://127.0.0.1:3000";
 const oneBotAccessToken = String(process.env.ONEBOT_ACCESS_TOKEN || process.env.CODEX_REMOTE_CONTACT_ONEBOT_TOKEN || "").trim();
-const managementApiToken = String(process.env.CODEX_REMOTE_CONTACT_API_TOKEN || "").trim();
+const environmentManagementApiToken = String(process.env.CODEX_REMOTE_CONTACT_API_TOKEN || "").trim();
+let managementApiToken = environmentManagementApiToken;
+let persistedNetworkApiToken = "";
 const oneBotRequestTimeoutMs = Math.max(1000, Math.min(30000, Number(process.env.CODEX_REMOTE_CONTACT_ONEBOT_TIMEOUT_MS || 10000) || 10000));
 const oneBotHealthTtlMs = Math.max(5_000, Math.min(60_000, Number(process.env.CODEX_REMOTE_CONTACT_ONEBOT_HEALTH_TTL_MS || 15_000) || 15_000));
 const oneBotMaxConcurrencyValue = String(process.env.CODEX_REMOTE_CONTACT_ONEBOT_MAX_CONCURRENCY ?? "").trim();
@@ -352,22 +356,14 @@ const qqBubbleSendDelayMs = Math.max(0, Number(process.env.CODEX_REMOTE_CONTACT_
 const qqBubbleMaxCount = Math.max(1, Number(process.env.CODEX_REMOTE_CONTACT_QQ_BUBBLE_MAX_COUNT || 6));
 const hubPortRaw = Number(process.env.CODEX_REMOTE_CONTACT_PORT || 3789);
 const hubPort = Number.isInteger(hubPortRaw) && hubPortRaw > 0 && hubPortRaw <= 65535 ? hubPortRaw : 3789;
-const hubHost = process.env.CODEX_REMOTE_CONTACT_HOST || "127.0.0.1";
+const hubHostOverride = String(process.env.CODEX_REMOTE_CONTACT_HOST || "").trim();
+let currentHubHost = hubHostOverride || "127.0.0.1";
 const hubAllowedOrigins = parseAllowedOrigins(process.env.CODEX_REMOTE_CONTACT_CORS_ORIGINS, [
   `http://127.0.0.1:${hubPort}`,
   `http://localhost:${hubPort}`,
   `http://[::1]:${hubPort}`
 ]);
 const allowRemoteHubBinding = process.env.CODEX_REMOTE_CONTACT_ALLOW_REMOTE === "1";
-if (!isLoopbackHost(hubHost) && !allowRemoteHubBinding) {
-  throw new Error("Refusing non-loopback Hub binding without CODEX_REMOTE_CONTACT_ALLOW_REMOTE=1");
-}
-if (!isLoopbackHost(hubHost) && !managementApiToken) {
-  throw new Error("Refusing non-loopback Hub binding without CODEX_REMOTE_CONTACT_API_TOKEN");
-}
-if (hubAllowedOrigins.includes("*") && !managementApiToken) {
-  throw new Error("Refusing wildcard CORS without CODEX_REMOTE_CONTACT_API_TOKEN");
-}
 const proxyShortcutName = process.env.CODEX_REMOTE_CONTACT_PROXY_TOGGLE_SHORTCUT || "切换VPN";
 const proxyConfirmTtlMs = Number(process.env.CODEX_REMOTE_CONTACT_PROXY_CONFIRM_TTL_MS || 3 * 60 * 1000);
 const imessageAttachmentSendingEnabled = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_ATTACHMENTS === "1";
@@ -491,6 +487,9 @@ function normalizeQqPresetList(value, fallback) {
 }
 
 const state = {
+  network: {
+    allowLanAccess: false
+  },
   ai: {
     provider: "codex-cli",
     model: codexModel || "default",
@@ -751,6 +750,14 @@ async function loadSettings() {
   await mkdir(dataDir, { recursive: true });
   try {
     const body = JSON.parse(await readFile(settingsPath, "utf8"));
+    if (body.network && typeof body.network === "object") {
+      state.network.allowLanAccess = body.network.allowLanAccess === true;
+      const savedToken = String(body.network.apiToken || "").trim();
+      if (savedToken.length >= 24 && savedToken.length <= 512) {
+        persistedNetworkApiToken = savedToken;
+        if (!environmentManagementApiToken) managementApiToken = savedToken;
+      }
+    }
     if (Array.isArray(body.qq?.allowedGroups)) {
       state.qq.allowedGroups = normalizeAllowedGroups(body.qq.allowedGroups);
     }
@@ -869,6 +876,10 @@ async function saveSettings() {
     await writeJsonAtomically(settingsPath, {
       version: 1,
       updatedAt: new Date().toISOString(),
+      network: {
+        allowLanAccess: state.network.allowLanAccess,
+        apiToken: persistedNetworkApiToken
+      },
       ai: {
         model: state.ai.model,
         reasoningEffort: state.ai.reasoningEffort,
@@ -1470,6 +1481,39 @@ async function saveRemoteExecutionMemory() {
   });
 }
 
+function ensureNetworkAccessToken() {
+  if (managementApiToken) return managementApiToken;
+  persistedNetworkApiToken = crypto.randomBytes(32).toString("base64url");
+  managementApiToken = persistedNetworkApiToken;
+  return managementApiToken;
+}
+
+function desiredHubHost() {
+  if (hubHostOverride) return hubHostOverride;
+  return state.network.allowLanAccess ? "0.0.0.0" : "127.0.0.1";
+}
+
+function isLanAccessEnabled() {
+  return !isLoopbackHost(desiredHubHost());
+}
+
+function isTrustedLoopbackRequest(req) {
+  return isLoopbackRequestHost(req.headers.host) && isLoopbackAddress(req.socket?.remoteAddress);
+}
+
+function buildLanAccessUrls() {
+  if (!isLanAccessEnabled()) return [];
+  const addresses = new Set();
+  for (const entries of Object.values(networkInterfaces())) {
+    for (const entry of entries || []) {
+      if (entry?.family === "IPv4" && !entry.internal && entry.address) addresses.add(entry.address);
+    }
+  }
+  return [...addresses]
+    .sort((left, right) => left.localeCompare(right, undefined, { numeric: true }))
+    .map((address) => `http://${address}:${hubPort}`);
+}
+
 function buildPublicState() {
   const memoryCounts = Object.fromEntries(
     Object.entries(state.qq.memory.entries).map(([groupId, entries]) => [groupId, entries.length])
@@ -1553,6 +1597,14 @@ function buildPublicState() {
     Object.entries(state.qq.activeGenerations).map(([scopeId, generation]) => [scopeId, sanitizeActiveGeneration(generation)])
   );
   return {
+    network: {
+      allowLanAccess: isLanAccessEnabled(),
+      editable: !hubHostOverride,
+      host: currentHubHost,
+      port: hubPort,
+      apiTokenConfigured: Boolean(managementApiToken),
+      lanUrls: buildLanAccessUrls()
+    },
     ai: {
       provider: state.ai.provider,
       model: state.ai.model,
@@ -11010,11 +11062,15 @@ async function handleApi(req, res) {
     return sendJson(res, 403, { error: "Loopback Host header required" });
   }
   const requestOrigin = String(req.headers.origin || "").trim();
-  if (!isRequestOriginAllowed(requestOrigin, hubAllowedOrigins)) {
+  const allowLanSameOrigin = isLanAccessEnabled() && isRequestOriginSameHost(requestOrigin, req.headers.host);
+  const requestAllowedOrigins = allowLanSameOrigin
+    ? [...hubAllowedOrigins, requestOrigin]
+    : hubAllowedOrigins;
+  if (!isRequestOriginAllowed(requestOrigin, requestAllowedOrigins)) {
     sendJson(res, 403, { error: "Origin is not allowed" });
     return true;
   }
-  const responseCorsHeaders = corsHeaders(requestOrigin, hubAllowedOrigins);
+  const responseCorsHeaders = corsHeaders(requestOrigin, requestAllowedOrigins);
   for (const [name, value] of Object.entries(responseCorsHeaders)) {
     res.setHeader(name, value);
   }
@@ -11025,23 +11081,67 @@ async function handleApi(req, res) {
   }
 
   const isOneBotWebhook = requestUrl.pathname === "/api/onebot/event";
+  const trustedLoopbackRequest = isTrustedLoopbackRequest(req);
   let trustedOneBotRequest = false;
-  const oneBotWebhookToken = oneBotAccessToken || managementApiToken;
+  const oneBotWebhookToken = oneBotAccessToken || environmentManagementApiToken;
   if (isOneBotWebhook && oneBotWebhookToken) {
     trustedOneBotRequest = requestHasValidToken(req, oneBotWebhookToken, {
       alternativeHeaders: oneBotAccessToken ? ["x-onebot-access-token"] : ["x-codex-api-token"]
     });
     if (!trustedOneBotRequest) return sendJson(res, 401, { error: "OneBot authentication required" });
   } else if (isOneBotWebhook) {
-    trustedOneBotRequest = isLoopbackRequestHost(req.headers.host)
-      && isLoopbackAddress(req.socket?.remoteAddress);
+    trustedOneBotRequest = trustedLoopbackRequest;
     if (!trustedOneBotRequest) {
       return sendJson(res, 403, { error: "OneBot webhook must come from loopback when no token is configured" });
     }
-  } else if (!isOneBotWebhook && managementApiToken && !requestHasValidToken(req, managementApiToken, {
+  } else if (!isOneBotWebhook && managementApiToken && !trustedLoopbackRequest && !requestHasValidToken(req, managementApiToken, {
     alternativeHeaders: ["x-codex-api-token"]
   })) {
     return sendJson(res, 401, { error: "API authentication required" });
+  }
+
+  if (req.method === "GET" && req.url === "/api/network/access-token") {
+    if (!trustedLoopbackRequest) {
+      return sendJson(res, 403, { error: "The LAN access token is only available from this computer" });
+    }
+    if (!managementApiToken) {
+      return sendJson(res, 404, { error: "LAN access has not created an API token yet" });
+    }
+    return sendJson(res, 200, { token: managementApiToken });
+  }
+
+  if (req.method === "POST" && req.url === "/api/network/lan-access") {
+    if (hubHostOverride) {
+      return sendJson(res, 409, { error: "Hub binding is managed by CODEX_REMOTE_CONTACT_HOST" });
+    }
+    const body = await readBody(req, { requireJson: true });
+    if (typeof body.enabled !== "boolean") {
+      return sendJson(res, 400, { error: "enabled must be a boolean" });
+    }
+    const previousEnabled = state.network.allowLanAccess;
+    const previousManagementToken = managementApiToken;
+    const previousPersistedToken = persistedNetworkApiToken;
+    state.network.allowLanAccess = body.enabled;
+    if (body.enabled) ensureNetworkAccessToken();
+    try {
+      await saveSettings();
+    } catch (error) {
+      state.network.allowLanAccess = previousEnabled;
+      managementApiToken = previousManagementToken;
+      persistedNetworkApiToken = previousPersistedToken;
+      throw error;
+    }
+    const nextHost = desiredHubHost();
+    const requiresRebind = nextHost !== currentHubHost;
+    logger.info("Dashboard LAN access updated", {
+      enabled: body.enabled,
+      host: nextHost,
+      requiresRebind
+    }, "web");
+    const headers = requiresRebind ? { connection: "close" } : {};
+    sendJson(res, 200, buildPublicState(), headers);
+    if (requiresRebind) scheduleHubRebind(nextHost);
+    return true;
   }
 
   if (req.method === "GET" && req.url === "/api/state") {
@@ -11292,6 +11392,20 @@ async function handleApi(req, res) {
 }
 
 await loadSettings();
+if (isLanAccessEnabled() && !managementApiToken) {
+  ensureNetworkAccessToken();
+  await saveSettings();
+}
+currentHubHost = desiredHubHost();
+if (hubHostOverride && !isLoopbackHost(currentHubHost) && !allowRemoteHubBinding) {
+  throw new Error("Refusing non-loopback Hub binding without CODEX_REMOTE_CONTACT_ALLOW_REMOTE=1");
+}
+if (!isLoopbackHost(currentHubHost) && !managementApiToken) {
+  throw new Error("Refusing non-loopback Hub binding without an API token");
+}
+if (hubAllowedOrigins.includes("*") && !managementApiToken) {
+  throw new Error("Refusing wildcard CORS without an API token");
+}
 resetQqProactiveRuntimeCycles();
 await ensureAvailableQqModel();
 await mkdir(qqStickerDir, { recursive: true });
@@ -11330,12 +11444,63 @@ const server = createServer(async (req, res) => {
   }
 });
 
-server.listen(hubPort, hubHost, () => {
-  logger.success("Codex QQ Bot hub started", {
-    url: `http://${hubHost}:${hubPort}`,
-    logFile: logFilePath
-  }, "system");
-});
+function listenHub(host, { rebound = false } = {}) {
+  return new Promise((resolveListen, rejectListen) => {
+    const onError = (error) => {
+      server.off("listening", onListening);
+      rejectListen(error);
+    };
+    const onListening = () => {
+      server.off("error", onError);
+      currentHubHost = host;
+      logger.success(rebound ? "Dashboard listener rebound" : "Codex QQ Bot hub started", {
+        url: `http://${host}:${hubPort}`,
+        lanAccess: !isLoopbackHost(host),
+        logFile: logFilePath
+      }, "system");
+      resolveListen();
+    };
+    server.once("error", onError);
+    server.once("listening", onListening);
+    server.listen(hubPort, host);
+  });
+}
+
+function closeHubListener() {
+  if (!server.listening) return Promise.resolve();
+  return new Promise((resolveClose, rejectClose) => {
+    server.close((error) => error ? rejectClose(error) : resolveClose());
+    server.closeIdleConnections?.();
+  });
+}
+
+let hubRebindPromise = Promise.resolve();
+function scheduleHubRebind(nextHost) {
+  const timer = setTimeout(() => {
+    const previousHost = currentHubHost;
+    hubRebindPromise = hubRebindPromise.then(async () => {
+      if (shuttingDown || nextHost !== desiredHubHost() || nextHost === currentHubHost) return;
+      await closeHubListener();
+      try {
+        await listenHub(nextHost, { rebound: true });
+      } catch (error) {
+        if (!hubHostOverride) {
+          state.network.allowLanAccess = !isLoopbackHost(previousHost);
+          await saveSettings().catch(() => undefined);
+        }
+        if (!server.listening) await listenHub(previousHost, { rebound: true });
+        throw error;
+      }
+    }).catch((error) => logger.error("Unable to update dashboard listener", {
+      requestedHost: nextHost,
+      activeHost: currentHubHost,
+      error
+    }, "web"));
+  }, 100);
+  timer.unref?.();
+}
+
+await listenHub(currentHubHost);
 
 let shutdownPromise = null;
 function shutdown(signal) {

@@ -52,6 +52,22 @@ export function isLoopbackRequestHost(hostHeader) {
   }
 }
 
+export function isRequestOriginSameHost(origin, hostHeader) {
+  const normalizedOrigin = String(origin || "").trim();
+  const normalizedHost = String(hostHeader || "").trim();
+  if (!normalizedOrigin || !normalizedHost || /[\s\\/@]/.test(normalizedHost)) return false;
+  try {
+    const originUrl = new URL(normalizedOrigin);
+    const requestUrl = new URL(`http://${normalizedHost}`);
+    return originUrl.protocol === "http:"
+      && !originUrl.username
+      && !originUrl.password
+      && originUrl.host === requestUrl.host;
+  } catch {
+    return false;
+  }
+}
+
 export function isLoopbackAddress(address) {
   const value = String(address || "").trim().toLowerCase();
   if (!value) return false;

@@ -14,7 +14,7 @@ const translations = {
     trustedContacts: "可信联系人", trustedContactsHint: "仅响应这些号码或邮箱。", phoneOrEmail: "手机号或邮箱", defaultReplyAccount: "默认回复账号", optional: "可留空", save: "保存", qqRecent: "QQ 最近事件", imessageRecent: "iMessage 最近事件",
     contextVault: "CONTEXT VAULT", memoryHeading: "可见、可控的本地记忆", memoryBody: "浏览跨端摘要、群聊上下文和远程执行记录，并精确清理不再需要的内容。", refreshMemory: "刷新记忆", memoryType: "记忆类型", unified: "统一记忆", remoteExecution: "远程执行", searchMemory: "搜索记忆",
     observability: "OBSERVABILITY", activityHeading: "把每一次运行看清楚", activityBody: "筛选日志、追踪链路并观察耗时分布，定位问题不再依赖翻文件。", liveRefresh: "实时刷新", level: "级别", allLevels: "全部级别", category: "模块", allCategories: "全部模块", search: "搜索", logSearchHint: "消息、Trace、群或发送者", slowThreshold: "慢请求", noLimit: "不限", applyFilter: "应用筛选", structuredLogs: "结构化日志", waitingLogs: "等待日志", resetFilter: "重置", refresh: "刷新",
-    preferences: "PREFERENCES", settingsHeading: "让控制台适合你的节奏", settingsBody: "外观和刷新偏好只保存在当前设备，不会影响机器人运行配置。", appearance: "外观", appearanceHint: "跟随系统，或固定使用明亮 / 深色主题。", theme: "主题", system: "系统", light: "明亮", dark: "深色", language: "界面语言", languageHint: "完整切换控制台文案和时间显示。", autoRefresh: "自动刷新", autoRefreshHint: "页面隐藏时会自动暂停，减少无意义开销。", refreshInterval: "刷新间隔", hubEndpoint: "Hub 地址", hubEndpointHint: "控制台默认仅连接本机回环地址。", copy: "复制", rawState: "原始状态", aboutBody: "QQ / OneBot、iMessage 与 Codex CLI 的本地优先通讯中枢。",
+    preferences: "PREFERENCES", settingsHeading: "让控制台适合你的节奏", settingsBody: "调整当前设备的外观与刷新偏好，并控制控制台是否向本地局域网开放。", appearance: "外观", appearanceHint: "跟随系统，或固定使用明亮 / 深色主题。", theme: "主题", system: "系统", light: "明亮", dark: "深色", language: "界面语言", languageHint: "完整切换控制台文案和时间显示。", autoRefresh: "自动刷新", autoRefreshHint: "页面隐藏时会自动暂停，减少无意义开销。", refreshInterval: "刷新间隔", hubEndpoint: "Hub 地址", hubEndpointHint: "当前页面连接的 Hub 地址。", lanAccess: "局域网访问", lanAccessHint: "允许同一局域网内的设备打开控制台；远程设备需要访问令牌。", lanLocalOnly: "仅本机可访问", lanNoAddress: "已开放，暂未找到局域网 IPv4 地址", copyLanToken: "复制访问令牌", lanEnableTitle: "开启局域网访问", lanEnableMessage: "开启后，同一局域网内的设备可以打开控制台。管理 API 仍受访问令牌保护。", lanAccessUpdated: "局域网访问设置已更新", lanTokenCopied: "访问令牌已复制", lanManagedByEnvironment: "监听地址由环境变量管理，无法在网页中修改。", copy: "复制", rawState: "原始状态", aboutBody: "QQ / OneBot、iMessage 与 Codex CLI 的本地优先通讯中枢。",
     confirmAction: "确认操作", cancel: "取消", confirm: "确认", logDetail: "日志详情", close: "关闭", copyJson: "复制 JSON", done: "完成",
     hubOnline: "Hub 在线", hubOffline: "Hub 离线", syncedNow: "刚刚同步", syncedAt: "同步于 {time}", online: "在线", offline: "离线", enabled: "已启用", disabled: "已停用", running: "运行中", idle: "空闲", healthy: "正常", attention: "注意", staleData: "健康信息已过期：{value}",
     uptime: "运行时长", serviceOnline: "在线服务", activeTasks: "活动任务", memoryEntries: "记忆条目", active: "活动", pending: "排队", concurrency: "并发上限", groups: "群", contacts: "联系人", systemReady: "系统已就绪", systemReadyBody: "关键服务运行正常，可以随时接收和处理消息。", systemAttention: "有配置项需要留意", systemAttentionBody: "{count} 个服务当前停用或尚未配置，不影响其余通道运行。", systemCritical: "检测到运行异常", systemCriticalBody: "{count} 个服务需要处理，建议先查看服务健康详情。", healthyServices: "{count} 个服务正常", issuesCount: "{count} 项需处理", inspectHealth: "查看健康详情", noMatchingActions: "没有匹配的操作", actionRefresh: "刷新当前视图", actionRefreshHint: "重新同步当前页面的最新数据", actionHealth: "检查服务健康", actionHealthHint: "立即重新探测本地服务与通道", actionTheme: "切换明暗主题", actionThemeHint: "在明亮与深色外观之间切换", actionApi: "查看原始状态", actionApiHint: "打开 Hub 返回的原始 JSON 状态", actionAddGroup: "添加 QQ 群", actionAddGroupHint: "前往通道页并定位群白名单输入框", actionAddContact: "添加可信联系人", actionAddContactHint: "前往通道页并定位联系人输入框", actionOverviewHint: "查看核心指标、额度与服务健康", actionChannelsHint: "管理通道、白名单和可信联系人", actionMemoryHint: "搜索和清理本地上下文记忆", actionLogsHint: "筛选结构化日志并追踪运行问题", actionSettingsHint: "调整主题、语言和自动刷新",
@@ -38,7 +38,7 @@ const translations = {
     trustedContacts: "Trusted contacts", trustedContactsHint: "Only respond to these numbers or emails.", phoneOrEmail: "Phone or email", defaultReplyAccount: "Default reply account", optional: "Optional", save: "Save", qqRecent: "Recent QQ events", imessageRecent: "Recent iMessage events",
     contextVault: "CONTEXT VAULT", memoryHeading: "Visible, controllable local memory", memoryBody: "Browse cross-device summaries, chat context, and remote execution records, then remove exactly what you no longer need.", refreshMemory: "Refresh memory", memoryType: "Memory type", unified: "Unified", remoteExecution: "Remote execution", searchMemory: "Search memory",
     observability: "OBSERVABILITY", activityHeading: "See every run clearly", activityBody: "Filter logs, follow traces, and inspect latency without digging through files.", liveRefresh: "Live refresh", level: "Level", allLevels: "All levels", category: "Category", allCategories: "All categories", search: "Search", logSearchHint: "Message, trace, group, or sender", slowThreshold: "Slow requests", noLimit: "No limit", applyFilter: "Apply", structuredLogs: "Structured logs", waitingLogs: "Waiting for logs", resetFilter: "Reset", refresh: "Refresh",
-    preferences: "PREFERENCES", settingsHeading: "Make the console fit your rhythm", settingsBody: "Appearance and refresh preferences stay on this device and do not alter bot runtime configuration.", appearance: "Appearance", appearanceHint: "Follow the system or lock light / dark mode.", theme: "Theme", system: "System", light: "Light", dark: "Dark", language: "Language", languageHint: "Switch all console copy and time formatting.", autoRefresh: "Auto refresh", autoRefreshHint: "Automatically pauses while the page is hidden.", refreshInterval: "Refresh interval", hubEndpoint: "Hub endpoint", hubEndpointHint: "The console connects to loopback by default.", copy: "Copy", rawState: "Raw state", aboutBody: "A local-first QQ / OneBot, iMessage, and Codex CLI communication hub.",
+    preferences: "PREFERENCES", settingsHeading: "Make the console fit your rhythm", settingsBody: "Adjust appearance and refresh preferences, and control whether the console is available on your local network.", appearance: "Appearance", appearanceHint: "Follow the system or lock light / dark mode.", theme: "Theme", system: "System", light: "Light", dark: "Dark", language: "Language", languageHint: "Switch all console copy and time formatting.", autoRefresh: "Auto refresh", autoRefreshHint: "Automatically pauses while the page is hidden.", refreshInterval: "Refresh interval", hubEndpoint: "Hub endpoint", hubEndpointHint: "The Hub address used by this page.", lanAccess: "LAN access", lanAccessHint: "Allow devices on the same LAN to open the console; remote devices require an access token.", lanLocalOnly: "Available on this computer only", lanNoAddress: "LAN access is on, but no LAN IPv4 address was found", copyLanToken: "Copy access token", lanEnableTitle: "Enable LAN access", lanEnableMessage: "Devices on the same LAN will be able to open the console. Management APIs remain protected by an access token.", lanAccessUpdated: "LAN access setting updated", lanTokenCopied: "Access token copied", lanManagedByEnvironment: "The listening address is managed by an environment variable and cannot be changed here.", copy: "Copy", rawState: "Raw state", aboutBody: "A local-first QQ / OneBot, iMessage, and Codex CLI communication hub.",
     confirmAction: "Confirm action", cancel: "Cancel", confirm: "Confirm", logDetail: "Log detail", close: "Close", copyJson: "Copy JSON", done: "Done",
     hubOnline: "Hub online", hubOffline: "Hub offline", syncedNow: "Synced just now", syncedAt: "Synced at {time}", online: "Online", offline: "Offline", enabled: "Enabled", disabled: "Disabled", running: "Running", idle: "Idle", healthy: "Healthy", attention: "Check", staleData: "Health data is stale: {value}",
     uptime: "Uptime", serviceOnline: "Services online", activeTasks: "Active tasks", memoryEntries: "Memory entries", active: "Active", pending: "Pending", concurrency: "Concurrency", groups: "Groups", contacts: "Contacts", systemReady: "System ready", systemReadyBody: "Critical services are healthy and ready to receive messages.", systemAttention: "A few settings need attention", systemAttentionBody: "{count} services are disabled or not configured; other channels remain available.", systemCritical: "Runtime issue detected", systemCriticalBody: "{count} services need attention. Check service health first.", healthyServices: "{count} services healthy", issuesCount: "{count} to review", inspectHealth: "Inspect health", noMatchingActions: "No matching actions", actionRefresh: "Refresh current view", actionRefreshHint: "Sync the latest data for the current page", actionHealth: "Check service health", actionHealthHint: "Probe local services and channels now", actionTheme: "Toggle color theme", actionThemeHint: "Switch between light and dark appearance", actionApi: "View raw state", actionApiHint: "Open the raw JSON returned by the Hub", actionAddGroup: "Add QQ group", actionAddGroupHint: "Open Channels and focus the group allowlist field", actionAddContact: "Add trusted contact", actionAddContactHint: "Open Channels and focus the contact field", actionOverviewHint: "Review core metrics, usage, and service health", actionChannelsHint: "Manage channels, allowlists, and trusted contacts", actionMemoryHint: "Search and clear local contextual memory", actionLogsHint: "Filter structured logs and trace runtime issues", actionSettingsHint: "Adjust theme, language, and auto refresh",
@@ -832,6 +832,16 @@ function renderSettings() {
   $("#hubEndpointValue").textContent = endpoint;
   $("#sidebarEndpoint").textContent = endpoint.replace(/^https?:\/\//, "");
   const state = app.state || {};
+  const network = state.network || {};
+  const lanEnabled = Boolean(network.allowLanAccess);
+  $("#lanAccessToggle").checked = lanEnabled;
+  $("#lanAccessToggle").disabled = !app.state || network.editable === false;
+  $("#lanAccessHint").textContent = network.editable === false ? t("lanManagedByEnvironment") : t("lanAccessHint");
+  const lanUrls = Array.isArray(network.lanUrls) ? network.lanUrls : [];
+  $("#lanAccessUrls").textContent = lanEnabled
+    ? (lanUrls.join("\n") || t("lanNoAddress"))
+    : t("lanLocalOnly");
+  $("#copyLanToken").disabled = !lanEnabled || !network.apiTokenConfigured || !isLoopbackBrowser();
   const maintenance = app.maintenance || {};
   $("#runtimeFacts").innerHTML = [
     [state.ai?.model || t("unknown"), t("runtimeModel")], [state.ai?.reasoningEffort || t("unknown"), t("runtimeReasoning")], [maintenance.startedAt ? formatTime(maintenance.startedAt) : "—", t("runtimeStarted")]
@@ -857,6 +867,25 @@ async function setChannel(channel, enabled, control) {
   try {
     await mutate(() => api("/api/channel", { method: "POST", body: JSON.stringify({ channel, enabled }) }), { control, success: t("channelUpdated") });
     await refreshState({ quiet: true });
+  } catch {
+    control.checked = previous;
+  }
+}
+
+async function setLanAccess(enabled, control) {
+  const previous = !enabled;
+  if (enabled && !await confirmAction(t("lanEnableTitle"), t("lanEnableMessage"))) {
+    control.checked = previous;
+    return;
+  }
+  try {
+    const nextState = await mutate(() => api("/api/network/lan-access", {
+      method: "POST",
+      body: JSON.stringify({ enabled })
+    }), { control, success: t("lanAccessUpdated") });
+    app.state = nextState;
+    app.lastFetch.state = Date.now();
+    renderState();
   } catch {
     control.checked = previous;
   }
@@ -910,6 +939,7 @@ function formatReset(seconds) { const date = new Date(Number(seconds) * 1000); r
 function formatDuration(ms) { if (!Number.isFinite(ms) || ms < 0) return ""; const hours = Math.floor(ms / 3_600_000); const days = Math.floor(hours / 24); return days > 0 ? `${days}d ${hours % 24}h` : hours > 0 ? `${hours}h` : `${Math.max(1, Math.floor(ms / 60_000))}m`; }
 function formatMs(value) { const number = Number(value); if (!Number.isFinite(number)) return "—"; return number >= 1000 ? `${(number / 1000).toFixed(number >= 10_000 ? 0 : 1)}s` : `${Math.round(number)}ms`; }
 function formatNumber(value) { return Number(value || 0).toLocaleString(app.language === "en" ? "en-US" : "zh-CN"); }
+function isLoopbackBrowser() { return location.protocol === "file:" || ["localhost", "127.0.0.1", "::1"].includes(location.hostname); }
 function sumValues(value) { return Object.values(value || {}).reduce((sum, item) => sum + (Number(item) || 0), 0); }
 function clampPercent(value) { return Math.max(0, Math.min(100, Math.round(Number(value) || 0))); }
 function escapeHtml(value) { return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;"); }
@@ -1116,6 +1146,7 @@ $("#refreshMemory").addEventListener("click", () => refreshMemory().catch(() => 
 $("#refreshLogs").addEventListener("click", () => refreshLogs().catch(() => undefined));
 $("#qqToggle").addEventListener("change", (event) => setChannel("qq", event.target.checked, event.target));
 $("#imessageToggle").addEventListener("change", (event) => setChannel("imessage", event.target.checked, event.target));
+$("#lanAccessToggle").addEventListener("change", (event) => { void setLanAccess(event.target.checked, event.target); });
 for (const selector of ["#groupInput", "#handleInput"]) $(selector).addEventListener("input", (event) => event.target.removeAttribute("aria-invalid"));
 
 $("#addGroupForm").addEventListener("submit", async (event) => {
@@ -1214,13 +1245,25 @@ async function openApi(path = "/api/state") {
 $("#openHubApi").addEventListener("click", () => { void openApi(); });
 $("#openRawState").addEventListener("click", () => { void openApi(); });
 $("#copyEndpoint").addEventListener("click", () => { void copyText($("#hubEndpointValue").textContent); });
+$("#copyLanToken").addEventListener("click", async (event) => {
+  const button = event.currentTarget;
+  button.disabled = true;
+  try {
+    const payload = await api("/api/network/access-token");
+    await copyText(payload.token, t("lanTokenCopied"));
+  } catch (error) {
+    showToast(error.message, "error");
+  } finally {
+    renderSettings();
+  }
+});
 $("#copyLogDetail").addEventListener("click", () => { void copyText($("#logDetailContent").textContent); });
 
-async function copyText(value) {
+async function copyText(value, success = t("copied")) {
   try {
     if (!navigator.clipboard?.writeText) throw new Error("Clipboard API unavailable");
     await navigator.clipboard.writeText(String(value || ""));
-    showToast(t("copied"), "success");
+    showToast(success, "success");
   } catch {
     const input = document.createElement("textarea");
     input.className = "copy-buffer";
@@ -1229,7 +1272,7 @@ async function copyText(value) {
     input.select();
     const copied = document.execCommand("copy");
     input.remove();
-    showToast(copied ? t("copied") : t("copyFailed"), copied ? "success" : "error");
+    showToast(copied ? success : t("copyFailed"), copied ? "success" : "error");
   }
 }
 

@@ -417,6 +417,18 @@
                   <button id="openRawState" class="button compact ghost" type="button" data-i18n="rawState">原始状态</button>
                 </div>
               </section>
+
+              <section class="surface settings-card lan-access-card">
+                <div class="settings-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17h16M7 17V9a5 5 0 0 1 10 0v8M9.5 11.5h.1m4.9 0h.1M12 17v4" /></svg></div>
+                <div class="settings-copy"><h2 data-i18n="lanAccess">局域网访问</h2><p id="lanAccessHint" data-i18n="lanAccessHint">允许同一局域网内的设备打开控制台；远程设备需要访问令牌。</p><code id="lanAccessUrls">仅本机可访问</code></div>
+                <div class="setting-controls lan-access-controls">
+                  <label class="inline-toggle icon-only">
+                    <input id="lanAccessToggle" type="checkbox" aria-label="局域网访问" data-i18n-aria-label="lanAccess" />
+                    <span aria-hidden="true"></span>
+                  </label>
+                  <button id="copyLanToken" class="button compact ghost" type="button" data-i18n="copyLanToken">复制访问令牌</button>
+                </div>
+              </section>
             </div>
 
             <section class="surface about-card">

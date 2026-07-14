@@ -7,6 +7,7 @@ import {
   isLoopbackAddress,
   isLoopbackHost,
   isLoopbackRequestHost,
+  isRequestOriginSameHost,
   isRequestOriginAllowed,
   parseAllowedOrigins,
   readBody
@@ -78,4 +79,12 @@ test("recognizes loopback bindings", () => {
   assert.equal(isLoopbackAddress("::ffff:127.0.0.1"), true);
   assert.equal(isLoopbackAddress("192.168.1.20"), false);
   assert.equal(isLoopbackAddress("::ffff:10.0.0.2"), false);
+});
+
+test("recognizes browser origins that match the request host", () => {
+  assert.equal(isRequestOriginSameHost("http://192.168.1.20:3789", "192.168.1.20:3789"), true);
+  assert.equal(isRequestOriginSameHost("https://example.test", "example.test"), false);
+  assert.equal(isRequestOriginSameHost("http://192.168.1.21:3789", "192.168.1.20:3789"), false);
+  assert.equal(isRequestOriginSameHost("null", "192.168.1.20:3789"), false);
+  assert.equal(isRequestOriginSameHost("http://user@example.test", "example.test"), false);
 });
