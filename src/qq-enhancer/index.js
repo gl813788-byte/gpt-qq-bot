@@ -5,6 +5,11 @@ import { isSupportedImageContentType, writeResponseBodyToFile } from "../bounded
 import { fetchWithUrlPolicy } from "../safe-fetch.js";
 
 export { evaluateQqProactiveInterest, scoreQqTextInterest, shouldProactivelyReplyToQq } from "./proactive-interest.js";
+export {
+  collectQqContextImages,
+  getQqGroupRecentContextLimit,
+  snapshotQqContextImages
+} from "./context-images.js";
 
 const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
 const imageMaxBytesRaw = Number(process.env.CODEX_REMOTE_CONTACT_QQ_IMAGE_MAX_BYTES || 20 * 1024 * 1024);

@@ -69,6 +69,11 @@ import { createDashboardAssetHandler } from "./dashboard-assets.js";
 import { requestHasValidToken } from "./request-auth.js";
 import { fetchWithUrlPolicy } from "./safe-fetch.js";
 import { createCoalescingWriter } from "./coalescing-writer.js";
+import {
+  collectQqContextImages,
+  getQqGroupRecentContextLimit,
+  snapshotQqContextImages
+} from "./qq-enhancer/context-images.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const projectDir = join(__dirname, "..");
@@ -4883,7 +4888,8 @@ async function buildModelReply(event, { replyScope = null } = {}) {
   const webContext = await buildWebLookupContext(event);
   const stickerCatalog = state.qq.enhancer.enabled ? await buildQqStickerCatalog(qqStickerDir) : [];
   assertQqReplyScopeActive(replyScope);
-  const qqModelImages = getQqModelImageInputs(event, text);
+  const qqContextImages = getQqRecentContextImageInputs(event);
+  const qqModelImages = getQqModelImageInputs(event, text, { contextImages: qqContextImages });
   const replyStickerCandidates = extractQqReplyStickerCandidates(event);
   event.qqReplyStickerCandidates = replyStickerCandidates;
   const shouldInspectImages = qqModelImages.length > 0;
@@ -4968,12 +4974,17 @@ async function buildModelReply(event, { replyScope = null } = {}) {
       state.qq.enhancer.enabled && event.proactiveDecision?.promptHint ? event.proactiveDecision.promptHint : null,
       state.qq.enhancer.enabled && event.proactiveDecision?.promptHint ? "" : null,
       event.proactiveDecision?.replyContext?.length ? "主动兴趣判定所依据的群聊上下文（正式回复必须结合这些消息理解语境，不能只回复当前一句）：" : null,
-      ...(event.proactiveDecision?.replyContext || []).map((item) => `- ${item.sender}: ${item.text}${item.replyToBot ? "（回复 bot）" : ""}`),
+      ...(event.proactiveDecision?.replyContext || []).map((item) => {
+        const contextText = item.text || "（纯图片消息）";
+        const imageNote = item.imageCount ? `（附图 ${item.imageCount} 张）` : "";
+        return `- ${item.sender}: ${contextText}${imageNote}${item.replyToBot ? "（回复 bot）" : ""}`;
+      }),
       event.proactiveDecision?.replyContext?.length ? "" : null,
       event.pendingImageRequestText ? `触发原因：${ownerLabel}刚刚说“${event.pendingImageRequestText}”，随后这张 QQ 图片到达。请直接看这张图并回应。` : null,
       event.pendingImageRequestText ? "" : null,
       hasAnyQqImageReference(event) && !shouldInspectImages ? "本条 QQ 消息或引用消息带了图片，但文本兴趣不足或未明确要求看图；Hub 已跳过视觉输入以节省 token。不要声称看过图片内容。" : null,
       shouldInspectImages ? `收到的 QQ 图片：${formatQqImageSummary(qqModelImages)}` : null,
+      qqContextImages.length ? formatQqContextImageSources(qqModelImages) : null,
       imagePaths.length ? `可查看的本地图片数量：${imagePaths.length}` : null,
       event.qqAnimationVision?.length ? `动图信息：${event.qqAnimationVision.join("；")}。你可以自行决定要展开几个动图、每个抽几帧以及抽哪些位置；需要时调用 /看表情 当前序号 | 20%,50%,80%（也支持“中段3帧”“均匀5帧”）。不要把同一动图的多帧误当成多张独立表情。` : null,
       imagePaths.length ? "你可以查看图片内容，但回复要像群聊自然接话：不必默认逐条解析图片。只有对方明确让你看图、判断内容、评价截图/表情包，或图片是回答关键时，才说明看到的主元素、文字、构图或梗图大意；完全无法辨认主体时才说看不清。" : null,
@@ -5756,13 +5767,44 @@ function shouldInspectQqImages(event, text) {
   return scoreQqTextInterest(normalized, event) >= 6;
 }
 
-function getQqModelImageInputs(event, text) {
-  if (!shouldInspectQqImages(event, text)) return [];
+function getQqModelImageInputs(event, text, { contextImages = [] } = {}) {
   const currentImages = Array.isArray(event.images) ? event.images : [];
   const quotedImages = Array.isArray(event.replyContext?.images) ? event.replyContext.images : [];
-  if (currentImages.length > 0) return currentImages;
-  if (quotedImages.length > 0) return quotedImages;
-  return [];
+  const directImages = shouldInspectQqImages(event, text)
+    ? [...currentImages, ...quotedImages]
+    : [];
+  return dedupeQqImages([...directImages, ...(Array.isArray(contextImages) ? contextImages : [])]).slice(0, 4);
+}
+
+function getQqRecentContextImageInputs(event) {
+  if (!event.groupId) return [];
+  if (event.proactiveDecision?.replyContext?.length) {
+    return collectQqContextImages(event.proactiveDecision.replyContext, { limit: 4 });
+  }
+  if (!isExplicitQqAtEvent(event) && !event.isReplyToSelf && !event.replyContext?.isSelf) return [];
+  const currentMessageId = event.raw?.message_id == null ? "" : String(event.raw.message_id);
+  const recentEntries = selectConversationMessagesForContext(event, { expandLevel: 0 })
+    .filter((entry) => entry.contextLayer !== "related");
+  return collectQqContextImages(recentEntries, {
+    limit: 4,
+    excludeMessageId: currentMessageId
+  });
+}
+
+function formatQqContextImageSources(images = []) {
+  const lines = (Array.isArray(images) ? images : [])
+    .map((image, index) => image?.context ? [image, index] : null)
+    .filter(Boolean)
+    .map(([image, index]) => {
+      const context = image.context;
+      const text = context.text || "（纯图片消息）";
+      return `- 图片${index + 1} 来自最近群聊中的 ${context.sender || "群友"}：${text}`;
+    });
+  if (lines.length === 0) return null;
+  return [
+    "最近群聊上下文图片对应关系（这些图来自前文，不一定是当前发送者刚发的；结合对应消息理解）：",
+    ...lines
+  ].join("\n");
 }
 
 async function prepareQqVisionImages(images, { outputDir, event } = {}) {
@@ -5847,6 +5889,9 @@ function formatMemoryContext(event, { expandLevel = 0 } = {}) {
       : `以下是当前${scopeLabel}从最近一次“/新对话”之后保留下来的聊天记录。只要 Bot 被触发，无论是 @、回复还是兴趣触发，都会携带“最近连续完整记录 + 更早相关片段”；每次回复都要结合它理解本轮意图。只在相关时参考，不要主动声明自己有记忆。`,
     "当用户追问前文、接上一句、问刚才发生了什么、要求评价刚刚的聊天时，必须直接基于这里的聊天记录回答，不要让用户再提供上一句。"
   ];
+  if (!isQqPrivateEvent(event) && (isExplicitQqAtEvent(event) || event.isReplyToSelf || event.replyContext?.isSelf)) {
+    parts.push("本次由群友 @ Bot 或回复 Bot 触发；下面的最近连续完整记录覆盖该群最近所有发言者，不是只筛选当前发送者。请先结合这段全群上下文再回答。记录中的附图如已作为视觉输入提供，也要与对应发言一起理解。");
+  }
   if (expandLevel > 0) {
     parts.push("Hub 已扩大最近连续记录和更早相关片段的范围；这些仍然只是当前对话线索，不代表可以脱离语境自由发挥。如仍缺关键原文，可继续用 /聊天记录 精确查询。");
   }
@@ -5904,7 +5949,8 @@ function selectConversationMessagesForContext(event, { expandLevel = 0 } = {}) {
     }).map((entry) => ({ ...entry, contextLayer: "related" }));
     return [...related, ...recent];
   }
-  const recentLimit = expandLevel > 0 ? 28 : 12;
+  const explicitBotTrigger = isExplicitQqAtEvent(event) || event.isReplyToSelf || event.replyContext?.isSelf;
+  const recentLimit = getQqGroupRecentContextLimit({ expandLevel, explicitBotTrigger });
   const recentStart = Math.max(0, entries.length - recentLimit);
   const recent = entries.slice(recentStart).map((entry) => ({
     ...entry,
@@ -5926,7 +5972,10 @@ function formatQqConversationContextLine(entry) {
   const quote = entry.replyContext?.text
     ? `（引用 ${entry.replyContext.senderName || entry.replyContext.senderId || "群友"}：${entry.replyContext.text}）`
     : "";
-  return `${formatMemoryTime(entry.at)} ${speaker}${marker}：${text}${quote}`;
+  const imageNote = Array.isArray(entry.images) && entry.images.length > 0
+    ? `（附图 ${entry.images.length} 张）`
+    : "";
+  return `${formatMemoryTime(entry.at)} ${speaker}${marker}：${text}${imageNote}${quote}`;
 }
 
 async function rememberQqExchange(event, reply) {
@@ -5970,7 +6019,8 @@ async function rememberQqGroupMessage(event) {
   if (isBannedQqSender(event)) return;
   if (hasUnhandledQqAudio(event)) return;
   const text = compactMemoryText(normalizeQqDisplayText(stripMentionText(event.text) || event.text || ""));
-  if (!text && !event.hasAtSegment && !event.hasReplySegment) return;
+  const images = snapshotQqContextImages(event.images, { limit: 4 });
+  if (!text && images.length === 0 && !event.hasAtSegment && !event.hasReplySegment) return;
   const entry = {
     at: new Date().toISOString(),
     messageId: event.raw?.message_id == null ? undefined : String(event.raw.message_id),
@@ -5978,6 +6028,7 @@ async function rememberQqGroupMessage(event) {
     senderLabel: event.senderLabel || event.senderName || "群友",
     isOwner: Boolean(event.isOwner),
     text,
+    ...(images.length > 0 ? { images } : {}),
     atTargets: event.atTargets || [],
     replyMessageId: event.replyMessageId,
     replyContext: event.replyContext ? {

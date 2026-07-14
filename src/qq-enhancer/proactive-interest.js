@@ -1,3 +1,5 @@
+import { snapshotQqContextImages } from "./context-images.js";
+
 const botNamePattern = /\b(?:bot|gpt|assistant|codex|chatgpt)\b|机器人|助手|小助手|这个ai|这ai|这个 AI|这 AI/i;
 const directInvitePattern = /(?:你怎么看|你觉得|你会|你能|你来|出来说|出来看看|评价一下|锐评一下|帮忙看|帮我看|查一下|搜一下|联网查|总结一下|看记录|查记录|解释一下|分析一下)/i;
 const shortNoisePattern = /^(?:[？?!.。！？~…\s]+|哈+|哈哈哈*|笑死|草+|6+|666+|哦+|嗯+|啊+|呃+|好+|行+|对+|不是|没事|牛+|nb|牛逼|卧槽|我去|乐|确实|离谱|绷|寄)$/i;
@@ -151,7 +153,9 @@ export async function shouldProactivelyReplyToQq(event = {}, state = {}, helpers
         if (judge.ok && judge.shouldReply && judge.interest >= judgeConfig.minInterest) {
           result = buildDecision("model final decision", assessment, judge, {
             ...commonMeta,
-            replyContext: formatRecentMessages(helpers.recentMessages || [], judgeConfig.maxRecentMessages)
+            replyContext: formatRecentMessages(helpers.recentMessages || [], judgeConfig.maxRecentMessages, {
+              includeImages: true
+            })
           });
         } else {
           result = {
@@ -700,7 +704,7 @@ function buildDecision(reason, assessment, judge = null, meta = {}) {
   };
 }
 
-function formatRecentMessages(recentMessages = [], maxRecentMessages = 8) {
+function formatRecentMessages(recentMessages = [], maxRecentMessages = 8, { includeImages = false } = {}) {
   const memberAliases = new Map();
   let nextMember = 1;
   return (Array.isArray(recentMessages) ? recentMessages : [])
@@ -710,15 +714,18 @@ function formatRecentMessages(recentMessages = [], maxRecentMessages = 8) {
       if (!item.isAssistant && item.senderId !== "assistant" && !item.isOwner && !memberAliases.has(senderId)) {
         memberAliases.set(senderId, `member${nextMember++}`);
       }
+      const images = snapshotQqContextImages(item.images, { limit: 4 });
       return {
         sender: item.isAssistant || item.senderId === "assistant"
           ? "bot"
           : (item.isOwner ? "owner" : memberAliases.get(senderId) || "member"),
         text: String(item.text || "").slice(0, 220),
-        replyToBot: Boolean(item.replyContext?.isSelf)
+        replyToBot: Boolean(item.replyContext?.isSelf),
+        ...(images.length > 0 ? { imageCount: images.length } : {}),
+        ...(includeImages && images.length > 0 ? { images } : {})
       };
     })
-    .filter((item) => item.text);
+    .filter((item) => item.text || item.imageCount);
 }
 
 function normalizeStringList(value, fallback) {

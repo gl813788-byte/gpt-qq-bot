@@ -179,6 +179,56 @@ test("explicit mentions and replies to the bot never enter a proactive cycle", a
   assert.equal(state.proactive.messageCountByGroupId[event.groupId] || 0, 0);
 });
 
+test("affirmative proactive decisions retain context images only for the formal reply", async () => {
+  let requestBody;
+  const result = await shouldProactivelyReplyToQq(event, proactiveState(), {
+    openRouterApiKey: "configured-for-test",
+    fetch: async (_url, options) => {
+      requestBody = JSON.parse(options.body);
+      return jsonJudgeResponse({ shouldReply: true, interest: 90 });
+    },
+    recentMessages: [
+      {
+        senderId: "100",
+        text: "看前面这张截图",
+        images: [{ file: "context.png", url: "https://example.test/context.png", raw: { secret: "drop" } }]
+      },
+      {
+        senderId: "200",
+        text: "",
+        images: [{ file: "image-only.jpg", url: "https://example.test/image-only.jpg" }]
+      }
+    ]
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.replyContext.map((item) => item.imageCount), [1, 1]);
+  assert.deepEqual(result.replyContext.flatMap((item) => item.images).map((image) => image.file), [
+    "context.png",
+    "image-only.jpg"
+  ]);
+  const judgeInput = JSON.parse(requestBody.messages[1].content);
+  assert.deepEqual(judgeInput.recentMessages.map((item) => item.imageCount), [1, 1]);
+  assert.equal(judgeInput.recentMessages.some((item) => "images" in item), false);
+  assert.doesNotMatch(requestBody.messages[1].content, /example\.test|context\.png|image-only\.jpg/);
+});
+
+test("declined proactive decisions do not expose context images to a formal reply", async () => {
+  let requestBody;
+  const result = await shouldProactivelyReplyToQq(event, proactiveState(), {
+    openRouterApiKey: "configured-for-test",
+    fetch: async (_url, options) => {
+      requestBody = JSON.parse(options.body);
+      return jsonJudgeResponse({ shouldReply: false, interest: 95 });
+    },
+    recentMessages: [{ senderId: "100", text: "截图", images: [{ file: "private-context.png" }] }]
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal("replyContext" in result, false);
+  assert.doesNotMatch(requestBody.messages[1].content, /private-context\.png/);
+});
+
 test("minute trigger consumes pending messages and resets both cycles", async () => {
   const state = proactiveState(1500, { judgeEveryMessages: 20, judgeEveryMinutes: 2 });
   let nowMs = 1_000_000;
