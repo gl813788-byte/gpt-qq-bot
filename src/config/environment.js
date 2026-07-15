@@ -1,4 +1,5 @@
 import { parseAllowedOrigins } from "../http-utils.js";
+import { normalizeSafeFetchMode } from "../safe-fetch.js";
 
 const DEFAULT_QQ_PROACTIVE_JUDGE_MODEL = "nousresearch/hermes-3-llama-3.1-405b:free";
 
@@ -58,6 +59,7 @@ export function createEnvironmentConfig(env = process.env) {
     logLevel: env.CODEX_REMOTE_CONTACT_LOG_LEVEL || "debug",
     logConsoleOutput: env.CODEX_REMOTE_CONTACT_LOG_CONSOLE !== "0",
     logConsoleLevels: env.CODEX_REMOTE_CONTACT_LOG_CONSOLE_LEVELS || "success,warn,error",
+    safeFetchMode: normalizeSafeFetchMode(env.CODEX_REMOTE_CONTACT_SAFE_FETCH_MODE),
 
     oneBotApiBase: env.ONEBOT_API_BASE || "http://127.0.0.1:3000",
     oneBotAccessToken: String(env.ONEBOT_ACCESS_TOKEN || env.CODEX_REMOTE_CONTACT_ONEBOT_TOKEN || "").trim(),

@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { open, readdir, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
+import {
+  compactLogDisplayText,
+  formatLogDetailText,
+  formatLogError,
+  formatLogMessage
+} from "../src/log-presentation.js";
+import { summarizeProcessDiagnostics } from "../src/process-diagnostics.js";
 
 const levelNames = { debug: "调试", info: "信息", success: "成功", warn: "警告", error: "错误" };
 const categoryNames = {
@@ -12,6 +19,7 @@ const categoryNames = {
   web: "接口",
   search: "搜索",
   interest: "兴趣",
+  learning: "学习",
   memory: "记忆",
   command: "指令",
   lifecycle: "流程"
@@ -51,6 +59,7 @@ const categoryColors = {
   web: "blue",
   search: "brightCyan",
   interest: "yellow",
+  learning: "green",
   memory: "green",
   command: "brightYellow",
   lifecycle: "brightWhite"
@@ -291,7 +300,7 @@ function matchesViewerFilters(entry, options) {
 function renderEntry(entry, options) {
   const level = String(entry.level || "info").toLowerCase();
   const category = String(entry.category || "system").toLowerCase();
-  const ts = String(entry.ts || "").replace("T", " ").replace(/\.\d+Z$/, "");
+  const ts = formatLocalTimestamp(entry.ts);
   const levelColor = colorForLevel(level);
   const categoryColor = colorForCategory(entry, category);
   const messageColor = colorForMessage(entry, level, category);
@@ -340,28 +349,7 @@ function isAtBotEntry(entry) {
 }
 
 function humanMessage(message) {
-  const value = String(message || "");
-  return {
-    "QQ web lookup started": "QQ 联网搜索开始",
-    "QQ web lookup succeeded": "QQ 联网搜索成功",
-    "QQ web lookup failed": "QQ 联网搜索失败",
-    "QQ web lookup provider failed": "某个搜索厂商尝试失败",
-    "QQ web lookup provider attempt": "搜索厂商尝试完成",
-    "QQ web lookup trigger matched": "QQ 消息触发联网搜索",
-    "QQ web lookup results selected": "已选择联网搜索结果",
-    "QQ proactive interest decision": "QQ 主动兴趣判定",
-    "QQ reply lifecycle started": "QQ 回复流程开始",
-    "QQ reply lifecycle completed": "QQ 回复流程完成",
-    "QQ message details received": "收到 QQ 消息详情",
-    "OneBot message received": "收到 OneBot 消息",
-    "OneBot health check succeeded": "OneBot 健康检查成功",
-    "OneBot event ignored": "已忽略 OneBot 事件",
-    "Duplicate OneBot message ignored": "已忽略重复 OneBot 消息",
-    "Codex QQ Bot hub started": "Codex QQ Bot 后端已启动",
-    "unified-memory not installed; continuing with built-in fallback.": "统一记忆模块未安装，已使用内置降级模式。",
-    "qq-enhancer not installed; continuing with built-in fallback.": "QQ 增强模块未安装，已使用内置降级模式。",
-    "unified-memory recent context not installed; continuing with built-in fallback.": "最近上下文模块未安装，已使用内置降级模式。"
-  }[value] || value;
+  return formatLogMessage(message, "zh");
 }
 
 function formatDetails(entry, options) {
@@ -379,7 +367,7 @@ function formatLifecycleDetails(details, options) {
   pushPart(parts, "场景", humanDetailValue("messageType", details.messageType));
   pushPart(parts, "群", details.groupId);
   if (options.verbose) pushPart(parts, "发送者", details.senderId);
-  pushPart(parts, "触发", humanTriggerMode(details.triggerMode) || details.decisionReason);
+  pushPart(parts, "触发", humanTriggerMode(details.triggerMode) || formatLogDetailText(details.decisionReason, "zh"));
   pushPart(parts, "总用时", formatMs(details.totalDurationMs || details.durationMs));
   if (options.verbose) {
     pushPart(parts, "记忆", formatMs(details.rememberDurationMs));
@@ -399,7 +387,7 @@ function formatLifecycleDetails(details, options) {
 function formatSearchDetails(details, options) {
   const parts = [];
   pushPart(parts, "查询", options.verbose ? details.query : compactText(details.query, 80));
-  pushPart(parts, "触发原因", details.reason);
+  pushPart(parts, "触发原因", formatLogDetailText(details.reason, "zh"));
   pushPart(parts, "厂商", details.provider);
   if (options.verbose && details.rawProvider) pushPart(parts, "厂商代码", details.rawProvider);
   if ((options.verbose || !details.provider) && Array.isArray(details.providers) && details.providers.length > 0) {
@@ -426,7 +414,7 @@ function formatSearchDetails(details, options) {
 function formatInterestDetails(details, options) {
   const parts = [];
   pushPart(parts, "是否回复", formatDetailValue(details.shouldReply));
-  pushPart(parts, "触发原因", details.reason);
+  pushPart(parts, "触发原因", formatLogDetailText(details.reason, "zh"));
   pushPart(parts, "触发方式", humanTriggerMode(details.triggerMode));
   if (details.messageCount != null) {
     pushPart(parts, "待检查消息", `${details.messageCount}${details.judgeEveryMessages ? ` / ${details.judgeEveryMessages}` : ""}`);
@@ -440,8 +428,8 @@ function formatInterestDetails(details, options) {
     pushPart(parts, "上下文", details.contextScore);
     pushPart(parts, "惩罚", details.penalty);
   }
-  if (Array.isArray(details.labels) && details.labels.length > 0) pushPart(parts, "命中", details.labels.join(", "));
-  if (Array.isArray(details.blockers) && details.blockers.length > 0) pushPart(parts, "阻断", details.blockers.join(", "));
+  if (Array.isArray(details.labels) && details.labels.length > 0) pushPart(parts, "命中", details.labels.map((item) => formatLogDetailText(item, "zh")).join(", "));
+  if (Array.isArray(details.blockers) && details.blockers.length > 0) pushPart(parts, "阻断", details.blockers.map((item) => formatLogDetailText(item, "zh")).join(", "));
   if (options.verbose) {
     pushPart(parts, "消息", details.text);
     pushPart(parts, "模型", details.judgeModel);
@@ -470,7 +458,12 @@ function formatGenericDetails(details, options) {
     if (value == null || value === "") continue;
     if (Array.isArray(value) && value.length === 0) continue;
     if (!options.verbose && !compactKeys.has(key)) continue;
-    parts.push(`${detailLabel(key)}: ${formatDetailValue(value, key)}`);
+    if (key === "stderr" || key === "stdout") {
+      const diagnostics = summarizeProcessDiagnostics(key === "stderr" ? { stderr: value } : { stdout: value });
+      if (diagnostics.lines.length > 0) parts.push(`${detailLabel("diagnosticLines")}: ${compactLogDisplayText(diagnostics.lines.join("；"), 900)}`);
+      continue;
+    }
+    parts.push(`${detailLabel(key)}: ${compactLogDisplayText(formatDetailValue(value, key), 900)}`);
   }
   return parts.join(" · ");
 }
@@ -591,10 +584,14 @@ function detailLabel(key) {
     source: "来源",
     senderName: "发送者昵称",
     imageCount: "图片数",
+    image: "图片",
     hasReply: "是否引用",
     isAt: "是否@机器人",
     atTargets: "@目标",
     error: "错误",
+    diagnostic: "诊断摘要",
+    diagnosticLines: "诊断明细",
+    diagnosticOmittedLines: "已省略行数",
     providerErrors: "厂商错误",
     groupId: "群",
     senderId: "发送者",
@@ -654,6 +651,8 @@ function humanTriggerMode(mode) {
 }
 
 function formatDetailValue(value, key = "") {
+  if (value == null) return "";
+  if (/error/i.test(key)) return formatLogError(value, "zh");
   if (Array.isArray(value)) return value.map((item) => formatDetailValue(item, key)).join(", ");
   if (value && typeof value === "object") {
     return Object.entries(value)
@@ -698,16 +697,7 @@ function humanDetailValue(key, value) {
 }
 
 function humanError(error) {
-  const value = String(error || "");
-  return value
-    .replace(/attempt timed out after (\d+)ms/g, "单次请求超过 $1ms")
-    .replace(/search timed out/g, "整次搜索超时")
-    .replace(/returned HTTP (\d+)/g, "返回 HTTP $1")
-    .replace(/returned verification page/g, "返回验证页")
-    .replace(/Tavily API key is not configured/g, "没有配置 Tavily API key")
-    .replace(/no results/g, "没有解析到结果")
-    .replace(/all search providers failed/g, "所有搜索厂商都失败")
-    .replace(/all search providers returned no results/g, "所有搜索厂商都没有结果");
+  return formatLogDetailText(error, "zh");
 }
 
 function formatMs(value) {
@@ -717,6 +707,13 @@ function formatMs(value) {
   if (number >= 60_000) return `${(number / 60_000).toFixed(number >= 600_000 ? 1 : 2)}m`;
   if (number >= 1000) return `${(number / 1000).toFixed(number >= 10_000 ? 1 : 2)}s`;
   return `${number}ms`;
+}
+
+function formatLocalTimestamp(value) {
+  const date = new Date(String(value || ""));
+  if (!Number.isFinite(date.getTime())) return String(value || "").replace("T", " ").replace(/\.\d+Z$/, "");
+  const pad = (number) => String(number).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
 }
 
 function shortTraceId(value) {
@@ -782,7 +779,7 @@ function renderSummary(entries, options) {
 
 function pushPart(parts, label, value) {
   if (value == null || value === "") return;
-  parts.push(`${label}: ${value}`);
+  parts.push(`${label}: ${compactLogDisplayText(value, 900)}`);
 }
 
 function color(text, colorName, options) {

@@ -71,3 +71,50 @@ test("dashboard CSS defines desktop-to-mobile responsive breakpoints", () => {
   assert.ok(breakpoints.some((value) => value <= 600), "CSS must include a compact mobile breakpoint");
   assert.ok(breakpoints.some((value) => value >= 800), "CSS must include a tablet/desktop breakpoint");
 });
+
+test("dashboard logs keep localized copy and distinct severity/category colors", () => {
+  assert.match(javascript, /entry\.messageZh\s*\|\|\s*entry\.message/);
+  assert.match(javascript, /entry\.errorZh/);
+  for (const level of ["debug", "info", "success", "warn", "error"]) {
+    assert.match(css, new RegExp(`\\.log-entry\\.level-${level}\\s*\\{`));
+  }
+  for (const category of ["system", "qq", "onebot", "codex", "search", "interest", "learning", "lifecycle"]) {
+    assert.match(css, new RegExp(`\\.log-entry\\.category-${category}\\s*\\{`));
+  }
+  assert.match(css, /\.log-duration\.slow\s*\{/);
+  assert.match(css, /\.log-duration\.bad\s*\{/);
+});
+
+test("dashboard separates channel configuration from Bot intelligence controls", () => {
+  const channelsStart = html.indexOf('id="view-channels"');
+  const intelligenceStart = html.indexOf('id="view-intelligence"');
+  const memoryStart = html.indexOf('id="view-memory"');
+  assert.ok(channelsStart >= 0 && intelligenceStart > channelsStart && memoryStart > intelligenceStart);
+
+  const channelView = html.slice(channelsStart, intelligenceStart);
+  const intelligenceView = html.slice(intelligenceStart, memoryStart);
+  assert.match(channelView, /id="groupList"/);
+  assert.match(channelView, /id="handleList"/);
+  assert.doesNotMatch(channelView, /id="qqAdaptiveLearning"/);
+  for (const id of ["qqSelfPersona", "qqStickerFrequency", "qqAdaptiveLearning", "qqColdInterest", "qqPrivateInterest", "botSettingsForm"]) {
+    assert.match(intelligenceView, new RegExp(`id="${id}"`));
+  }
+  assert.match(intelligenceView, /class="behavior-column behavior-column-main"/);
+  assert.match(intelligenceView, /class="behavior-column behavior-column-side"/);
+  assert.match(javascript, /network\?\.safeFetchMode/);
+  assert.match(javascript, /validViews = new Set\(\["overview", "channels", "intelligence", "memory", "activity", "settings"\]\)/);
+  assert.match(javascript, /\/api\/qq\/bot-settings/);
+});
+
+test("dashboard live log view requests verbose entries and renders every detail inline", () => {
+  for (const id of ["liveLogsToggle", "logFollowToggle", "logLimit", "liveLogState", "logLastUpdated", "logStream"]) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(javascript, /verbose:\s*"1"/);
+  assert.match(javascript, /app\.view === "activity" && app\.liveLogs && now - app\.lastFetch\.logs >= 1_000/);
+  assert.match(javascript, /function renderLogDetails\(entry\)/);
+  assert.match(javascript, /Object\.entries\(entry\.details \|\| \{\}\)/);
+  assert.match(css, /\.live-log-state\.active\s*\{/);
+  assert.match(css, /\.log-detail-grid\s*\{/);
+  assert.match(css, /\.log-detail\.is-error\s*\{/);
+});

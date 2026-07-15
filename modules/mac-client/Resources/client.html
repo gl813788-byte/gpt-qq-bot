@@ -40,6 +40,10 @@
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v11H8l-3 3V5Zm4 5h6M9 7.5h8" /></svg>
             <span data-i18n="navChannels">通道</span>
           </button>
+          <button class="nav-item" type="button" data-view="intelligence">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a4 4 0 0 0-3.8 2.8A4 4 0 0 0 5 12a4 4 0 0 0 3.2 6.2A4 4 0 0 0 12 21m0-18a4 4 0 0 1 3.8 2.8A4 4 0 0 1 19 12a4 4 0 0 1-3.2 6.2A4 4 0 0 1 12 21m0-18v18M8.5 9.5H12m3.5 5H12" /></svg>
+            <span data-i18n="navIntelligence">智能行为</span>
+          </button>
           <button class="nav-item" type="button" data-view="memory">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7c0-2 3.1-3 7-3s7 1 7 3-3.1 3-7 3-7-1-7-3Zm0 0v5c0 2 3.1 3 7 3s7-1 7-3V7m-14 5v5c0 2 3.1 3 7 3s7-1 7-3v-5" /></svg>
             <span data-i18n="navMemory">记忆</span>
@@ -227,30 +231,6 @@
                   </label>
                 </div>
                 <div class="channel-meta" id="qqChannelMeta"></div>
-                <div class="subsection-head behavior-heading">
-                  <div><h3 data-i18n="stickerFrequency">表情包频率</h3><p data-i18n="stickerFrequencyHint">按群查看最近真人与上线后 Bot 的实际使用率。</p></div>
-                </div>
-                <div id="qqStickerFrequency" class="behavior-frequency-list"></div>
-                <div class="subsection-head behavior-heading">
-                  <div><h3 data-i18n="selfPersona">Bot 全局人设</h3><p data-i18n="selfPersonaHint">从各群和私聊的匿名摘要生成；QQ 昵称固定作为名字和兴趣关键词。</p></div>
-                  <button class="text-button compact-button" type="button" data-open-feature-logs="learning" data-log-query="self persona" data-i18n="viewDetailedLogs">查看详细日志</button>
-                </div>
-                <div id="qqSelfPersona" class="behavior-frequency-list"></div>
-                <div class="subsection-head behavior-heading">
-                  <div><h3 data-i18n="adaptiveLearning">自动适应</h3><p data-i18n="adaptiveLearningHint">按群学习活跃时段、成员节奏，并按 24 小时时钟复盘真人与 Bot 的风格差异。</p></div>
-                  <button class="text-button compact-button" type="button" data-open-feature-logs="learning" data-i18n="viewDetailedLogs">查看详细日志</button>
-                </div>
-                <div id="qqAdaptiveLearning" class="behavior-frequency-list"></div>
-                <div class="subsection-head behavior-heading">
-                  <div><h3 data-i18n="coldInterest">冷群兴趣发言</h3><p data-i18n="coldInterestHint">按最后一条消息计时，结合群节奏选择发一句或保持沉默。</p></div>
-                  <button class="text-button compact-button" type="button" data-open-feature-logs="interest" data-log-query="cold-group" data-i18n="viewDetailedLogs">查看详细日志</button>
-                </div>
-                <div id="qqColdInterest" class="behavior-frequency-list"></div>
-                <div class="subsection-head behavior-heading">
-                  <div><h3 data-i18n="privateInterest">私聊主动兴趣</h3><p data-i18n="privateInterestHint">按互动频率和时间采用短期高、中期低、长期回升的概率，并对连续未回复自动退避。</p></div>
-                  <button class="text-button compact-button" type="button" data-open-feature-logs="interest" data-log-query="private proactive" data-i18n="viewDetailedLogs">查看详细日志</button>
-                </div>
-                <div id="qqPrivateInterest" class="behavior-frequency-list"></div>
                 <div class="subsection-head">
                   <div><h3 data-i18n="qqAllowlist">QQ群白名单</h3><p data-i18n="qqAllowlistHint">只有列表内群聊会触发助手。</p></div>
                   <span id="groupCount" class="count-pill">0</span>
@@ -311,6 +291,102 @@
             </div>
           </section>
 
+          <section class="view" id="view-intelligence" data-view-panel="intelligence" hidden>
+            <div class="view-intro with-actions">
+              <div>
+                <span class="section-kicker" data-i18n="behaviorLab">BEHAVIOR LAB</span>
+                <h2 data-i18n="intelligenceHeading">把 Bot 的习惯和主动性分开看</h2>
+                <p data-i18n="intelligenceBody">人设、表达习惯、群聊节奏与主动兴趣各自成区，状态更清楚，也不会挤占通道配置。</p>
+              </div>
+              <button class="button ghost" type="button" data-open-feature-logs="learning" data-i18n="openLearningLogs">查看学习日志</button>
+            </div>
+
+            <section class="surface bot-control-panel">
+              <div class="section-heading">
+                <div>
+                  <span class="section-kicker" data-i18n="botControlKicker">BOT CONTROL</span>
+                  <h2 data-i18n="botControlHeading">功能开关与调试参数</h2>
+                  <p data-i18n="botControlBody">开关会立即持久化；判定频率、模型和超时用于调试主动兴趣，不影响显式 @ Bot 的正常回复。</p>
+                </div>
+                <span id="botControlStatus" class="save-state" data-i18n="settingsSynced">设置已同步</span>
+              </div>
+              <div id="botDiagnostics" class="bot-diagnostics" aria-live="polite"></div>
+              <form id="botSettingsForm" class="bot-settings-form">
+                <div class="feature-toggle-grid">
+                  <label class="feature-toggle-card">
+                    <span><strong data-i18n="qqEnhancerFeature">QQ 增强能力</strong><small data-i18n="qqEnhancerFeatureHint">图片上下文、自然表达与扩展行为的总开关。</small></span>
+                    <input id="botEnhancerToggle" type="checkbox" />
+                  </label>
+                  <label class="feature-toggle-card">
+                    <span><strong data-i18n="webLookupFeature">联网查询</strong><small data-i18n="webLookupFeatureHint">允许 Bot 在需要时调用已配置的搜索服务。</small></span>
+                    <input id="botWebLookupToggle" type="checkbox" />
+                  </label>
+                  <label class="feature-toggle-card">
+                    <span><strong data-i18n="proactiveFeature">主动兴趣</strong><small data-i18n="proactiveFeatureHint">允许普通群消息、冷群和私聊进入主动判断。</small></span>
+                    <input id="botProactiveToggle" type="checkbox" />
+                  </label>
+                  <label class="feature-toggle-card">
+                    <span><strong data-i18n="interestJudgeFeature">兴趣模型判定</strong><small data-i18n="interestJudgeFeatureHint">使用 OpenRouter 模型判断是否值得自然接话。</small></span>
+                    <input id="botJudgeToggle" type="checkbox" />
+                  </label>
+                </div>
+                <div class="bot-tuning-grid">
+                  <label class="field"><span data-i18n="judgeEveryMessages">消息间隔</span><input id="botJudgeMessages" type="number" min="1" max="1000" step="1" /></label>
+                  <label class="field"><span data-i18n="judgeEveryMinutes">分钟间隔</span><input id="botJudgeMinutes" type="number" min="0" max="1440" step="1" /></label>
+                  <label class="field model-field"><span data-i18n="judgeModel">判定模型</span><input id="botJudgeModel" autocomplete="off" spellcheck="false" /></label>
+                  <label class="field"><span data-i18n="judgeTimeout">静默超时（ms）</span><input id="botJudgeTimeout" type="number" min="1500" max="20000" step="100" /></label>
+                  <label class="field"><span data-i18n="judgeRecentMessages">最近上下文</span><input id="botJudgeRecent" type="number" min="1" max="12" step="1" /></label>
+                  <button id="saveBotSettings" class="button primary bot-save-button" type="submit" data-i18n="saveBotSettings">保存 Bot 设置</button>
+                </div>
+              </form>
+            </section>
+
+            <div class="behavior-layout">
+              <div class="behavior-column behavior-column-main">
+                <section class="surface behavior-panel persona-panel">
+                  <div class="section-heading">
+                    <div><span class="section-kicker" data-i18n="identityLayer">IDENTITY</span><h2 data-i18n="selfPersona">Bot 全局人设</h2><p data-i18n="selfPersonaHint">从各群和私聊的匿名摘要生成；QQ 昵称固定作为名字和兴趣关键词。</p></div>
+                    <button class="text-button compact-button" type="button" data-open-feature-logs="learning" data-log-query="self persona" data-i18n="viewDetailedLogs">查看详细日志</button>
+                  </div>
+                  <div id="qqSelfPersona" class="behavior-frequency-list"></div>
+                </section>
+
+                <section class="surface behavior-panel adaptive-panel">
+                  <div class="section-heading">
+                    <div><span class="section-kicker" data-i18n="learningLayer">LEARNING</span><h2 data-i18n="adaptiveLearning">自动适应</h2><p data-i18n="adaptiveLearningHint">按群学习活跃时段、成员节奏，并按 24 小时时钟复盘真人与 Bot 的风格差异。</p></div>
+                    <button class="text-button compact-button" type="button" data-open-feature-logs="learning" data-i18n="viewDetailedLogs">查看详细日志</button>
+                  </div>
+                  <div id="qqAdaptiveLearning" class="behavior-frequency-list"></div>
+                </section>
+              </div>
+
+              <div class="behavior-column behavior-column-side">
+                <section class="surface behavior-panel sticker-panel">
+                  <div class="section-heading">
+                    <div><span class="section-kicker" data-i18n="expressionLayer">EXPRESSION</span><h2 data-i18n="stickerFrequency">表情包频率</h2><p data-i18n="stickerFrequencyHint">按群查看最近真人与上线后 Bot 的实际使用率。</p></div>
+                  </div>
+                  <div id="qqStickerFrequency" class="behavior-frequency-list"></div>
+                </section>
+
+                <section class="surface behavior-panel interest-panel">
+                  <div class="section-heading">
+                    <div><span class="section-kicker" data-i18n="initiativeLayer">INITIATIVE</span><h2 data-i18n="coldInterest">冷群兴趣发言</h2><p data-i18n="coldInterestHint">按最后一条消息计时，结合群节奏选择发一句或保持沉默。</p></div>
+                    <button class="text-button compact-button" type="button" data-open-feature-logs="interest" data-log-query="cold-group" data-i18n="viewDetailedLogs">查看详细日志</button>
+                  </div>
+                  <div id="qqColdInterest" class="behavior-frequency-list"></div>
+                </section>
+
+                <section class="surface behavior-panel private-panel">
+                  <div class="section-heading">
+                    <div><span class="section-kicker" data-i18n="relationshipLayer">RELATIONSHIP</span><h2 data-i18n="privateInterest">私聊主动兴趣</h2><p data-i18n="privateInterestHint">按互动频率和时间采用短期高、中期低、长期回升的概率，并对连续未回复自动退避。</p></div>
+                    <button class="text-button compact-button" type="button" data-open-feature-logs="interest" data-log-query="private proactive" data-i18n="viewDetailedLogs">查看详细日志</button>
+                  </div>
+                  <div id="qqPrivateInterest" class="behavior-frequency-list"></div>
+                </section>
+              </div>
+            </div>
+          </section>
+
           <section class="view" id="view-memory" data-view-panel="memory" hidden>
             <div class="view-intro with-actions">
               <div>
@@ -343,13 +419,21 @@
               <div>
                 <span class="section-kicker" data-i18n="observability">OBSERVABILITY</span>
                 <h2 data-i18n="activityHeading">把每一次运行看清楚</h2>
-                <p data-i18n="activityBody">筛选日志、追踪链路并观察耗时分布，定位问题不再依赖翻文件。</p>
+                <p data-i18n="activityBody">完整字段实时到达，级别、模块、链路、耗时和错误原因分别着色，定位问题不再依赖翻文件。</p>
               </div>
-              <label class="inline-toggle">
-                <input id="liveLogsToggle" type="checkbox" checked />
-                <span aria-hidden="true"></span>
-                <em data-i18n="liveRefresh">实时刷新</em>
-              </label>
+              <div class="live-log-controls">
+                <span id="liveLogState" class="live-log-state active" aria-live="polite"><i aria-hidden="true"></i><span data-i18n="liveConnected">实时日志已连接</span></span>
+                <label class="inline-toggle">
+                  <input id="liveLogsToggle" type="checkbox" checked />
+                  <span aria-hidden="true"></span>
+                  <em data-i18n="liveRefresh">实时刷新</em>
+                </label>
+                <label class="inline-toggle">
+                  <input id="logFollowToggle" type="checkbox" checked />
+                  <span aria-hidden="true"></span>
+                  <em data-i18n="followLatest">跟随最新</em>
+                </label>
+              </div>
             </div>
 
             <section class="surface log-filters">
@@ -358,6 +442,7 @@
                 <label class="field"><span data-i18n="category">模块</span><select id="logCategory"><option value="" data-i18n="allCategories">全部模块</option></select></label>
                 <label class="field wide"><span data-i18n="search">搜索</span><input id="logQuery" type="search" placeholder="消息、Trace、群或发送者" data-i18n-placeholder="logSearchHint" /></label>
                 <label class="field"><span data-i18n="slowThreshold">慢请求</span><select id="logSlow"><option value="" data-i18n="noLimit">不限</option><option value="500">≥ 500 ms</option><option value="1000">≥ 1 s</option><option value="3000">≥ 3 s</option><option value="10000">≥ 10 s</option></select></label>
+                <label class="field"><span data-i18n="visibleLogCount">显示条数</span><select id="logLimit"><option value="100">100</option><option value="250" selected>250</option><option value="500">500</option><option value="1000">1000</option></select></label>
                 <button class="button primary filter-submit" type="submit" data-i18n="applyFilter">应用筛选</button>
               </form>
             </section>
@@ -366,13 +451,13 @@
 
             <section class="surface log-surface">
               <div class="section-heading">
-                <div><h2 data-i18n="structuredLogs">结构化日志</h2><p id="logMatchText" data-i18n="waitingLogs">等待日志</p></div>
+                <div><h2 data-i18n="structuredLogs">完整实时日志</h2><p><span id="logMatchText" data-i18n="waitingLogs">等待日志</span><span id="logLastUpdated" class="log-last-updated"></span></p></div>
                 <div class="section-actions">
                   <button id="clearLogFilters" class="text-button" type="button" data-i18n="resetFilter">重置</button>
                   <button id="refreshLogs" class="button compact ghost" type="button" data-i18n="refresh">刷新</button>
                 </div>
               </div>
-              <div id="logStream" class="log-stream"></div>
+              <div id="logStream" class="log-stream" role="log" aria-live="off" aria-label="实时日志" data-i18n-aria-label="liveLogStream"></div>
             </section>
           </section>
 
@@ -456,6 +541,7 @@
     <nav class="mobile-nav" id="mobileNav" aria-label="移动端导航" data-i18n-aria-label="mobileNavigation">
       <button class="active" type="button" data-view="overview"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 13h6V4H4v9Zm0 7h6v-4H4v4Zm10 0h6v-9h-6v9Zm0-16v4h6V4h-6Z" /></svg><span data-i18n="navOverview">总览</span></button>
       <button type="button" data-view="channels"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v11H8l-3 3V5Zm4 5h6M9 7.5h8" /></svg><span data-i18n="navChannels">通道</span></button>
+      <button type="button" data-view="intelligence"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a4 4 0 0 0-3.8 2.8A4 4 0 0 0 5 12a4 4 0 0 0 3.2 6.2A4 4 0 0 0 12 21m0-18a4 4 0 0 1 3.8 2.8A4 4 0 0 1 19 12a4 4 0 0 1-3.2 6.2A4 4 0 0 1 12 21m0-18v18" /></svg><span data-i18n="navIntelligenceShort">行为</span></button>
       <button type="button" data-view="memory"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7c0-2 3.1-3 7-3s7 1 7 3-3.1 3-7 3-7-1-7-3Zm0 0v5c0 2 3.1 3 7 3s7-1 7-3V7m-14 5v5c0 2 3.1 3 7 3s7-1 7-3v-5" /></svg><span data-i18n="navMemory">记忆</span></button>
       <button type="button" data-view="activity"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17h3l2.2-8 3.1 11 2.5-7H20M4 5h16" /></svg><span data-i18n="navActivityShort">日志</span></button>
       <button type="button" data-view="settings"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.3a3.3 3.3 0 1 0 0-6.6 3.3 3.3 0 0 0 0 6.6Zm7.3-3.3c0-.6-.1-1.2-.2-1.7l2-1.5-2-3.5-2.5 1a8 8 0 0 0-3-1.7L13.2 2h-4l-.4 2.6a8 8 0 0 0-3 1.7l-2.5-1-2 3.5 2 1.5A8 8 0 0 0 3.1 12c0 .6.1 1.2.2 1.7l-2 1.5 2 3.5 2.5-1a8 8 0 0 0 3 1.7l.4 2.6h4l.4-2.6a8 8 0 0 0 3-1.7l2.5 1 2-3.5-2-1.5c.1-.5.2-1.1.2-1.7Z" /></svg><span data-i18n="navSettings">设置</span></button>

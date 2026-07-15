@@ -32,12 +32,13 @@ test("ncc log viewer is detailed by default and compacts only when requested", a
     { ts: "2026-01-01T00:00:01.000Z", level: "info", category: "onebot", message: "OneBot message received", details: { textLength: 14 } },
     { ts: "2026-01-01T00:00:02.000Z", level: "info", category: "search", message: "QQ web lookup started", details: { query, results: [{ title: "result title", url: "https://example.test" }] } },
     { ts: "2026-01-01T00:00:03.000Z", level: "success", category: "codex", message: "Codex CLI finished", details: { durationMs: 42, stderr: "internal detail" } },
-    { ts: "2026-01-01T00:00:04.000Z", level: "warn", category: "search", message: "QQ web lookup failed", details: { error: "timeout" } }
+    { ts: "2026-01-01T00:00:04.000Z", level: "warn", category: "search", message: "QQ web lookup failed", details: { error: "timeout" } },
+    { ts: "2026-01-01T00:00:05.000Z", level: "error", category: "codex", message: "Codex CLI exited with non-zero status", details: { stderr: "secret-prompt-body\nERROR: unexpected status 403 Forbidden" } }
   ];
   await writeFile(filePath, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
 
   const compact = await execFileAsync(process.execPath, [viewerPath.pathname, filePath, "--plain", "--compact", "--tail", "20"]);
-  assert.match(compact.stdout, /Codex CLI finished/);
+  assert.match(compact.stdout, /Codex CLI 执行完成/);
   assert.match(compact.stdout, /QQ 联网搜索失败/);
   assert.match(compact.stdout, /QQ 联网搜索开始/);
   assert.doesNotMatch(compact.stdout, /收到 OneBot 消息|private message|result title|internal detail/);
@@ -49,6 +50,8 @@ test("ncc log viewer is detailed by default and compacts only when requested", a
 
   const verbose = await execFileAsync(process.execPath, [viewerPath.pathname, filePath, "--plain"]);
   assert.match(verbose.stdout, /private message|result title|internal detail/);
+  assert.match(verbose.stdout, /403 Forbidden/);
+  assert.doesNotMatch(verbose.stdout, /secret-prompt-body/);
 });
 
 test("ncc log viewer highlights at-bot QQ entries separately", async (t) => {

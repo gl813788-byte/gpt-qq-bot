@@ -115,6 +115,12 @@ curl -fsS 'http://127.0.0.1:3789/api/logs?category=interest&group=GROUP_ID' | jq
 
 Useful categories include `system`, `web`, `onebot`, `qq`, `codex`, `search`, `interest`, `learning`, `memory` and `lifecycle`. Start with a trace to follow one reply through routing, judging, search, Codex and delivery.
 
+The dashboard separates Overview, Channels, Intelligence, Memory, Live Logs and Settings instead of stacking every feature on one page. Channels only manages connections, allowlists and contacts. Intelligence displays and persistently controls the Bot enhancer, web lookup, proactive interest and judge tuning, with safe diagnostics for OpenRouter, search provider, safe-download mode, active generations and pending replies. Behavior state uses independent desktop columns so a tall persona card does not leave a large hole in the other column, then returns to a natural single-column order on narrow screens.
+
+The browser Live Logs view fetches complete structured entries every second, keeps chronological order and follows the latest row by default. Level, category, trace, error, outcome and latency have distinct colors, and every `details` field is visible inline. Operators can pause live refresh, turn off follow mode, change the row limit, filter entries and click a row for raw JSON. Requests pause while the page is hidden.
+
+Interactive terminal output uses stable, independent colors for level, category, trace, outcome/error and latency. Use `--color` to force ANSI outside a TTY, `--plain` to disable it and `--json` for raw machine-readable fields. The Chinese viewer and dashboard share Chinese event names while JSON retains the original English `message` and the API adds `messageZh`. Human output folds multiline values onto one line; Codex child failures retain extracted diagnostic lines instead of copying the complete input prompt into the error log.
+
 ## Safe Hub restart
 
 1. Inspect `/api/state`, the dashboard and recent lifecycle logs for active work.
@@ -162,6 +168,7 @@ Do not pull directly over local changes; let Codex assess conflicts and update s
 | Allowlisted group does not reply | Wrong group, no mention/reply, or sender banned | Inspect state plus `qq` and `onebot` logs |
 | Codex generation fails | Login, CLI path, model access or queue pressure | Check CLI/version/login, maintenance and `codex` logs |
 | Proactive interest stays silent | Empty cycle, disabled/failed judge, low interest or stale result | Inspect `interest` logs, OpenRouter credential, judge policy and group activity |
+| QQ images report `URL_PRIVATE_ADDRESS` and DNS returns `198.18/15` | Proxy software uses Fake-IP DNS and strict safe-download mode blocks the reserved address | Keep private-address protection and set `CODEX_REMOTE_CONTACT_SAFE_FETCH_MODE=proxy-compatible`, then restart only Hub; literal private IPs and other reserved ranges remain blocked |
 | Web lookup fails | Credential, provider, network or timeout | Inspect maintenance provider attempts and `search` logs |
 | `ncc` rejects a documented command | Wrong same-name controller | Inspect `command -v ncc`, `readlink -f`, `ncc help`; use `npm run ncc --` for repository commands |
 | Dead screen socket | Previous abnormal exit | Confirm no live process, run `screen -wipe`, then restart |

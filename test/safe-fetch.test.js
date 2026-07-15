@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import test from "node:test";
-import { assertSafeUrl, createPinnedLookup, fetchWithUrlPolicy, isPrivateOrReservedAddress } from "../src/safe-fetch.js";
+import { assertSafeUrl, createPinnedLookup, fetchWithUrlPolicy, isPrivateOrReservedAddress, isProxyFakeIpAddress } from "../src/safe-fetch.js";
 
 test("blocks local, private, reserved, credentialed, and unsafe protocol URLs", async () => {
   for (const url of [
@@ -23,6 +23,26 @@ test("allows public addresses, approved local origins, and bounded data images",
     allowedOrigins: new Set(["http://127.0.0.1:3000"])
   }));
   await assert.doesNotReject(assertSafeUrl("data:image/png;base64,AA==", { allowDataImages: true }));
+});
+
+test("proxy-compatible mode accepts DNS fake-IP results without allowing literal or ordinary private addresses", async () => {
+  await assert.rejects(assertSafeUrl("https://multimedia.nt.qq.com.cn/image.png", {
+    resolveHostname: async () => ["198.18.0.127"]
+  }), (error) => error.code === "URL_PRIVATE_ADDRESS");
+  await assert.doesNotReject(assertSafeUrl("https://multimedia.nt.qq.com.cn/image.png", {
+    mode: "proxy-compatible",
+    resolveHostname: async () => ["198.18.0.127"]
+  }));
+  await assert.rejects(assertSafeUrl("https://198.18.0.127/image.png", {
+    mode: "proxy-compatible"
+  }), (error) => error.code === "URL_PRIVATE_ADDRESS");
+  await assert.rejects(assertSafeUrl("https://private.example/image.png", {
+    mode: "proxy-compatible",
+    resolveHostname: async () => ["192.168.1.5"]
+  }), (error) => error.code === "URL_PRIVATE_ADDRESS");
+  assert.equal(isProxyFakeIpAddress("198.18.0.127"), true);
+  assert.equal(isProxyFakeIpAddress("198.19.255.255"), true);
+  assert.equal(isProxyFakeIpAddress("198.20.0.1"), false);
 });
 
 test("revalidates every redirect target", async () => {

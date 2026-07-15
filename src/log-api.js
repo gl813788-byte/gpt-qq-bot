@@ -1,4 +1,5 @@
 import { readLogEntries, summarizeLogEntries } from "./logger.js";
+import { formatLogError, formatLogMessage } from "./log-presentation.js";
 
 export async function buildLogsResponse(logFilePath, searchParams) {
   const limit = Number(searchParams.get("limit") || 100);
@@ -30,7 +31,7 @@ export async function buildLogsResponse(logFilePath, searchParams) {
   const visibleEntries = entries
     .filter((entry) => isVisibleByDefault(entry, { verbose, level, category, hasAdvancedFilter }))
     .slice(-normalizedLimit)
-    .map((entry) => verbose ? entry : compactEntry(entry));
+    .map((entry) => presentEntry(verbose ? entry : compactEntry(entry)));
   return {
     limit: normalizedLimit,
     level: level || null,
@@ -66,7 +67,7 @@ function compactEntry(entry) {
   const details = {};
   const allowedKeys = new Set([
     "durationMs", "totalDurationMs", "rememberDurationMs", "decisionDurationMs", "generationDurationMs", "sendDurationMs", "memoryDurationMs",
-    "resultCount", "status", "outcome", "code", "error", "reason", "decisionReason", "url",
+    "resultCount", "status", "outcome", "code", "error", "reason", "decisionReason", "url", "diagnostic", "diagnosticOmittedLines",
     "groupId", "senderId", "messageId", "messageType", "proactive", "triggerMode", "queuedCount", "bubbleCount", "replyChars", "sendStatus"
   ]);
   for (const [key, value] of Object.entries(entry.details || {})) {
@@ -81,6 +82,15 @@ function compactEntry(entry) {
     details,
     traceId: entry.traceId || null,
     spanId: entry.spanId || null
+  };
+}
+
+function presentEntry(entry) {
+  const error = entry.details?.error ?? entry.details?.modelError ?? entry.details?.diagnostic ?? null;
+  return {
+    ...entry,
+    messageZh: formatLogMessage(entry.message, "zh"),
+    errorZh: error == null ? null : formatLogError(error, "zh")
   };
 }
 

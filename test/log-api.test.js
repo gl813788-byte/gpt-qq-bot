@@ -19,11 +19,14 @@ test("log API exposes full diagnostics by default and supports compact mode expl
 
   const compact = await buildLogsResponse(filePath, new URLSearchParams("verbose=0"));
   assert.deepEqual(compact.entries.map((entry) => entry.message), ["Codex CLI finished", "QQ web lookup failed"]);
+  assert.deepEqual(compact.entries.map((entry) => entry.messageZh), ["Codex CLI 执行完成", "QQ 联网搜索失败"]);
+  assert.equal(compact.entries[1].errorZh, "timeout");
   assert.deepEqual(compact.entries[0].details, { durationMs: 42 });
 
   const verbose = await buildLogsResponse(filePath, new URLSearchParams());
   assert.equal(verbose.entries.length, 4);
   assert.equal(verbose.entries[0].details.text, "private message");
+  assert.equal(verbose.entries[0].messageZh, "收到 QQ 消息详情");
 
   const info = await buildLogsResponse(filePath, new URLSearchParams("level=info"));
   assert.deepEqual(info.entries.map((entry) => entry.message), ["OneBot message received"]);

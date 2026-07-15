@@ -51,6 +51,17 @@ test("logger serializes concurrent writes and preserves status booleans while re
   assert.equal(normalized.details.apiKey, "[redacted]");
   assert.match(normalized.details.imageUrl, /rkey=\[redacted\]/);
   assert.match(normalized.details.error.message, /token=\[redacted\]/);
+
+  const networkCause = Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:3000"), {
+    code: "ECONNREFUSED",
+    address: "127.0.0.1",
+    port: 3000
+  });
+  const fetchError = new TypeError("fetch failed", { cause: networkCause });
+  const normalizedCause = normalizeEntry({ details: { error: fetchError } });
+  assert.equal(normalizedCause.details.error.cause.code, "ECONNREFUSED");
+  assert.equal(normalizedCause.details.error.cause.address, "127.0.0.1");
+  assert.equal(normalizedCause.details.error.cause.port, 3000);
 });
 
 test("logger bounds its pending write backlog", async () => {

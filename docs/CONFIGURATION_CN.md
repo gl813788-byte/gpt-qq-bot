@@ -52,9 +52,11 @@ npm run ncc -- setup
     "bannedUserIds": [],
     "bannedUntilByUserId": {},
     "enhancer": { "enabled": true },
+    "webLookup": { "enabled": true },
     "proactive": {
       "enabled": true,
       "judgeEveryMessages": 20,
+      "judgeEveryMinutes": 5,
       "judge": { "enabled": true }
     },
     "commandPermissions": {
@@ -87,6 +89,7 @@ npm run ncc -- setup
 | `qq.ownerUserIds` | 拥有绝对管理权限的 QQ 号 |
 | `qq.bannedUserIds` / `bannedUntilByUserId` | 永久与临时 ban |
 | `qq.enhancer.enabled` | 图片、风格、兴趣等 QQ 增强总开关 |
+| `qq.webLookup.enabled` | QQ 联网查询运行时开关；可由网页端持久化修改 |
 | `qq.proactive.*` | 普通消息/分钟兴趣触发与 judge 配置 |
 | `qq.commandPermissions` | 非主人可见且可执行的公共/用户级指令 |
 | `imessage.trustedHandles` | 允许触发 iMessage 的联系人 |
@@ -97,7 +100,7 @@ npm run ncc -- setup
 | `branding.*` | 助手名称、主人称呼和 @ 别名 |
 | `network.allowLanAccess` | 仪表盘持久化的局域网开关 |
 
-模型切换应使用当前 Codex 登录实际提供的模型列表；不要把历史模型名当成永久可用值。
+网页端“智能行为”页可持久化修改 `qq.enhancer.enabled`、`qq.webLookup.enabled`、主动兴趣开关、判定开关、消息/分钟间隔、判定模型、静默超时和最近上下文数量。显式 @ Bot 的正常回复不依赖主动兴趣开关。模型切换应使用当前 Codex 登录实际提供的模型列表；不要把历史模型名当成永久可用值。
 
 ## 核心环境变量
 
@@ -151,6 +154,7 @@ Hub 和 OneBot 两端 token 应一致。未配置 token 时，Webhook 仅信任 
 | `..._JUDGE_MODEL` | Hermes 3 405B free | OpenRouter judge 模型 |
 | `..._JUDGE_TIMEOUT_MS` | `6500` | judge 流式空闲超时 |
 | `CODEX_REMOTE_CONTACT_QQ_IMAGE_MAX_BYTES` | `20971520` | QQ 图片上限，默认 20 MiB |
+| `CODEX_REMOTE_CONTACT_SAFE_FETCH_MODE` | `strict` | 安全下载模式；`proxy-compatible` 仅额外允许域名解析到 `198.18.0.0/15` 代理 Fake-IP，仍拦截字面私网 IP 和其他保留地址 |
 | `CODEX_REMOTE_CONTACT_QQ_BUBBLE_SEPARATOR` | `|||` | 多气泡分隔符 |
 | `..._BUBBLE_SEND_DELAY_MS` | `650` | 气泡间基础延迟 |
 | `..._BUBBLE_MAX_COUNT` | `6` | 一次回复最大气泡数 |
@@ -188,6 +192,7 @@ export ONEBOT_API_BASE=http://127.0.0.1:3000
 export ONEBOT_ACCESS_TOKEN=请使用真实随机值
 export OPENROUTER_API_KEY=请使用真实密钥
 export TAVILY_API_KEY=请使用真实密钥
+export CODEX_REMOTE_CONTACT_SAFE_FETCH_MODE=proxy-compatible
 export CODEX_REMOTE_CONTACT_LOG_LEVEL=debug
 ```
 

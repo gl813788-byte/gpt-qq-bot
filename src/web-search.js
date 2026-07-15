@@ -20,6 +20,7 @@ export function createWebSearch({
   tavilyApiKey = "",
   userAgent = "Codex-Remote-Contact",
   browserUserAgent = defaultBrowserUserAgent,
+  safeFetchMode = "strict",
   normalizeQuery = (value) => String(value || "").trim()
 } = {}) {
   if (!maintenance || typeof maintenance !== "object") {
@@ -38,6 +39,7 @@ export function createWebSearch({
     tavilyApiKey: String(tavilyApiKey || ""),
     userAgent: String(userAgent || "Codex-Remote-Contact"),
     browserUserAgent: String(browserUserAgent || defaultBrowserUserAgent),
+    safeFetchMode: safeFetchMode === "proxy-compatible" ? "proxy-compatible" : "strict",
     lookupHost,
     normalizeQuery
   };
@@ -349,6 +351,7 @@ export function createWebSearch({
         headers: { "user-agent": config.userAgent }
       }, {
         maxRedirects: 3,
+        mode: config.safeFetchMode,
         resolveHostname: async (hostname) => {
           const records = await config.lookupHost(hostname, { all: true, verbatim: true });
           return Array.isArray(records)

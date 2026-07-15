@@ -9,6 +9,7 @@ const redirectStatuses = new Set([301, 302, 303, 307, 308]);
 export async function fetchWithUrlPolicy(input, options = {}, {
   allowedPrivateOrigins = [],
   allowDataImages = false,
+  mode = "strict",
   maxRedirects = 4,
   resolveHostname = defaultResolveHostname,
   fetchImpl = fetch
@@ -17,7 +18,7 @@ export async function fetchWithUrlPolicy(input, options = {}, {
   const allowedOrigins = new Set(allowedPrivateOrigins.map(normalizeOrigin).filter(Boolean));
 
   for (let redirectCount = 0; redirectCount <= maxRedirects; redirectCount += 1) {
-    const policy = await inspectSafeUrl(currentUrl, { allowedOrigins, allowDataImages, resolveHostname });
+    const policy = await inspectSafeUrl(currentUrl, { allowedOrigins, allowDataImages, mode, resolveHostname });
     const response = fetchImpl === fetch
       ? await pinnedFetch(currentUrl, { ...options, redirect: "manual" }, policy)
       : await fetchImpl(currentUrl, { ...options, redirect: "manual" });
@@ -37,15 +38,17 @@ export async function fetchWithUrlPolicy(input, options = {}, {
 export async function assertSafeUrl(url, {
   allowedOrigins = new Set(),
   allowDataImages = false,
+  mode = "strict",
   resolveHostname = defaultResolveHostname
 } = {}) {
-  await inspectSafeUrl(url, { allowedOrigins, allowDataImages, resolveHostname });
+  await inspectSafeUrl(url, { allowedOrigins, allowDataImages, mode, resolveHostname });
   return true;
 }
 
 async function inspectSafeUrl(url, {
   allowedOrigins = new Set(),
   allowDataImages = false,
+  mode = "strict",
   resolveHostname = defaultResolveHostname
 } = {}) {
   const parsed = url instanceof URL ? url : new URL(String(url || ""));
@@ -64,11 +67,30 @@ async function inspectSafeUrl(url, {
   if (!hostname || (!explicitlyAllowed && (hostname === "localhost" || hostname.endsWith(".localhost")))) {
     throw createUrlPolicyError("URL_PRIVATE_ADDRESS", `Blocked private hostname: ${hostname || "empty"}`);
   }
-  const addresses = isIP(hostname) ? [hostname] : await resolveHostname(hostname);
-  if (!addresses.length || (!explicitlyAllowed && addresses.some(isPrivateOrReservedAddress))) {
+  const hostnameIsIpLiteral = isIP(hostname) !== 0;
+  const addresses = hostnameIsIpLiteral ? [hostname] : await resolveHostname(hostname);
+  const proxyCompatible = normalizeSafeFetchMode(mode) === "proxy-compatible";
+  const blockedAddress = addresses.some((address) => isPrivateOrReservedAddress(address)
+    && !(proxyCompatible && !hostnameIsIpLiteral && isProxyFakeIpAddress(address)));
+  if (!addresses.length || (!explicitlyAllowed && blockedAddress)) {
     throw createUrlPolicyError("URL_PRIVATE_ADDRESS", `Blocked private or unresolved address for ${hostname}`);
   }
   return { data: false, addresses: [...new Set(addresses.map(String))] };
+}
+
+export function normalizeSafeFetchMode(value) {
+  const normalized = String(value || "strict").trim().toLowerCase();
+  return ["proxy-compatible", "proxy", "fake-ip", "fakeip"].includes(normalized)
+    ? "proxy-compatible"
+    : "strict";
+}
+
+export function isProxyFakeIpAddress(address) {
+  const parts = String(address || "").split(".").map(Number);
+  return parts.length === 4
+    && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)
+    && parts[0] === 198
+    && (parts[1] === 18 || parts[1] === 19);
 }
 
 async function pinnedFetch(url, options, policy) {

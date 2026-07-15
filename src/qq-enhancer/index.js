@@ -12,11 +12,18 @@ export {
 } from "./context-images.js";
 
 const imageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
-const imageMaxBytesRaw = Number(process.env.CODEX_REMOTE_CONTACT_QQ_IMAGE_MAX_BYTES || 20 * 1024 * 1024);
-const imageMaxBytes = Number.isFinite(imageMaxBytesRaw)
-  ? Math.max(256 * 1024, Math.min(100 * 1024 * 1024, Math.floor(imageMaxBytesRaw)))
-  : 20 * 1024 * 1024;
-const oneBotApiBase = process.env.ONEBOT_API_BASE || "http://127.0.0.1:3000";
+let imageMaxBytes = 20 * 1024 * 1024;
+let oneBotApiBase = "http://127.0.0.1:3000";
+let safeFetchMode = "strict";
+
+export function configureQqEnhancer(options = {}) {
+  const requestedMaxBytes = Number(options.imageMaxBytes);
+  imageMaxBytes = Number.isFinite(requestedMaxBytes)
+    ? Math.max(256 * 1024, Math.min(100 * 1024 * 1024, Math.floor(requestedMaxBytes)))
+    : imageMaxBytes;
+  oneBotApiBase = String(options.oneBotApiBase || oneBotApiBase).replace(/\/$/, "");
+  safeFetchMode = options.safeFetchMode === "proxy-compatible" ? "proxy-compatible" : "strict";
+}
 
 export function buildQqChatStyleInstructions(event = {}) {
   return [
@@ -254,7 +261,8 @@ async function downloadImage(url, outputDir, nameHint = "qq-image") {
     signal: AbortSignal.timeout(15000)
   }, {
     allowedPrivateOrigins: [oneBotApiBase],
-    allowDataImages: true
+    allowDataImages: true,
+    mode: safeFetchMode
   });
   if (!response.ok) throw new Error(`image download returned HTTP ${response.status}`);
   const contentType = response.headers.get("content-type") || "";

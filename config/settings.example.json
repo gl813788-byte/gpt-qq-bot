@@ -9,9 +9,13 @@
     "enhancer": {
       "enabled": false
     },
+    "webLookup": {
+      "enabled": true
+    },
     "proactive": {
       "enabled": false,
       "judgeEveryMessages": 20,
+      "judgeEveryMinutes": 5,
       "judge": {
         "enabled": true,
         "provider": "openrouter",

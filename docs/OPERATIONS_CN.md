@@ -119,6 +119,12 @@ curl -fsS 'http://127.0.0.1:3789/api/logs?category=interest&group=群号' | jq .
 
 常用分类：`system`、`web`、`onebot`、`qq`、`codex`、`search`、`interest`、`learning`、`memory` 和 `lifecycle`。优先按 trace 追踪一条完整回复，再看各阶段耗时和上游错误。
 
+仪表盘不再把所有功能堆在同一页，而是分成总览、通道、智能行为、记忆、实时日志和设置六个视图。通道页只处理连接、白名单和联系人；智能行为页显示并持久化 Bot 增强、联网、主动兴趣与判定参数，同时提供 OpenRouter、搜索 provider、安全下载模式、活动生成和待回复数量等安全诊断信息。行为状态采用独立双列流，较长的人设卡不会在另一列制造大片空白；窄屏恢复为自然单列顺序。
+
+网页日志视图每秒拉取一次完整结构化条目，按时间正序追加并默认跟随最新位置。级别、分类、trace、错误、结果和耗时分别着色，所有 `details` 字段直接显示；可暂停实时刷新、关闭自动跟随、调整显示条数、筛选并点击条目查看原始 JSON。页面隐藏时实时请求自动暂停。
+
+交互终端同样按级别、分类、trace、结果/错误和耗时使用稳定的独立颜色；`--color` 可在非 TTY 输出中强制启用，`--plain` 关闭颜色，`--json` 保留机器可读原始字段。中文查看器和中文仪表盘统一显示中文事件名，原始英文事件名仍保留在 JSON 的 `message`，API 同时提供 `messageZh`。人类可读输出会把多行字段压成单行；Codex 子进程只记录提炼后的诊断行，不再把整段输入提示词复制进错误日志。
+
 ## 安全重启 Hub
 
 1. 查看 `/api/state`、仪表盘和最近 `lifecycle` 日志，确认没有需要保留的生成任务。
@@ -168,6 +174,7 @@ npm run verify
 | 白名单群不回复 | 群号不在 allowlist、未 @/回复 Bot、用户被 ban | 检查 state、`qq`/`onebot` 日志和权限 |
 | Codex 回复失败 | 未登录、CLI 路径/模型不可用、队列满 | `codex --version`、登录状态、maintenance、`codex` 日志 |
 | 主动兴趣不回复 | 周期为空、judge 关闭/失败、兴趣不足、结果过时 | `interest` 日志、OpenRouter key、judge 参数和群活跃状态 |
+| QQ 图片提示 `URL_PRIVATE_ADDRESS` 且解析到 `198.18/15` | 代理软件使用 Fake-IP DNS，严格下载模式按保留地址拦截 | 保持私网保护，设置 `CODEX_REMOTE_CONTACT_SAFE_FETCH_MODE=proxy-compatible` 后只重启 Hub；字面私网 IP 和其他保留地址仍会拒绝 |
 | 联网失败 | key、provider、网络或超时 | `/api/maintenance` 的 provider attempts，`search` 日志 |
 | `ncc` 命令不认识参数 | 调用了另一套同名控制器 | `command -v ncc`、`readlink -f`、`ncc help`；仓库命令改用 `npm run ncc --` |
 | dead screen session | 异常退出留下 socket | 确认没有活进程后 `screen -wipe`，再启动 |

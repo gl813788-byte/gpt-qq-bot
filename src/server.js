@@ -21,6 +21,7 @@ import { createEnvironmentConfig } from "./config/environment.js";
 import { createInitialState } from "./app/create-initial-state.js";
 import { createLogger } from "./logger.js";
 import { buildLogsResponse } from "./log-api.js";
+import { summarizeProcessDiagnostics } from "./process-diagnostics.js";
 import { importOptionalModule } from "./optional-modules.js";
 import { defaultQqPublicCommands, qqCommandCatalog } from "./qq-command-catalog.js";
 import { createConcurrencyLimiter } from "./concurrency-limiter.js";
@@ -113,6 +114,7 @@ import { createWebSearch, formatWebSearchProviderName } from "./web-search.js";
 import { isSupportedImageContentType, readResponseJson, writeResponseBodyToFile } from "./bounded-stream.js";
 import { runJsonProcess, runProcess } from "./process-runner.js";
 import { createDashboardAssetHandler } from "./dashboard-assets.js";
+import { applyDashboardBotSettings, readDashboardBotSettings } from "./dashboard-bot-settings.js";
 import { selectLanAccessAddresses } from "./network-access.js";
 import { requestHasValidToken } from "./request-auth.js";
 import {
@@ -182,6 +184,7 @@ const {
   logLevel,
   logConsoleOutput,
   logConsoleLevels,
+  safeFetchMode,
   oneBotApiBase,
   oneBotAccessToken,
   environmentManagementApiToken,
@@ -354,6 +357,11 @@ const qqEnhancerModule = await importOptionalModule("qq-enhancer", [
   pathToFileURL(join(projectDir, "..", "qq-enhancer", "src", "qq-enhancer", "index.js")).href
 ], { logger });
 if (qqEnhancerModule) {
+  qqEnhancerModule.configureQqEnhancer?.({
+    imageMaxBytes: qqImageMaxBytes,
+    oneBotApiBase,
+    safeFetchMode
+  });
   buildQqChatStyleInstructions = qqEnhancerModule.buildQqChatStyleInstructions || buildQqChatStyleInstructions;
   buildQqReplyWorkspaceStyleInstructions = qqEnhancerModule.buildQqReplyWorkspaceStyleInstructions || buildQqReplyWorkspaceStyleInstructions;
   buildQqSendPlan = qqEnhancerModule.buildQqSendPlan || buildQqSendPlan;
@@ -665,6 +673,9 @@ async function loadSettings() {
     if (body.qq?.enhancer && typeof body.qq.enhancer === "object") {
       state.qq.enhancer.enabled = body.qq.enhancer.enabled !== false;
     }
+    if (body.qq?.webLookup && typeof body.qq.webLookup === "object") {
+      state.qq.webLookup.enabled = body.qq.webLookup.enabled !== false;
+    }
     if (body.qq?.proactive && typeof body.qq.proactive === "object") {
       state.qq.proactive.enabled = state.qq.enhancer.enabled && body.qq.proactive.enabled !== false;
       if (Number.isFinite(Number(body.qq.proactive.judgeEveryMessages))) {
@@ -784,6 +795,9 @@ async function saveSettings() {
         bannedUntilByUserId: state.qq.bannedUntilByUserId,
         enhancer: {
           enabled: state.qq.enhancer.enabled
+        },
+        webLookup: {
+          enabled: state.qq.webLookup.enabled
         },
         proactive: {
           enabled: state.qq.proactive.enabled,
@@ -1641,6 +1655,7 @@ function buildPublicState() {
       editable: !hubHostOverride,
       host: currentHubHost,
       port: hubPort,
+      safeFetchMode,
       apiTokenConfigured: Boolean(managementApiToken),
       lanUrls: buildLanAccessUrls()
     },
@@ -1657,6 +1672,7 @@ function buildPublicState() {
       allowedGroups: [...state.qq.allowedGroups],
       enhancer: { enabled: state.qq.enhancer.enabled },
       webLookup: { enabled: state.qq.webLookup.enabled },
+      botSettings: readDashboardBotSettings(state),
       proactive: {
         enabled: state.qq.proactive.enabled,
         judgeEveryMessages: state.qq.proactive.judgeEveryMessages,
@@ -2732,7 +2748,8 @@ async function downloadQqImageUrl(url, outputDir, nameHint = "qq-image") {
     signal: AbortSignal.timeout(15000)
   }, {
     allowedPrivateOrigins: [oneBotApiBase],
-    allowDataImages: true
+    allowDataImages: true,
+    mode: safeFetchMode
   });
   if (!response.ok) throw new Error(`image download returned HTTP ${response.status}`);
   const contentType = response.headers.get("content-type") || "";
@@ -6704,6 +6721,7 @@ const webSearch = createWebSearch({
   tavilyApiKey,
   userAgent: userAgentName,
   browserUserAgent: process.env.CODEX_REMOTE_CONTACT_QQ_WEB_USER_AGENT,
+  safeFetchMode,
   normalizeQuery: stripMentionText
 });
 const searchWeb = webSearch.search;
@@ -10243,6 +10261,7 @@ function runCodexCliProcess(args, input, options) {
       const finishedAt = Date.now();
       state.maintenance.codex.lastRunAt = new Date(finishedAt).toISOString();
       state.maintenance.codex.lastDurationMs = finishedAt - startedAt;
+      const diagnostics = summarizeProcessDiagnostics({ stderr, stdout: code === 0 ? "" : stdout });
       if (code === 0) {
         state.maintenance.codex.lastOk = true;
         state.maintenance.codex.lastError = null;
@@ -10252,7 +10271,11 @@ function runCodexCliProcess(args, input, options) {
           qqGenerationId,
           groupId: options.qqEvent?.groupId || null,
           senderId: options.qqEvent?.senderId || null,
-          stderr: stderr.trim().slice(-1000) || null
+          ...(diagnostics.lines.length > 0 ? {
+            diagnostic: diagnostics.summary,
+            diagnosticLines: diagnostics.lines,
+            diagnosticOmittedLines: diagnostics.omittedLineCount
+          } : {})
         }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
         resolve({ stdout, stderr });
         trackBackgroundTask(refreshCodexQuotaSnapshotAfterRun({ startedAtMs: startedAt, previousQuota }), () => null);
@@ -10271,7 +10294,8 @@ function runCodexCliProcess(args, input, options) {
         discardPartialOutput();
         reject(stoppedError);
       } else {
-        const message = `Codex CLI exited with ${code}: ${(stderr || stdout).trim()}`;
+        const diagnostic = diagnostics.summary || "No diagnostic output captured";
+        const message = `Codex CLI exited with ${code}: ${diagnostic}`;
         state.maintenance.codex.lastOk = false;
         state.maintenance.codex.lastError = message;
         logger.error("Codex CLI exited with non-zero status", {
@@ -10281,8 +10305,9 @@ function runCodexCliProcess(args, input, options) {
           qqGenerationId,
           groupId: options.qqEvent?.groupId || null,
           senderId: options.qqEvent?.senderId || null,
-          stderr: stderr.trim().slice(-2000),
-          stdout: stdout.trim().slice(-1000)
+          diagnostic,
+          diagnosticLines: diagnostics.lines,
+          diagnosticOmittedLines: diagnostics.omittedLineCount
         }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
         discardPartialOutput();
         reject(new Error(message));
@@ -11390,6 +11415,36 @@ async function handleApi(req, res) {
       state.qq.allowedGroups = normalizeAllowedGroups(body.allowedGroups);
       await saveSettings();
     }
+    return sendJson(res, 200, buildPublicState());
+  }
+
+  if (req.method === "POST" && req.url === "/api/qq/bot-settings") {
+    const body = await readBody(req, { requireJson: true });
+    let change;
+    try {
+      change = applyDashboardBotSettings(state, body);
+    } catch (error) {
+      if (error instanceof TypeError || error instanceof RangeError) {
+        return sendJson(res, 400, { error: error.message });
+      }
+      throw error;
+    }
+    try {
+      await saveSettings();
+    } catch (error) {
+      change.restore();
+      throw error;
+    }
+    logger.info("Dashboard Bot settings updated", {
+      enhancerEnabled: change.settings.enhancerEnabled,
+      webLookupEnabled: change.settings.webLookupEnabled,
+      proactiveEnabled: change.settings.proactiveEnabled,
+      judgeEnabled: change.settings.judgeEnabled,
+      judgeEveryMessages: change.settings.judgeEveryMessages,
+      judgeEveryMinutes: change.settings.judgeEveryMinutes,
+      judgeTimeoutMs: change.settings.judgeTimeoutMs,
+      judgeMaxRecentMessages: change.settings.judgeMaxRecentMessages
+    }, "web");
     return sendJson(res, 200, buildPublicState());
   }
 

@@ -1,6 +1,7 @@
 import { appendFile, mkdir, open, readdir, rename, stat, unlink } from "node:fs/promises";
 import crypto from "node:crypto";
 import { basename, dirname, join } from "node:path";
+import { formatLogMessage, getLogCategoryLabel, getLogLevelLabel } from "./log-presentation.js";
 
 const defaultLevels = new Set(["debug", "info", "success", "warn", "error"]);
 const levelWeights = { debug: 10, info: 20, success: 25, warn: 30, error: 40 };
@@ -290,11 +291,18 @@ function sanitizeDetails(value, depth = 0) {
   if (depth > 4) return "[depth-limit]";
   if (value == null) return value;
   if (value instanceof Error) {
-    return {
+    const output = {
       name: value.name,
       message: redactString(String(value.message || "")).slice(0, 4000),
       code: value.code || null
     };
+    if (value.errno != null) output.errno = sanitizeDetails(value.errno, depth + 1);
+    if (value.syscall != null) output.syscall = sanitizeDetails(value.syscall, depth + 1);
+    if (value.address != null) output.address = sanitizeDetails(value.address, depth + 1);
+    if (value.port != null) output.port = sanitizeDetails(value.port, depth + 1);
+    if (value.status != null) output.status = sanitizeDetails(value.status, depth + 1);
+    if (value.cause != null) output.cause = sanitizeErrorCause(value.cause, depth + 1);
+    return output;
   }
   if (Array.isArray(value)) return value.slice(0, 50).map((item) => sanitizeDetails(item, depth + 1));
   if (typeof value === "object") {
@@ -308,6 +316,20 @@ function sanitizeDetails(value, depth = 0) {
   if (typeof value === "string") return redactString(value).slice(0, 4000);
   if (["number", "boolean"].includes(typeof value)) return value;
   return String(value).slice(0, 1000);
+}
+
+function sanitizeErrorCause(value, depth) {
+  if (depth > 4 || value == null) return value == null ? value : "[depth-limit]";
+  if (value instanceof Error) return sanitizeDetails(value, depth);
+  if (typeof value !== "object") return sanitizeDetails(value, depth);
+  const output = {};
+  const allowedKeys = ["name", "message", "code", "errno", "syscall", "address", "port", "status", "cause"];
+  for (const key of allowedKeys) {
+    if (value[key] != null) output[key] = key === "cause"
+      ? sanitizeErrorCause(value[key], depth + 1)
+      : sanitizeDetails(value[key], depth + 1);
+  }
+  return Object.keys(output).length > 0 ? output : "[error-cause]";
 }
 
 function redactString(value) {
@@ -360,7 +382,10 @@ function parseLogLine(line) {
 }
 
 function writeConsole(entry) {
-  const text = `[${entry.ts}] ${entry.level.toUpperCase()} ${entry.category}: ${entry.message}`;
+  const level = getLogLevelLabel(entry.level, "zh");
+  const category = getLogCategoryLabel(entry.category, "zh");
+  const message = formatLogMessage(entry.message, "zh");
+  const text = `[${entry.ts}] ${level} ${category}  ${message}`;
   if (entry.level === "error") console.error(text);
   else if (entry.level === "warn") console.warn(text);
   else console.log(text);

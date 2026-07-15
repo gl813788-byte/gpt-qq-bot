@@ -52,9 +52,11 @@ Minimal configuration:
     "bannedUserIds": [],
     "bannedUntilByUserId": {},
     "enhancer": { "enabled": true },
+    "webLookup": { "enabled": true },
     "proactive": {
       "enabled": true,
       "judgeEveryMessages": 20,
+      "judgeEveryMinutes": 5,
       "judge": { "enabled": true }
     },
     "commandPermissions": {
@@ -85,6 +87,7 @@ Minimal configuration:
 | `qq.ownerUserIds` | QQ IDs with absolute owner authority |
 | `qq.bannedUserIds` / `bannedUntilByUserId` | Permanent and temporary bans |
 | `qq.enhancer.enabled` | QQ media, style and interest enhancements |
+| `qq.webLookup.enabled` | Runtime QQ web-lookup switch, persistently editable from the dashboard |
 | `qq.proactive.*` | Ordinary message/minute interest triggers and judge policy |
 | `qq.commandPermissions` | Public and user-specific non-owner command access |
 | `imessage.*` | Trusted handles and reply target |
@@ -94,7 +97,7 @@ Minimal configuration:
 | `branding.*` | Assistant name, owner label and mention aliases |
 | `network.allowLanAccess` | Persistent dashboard LAN switch |
 
-Switch models only to entries currently advertised by the active Codex login.
+The dashboard Intelligence view can persist the enhancer, web lookup, proactive-interest and judge switches plus message/minute cadence, judge model, idle timeout and recent-context size. Explicit @Bot replies do not depend on proactive interest. Switch models only to entries currently advertised by the active Codex login.
 
 ## Core environment
 
@@ -148,6 +151,7 @@ Use the same token on both sides. Without one, the webhook trusts only requests 
 | `..._JUDGE_MODEL` | Hermes 3 405B free | OpenRouter judge model |
 | `..._JUDGE_TIMEOUT_MS` | `6500` | Streaming idle timeout |
 | `CODEX_REMOTE_CONTACT_QQ_IMAGE_MAX_BYTES` | `20971520` | QQ image limit, 20 MiB by default |
+| `CODEX_REMOTE_CONTACT_SAFE_FETCH_MODE` | `strict` | Safe-download mode; `proxy-compatible` additionally permits DNS names mapped into proxy Fake-IP range `198.18.0.0/15`, while literal private IPs and other reserved ranges stay blocked |
 | `CODEX_REMOTE_CONTACT_QQ_BUBBLE_SEPARATOR` | `|||` | Multi-bubble separator |
 | `..._BUBBLE_SEND_DELAY_MS` | `650` | Base inter-bubble delay |
 | `..._BUBBLE_MAX_COUNT` | `6` | Maximum bubbles per reply |
@@ -185,6 +189,7 @@ export ONEBOT_API_BASE=http://127.0.0.1:3000
 export ONEBOT_ACCESS_TOKEN=use-a-real-random-value
 export OPENROUTER_API_KEY=use-a-real-secret
 export TAVILY_API_KEY=use-a-real-secret
+export CODEX_REMOTE_CONTACT_SAFE_FETCH_MODE=proxy-compatible
 export CODEX_REMOTE_CONTACT_LOG_LEVEL=debug
 ```
 
