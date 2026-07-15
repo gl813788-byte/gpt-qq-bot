@@ -15,7 +15,6 @@ export function createRuntimePaths({
     codexWorkspaceDir: join(projectDir, "workspaces", "codex-cli"),
     codexTmpDir,
     logFilePath: env.CODEX_REMOTE_CONTACT_LOG_FILE || join(projectDir, "runtime", "logs", "hub.jsonl"),
-    imessageScreenshotsDir: join(projectDir, "runtime", "imessage-screenshots"),
     qqStickerDir: env.CODEX_REMOTE_CONTACT_QQ_STICKER_DIR || join(projectDir, "data", "qq-stickers"),
     qqOutputImagesDir: env.CODEX_REMOTE_CONTACT_QQ_OUTPUT_IMAGE_DIR || join(projectDir, "runtime", "qq-output-images"),
     qqTaskWorkspacesDir: env.CODEX_REMOTE_CONTACT_QQ_TASK_WORKSPACE_DIR || join(projectDir, "runtime", "qq-task-workspaces"),
@@ -33,12 +32,7 @@ export function createRuntimePaths({
     qqConversationMemoryPath: join(dataDir, "qq-conversation-memory.json"),
     qqStickerLabelsPath: join(dataDir, "qq-sticker-labels.json"),
     qqStickerInventoryPath: join(dataDir, "qq-sticker-inventory.json"),
-    imessageMemoryPath: join(dataDir, "imessage-memory.json"),
-    remoteExecutionMemoryPath: join(dataDir, "remote-execution-memory.json"),
     unifiedMemoryPath: join(dataDir, "unified-memory.json"),
-    assistantProfilePath: env.CODEX_REMOTE_CONTACT_ASSISTANT_PROFILE_PATH || "",
-    shadowrocketNodeControlPath: join(projectDir, "modules", "shadowrocket", "shadowrocket-node-control.command"),
-    backlightOffScriptPath: join(projectDir, "modules", "system-control", "backlight-off-keep-awake.command"),
-    backlightRestoreScriptPath: join(projectDir, "modules", "system-control", "backlight-restore.command")
+    assistantProfilePath: env.CODEX_REMOTE_CONTACT_ASSISTANT_PROFILE_PATH || ""
   };
 }

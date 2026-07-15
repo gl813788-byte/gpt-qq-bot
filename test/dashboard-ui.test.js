@@ -85,7 +85,7 @@ test("dashboard logs keep localized copy and distinct severity/category colors",
   assert.match(css, /\.log-duration\.bad\s*\{/);
 });
 
-test("dashboard separates channel configuration from Bot intelligence controls", () => {
+test("dashboard keeps one QQ channel separate from Bot intelligence controls", () => {
   const channelsStart = html.indexOf('id="view-channels"');
   const intelligenceStart = html.indexOf('id="view-intelligence"');
   const memoryStart = html.indexOf('id="view-memory"');
@@ -93,8 +93,10 @@ test("dashboard separates channel configuration from Bot intelligence controls",
 
   const channelView = html.slice(channelsStart, intelligenceStart);
   const intelligenceView = html.slice(intelligenceStart, memoryStart);
+  assert.match(channelView, /id="qqToggle"/);
   assert.match(channelView, /id="groupList"/);
-  assert.match(channelView, /id="handleList"/);
+  assert.doesNotMatch(channelView, /id="handleList"/);
+  assert.doesNotMatch(channelView, /id="imessageToggle"/i);
   assert.doesNotMatch(channelView, /id="qqAdaptiveLearning"/);
   for (const id of ["qqSelfPersona", "qqStickerFrequency", "qqAdaptiveLearning", "qqColdInterest", "qqPrivateInterest", "botSettingsForm"]) {
     assert.match(intelligenceView, new RegExp(`id="${id}"`));

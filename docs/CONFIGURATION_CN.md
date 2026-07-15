@@ -92,10 +92,7 @@ npm run ncc -- setup
 | `qq.webLookup.enabled` | QQ 联网查询运行时开关；可由网页端持久化修改 |
 | `qq.proactive.*` | 普通消息/分钟兴趣触发与 judge 配置 |
 | `qq.commandPermissions` | 非主人可见且可执行的公共/用户级指令 |
-| `imessage.trustedHandles` | 允许触发 iMessage 的联系人 |
-| `imessage.replyHandle` | iMessage 回复目标 |
-| `ai.*` | QQ 与 iMessage 使用的模型和思考强度 |
-| `remoteExecution.*` | 远程执行通道模型、思考强度与 Skill |
+| `ai.*` | QQ 使用的模型和思考强度 |
 | `unifiedMemory.*` | 自动写入与手动交接策略 |
 | `branding.*` | 助手名称、主人称呼和 @ 别名 |
 | `network.allowLanAccess` | 仪表盘持久化的局域网开关 |
@@ -177,10 +174,9 @@ Hub 和 OneBot 两端 token 应一致。未配置 token 时，Webhook 仅信任 
 
 可运行 `npm run ncc -- search-config` 初始化仓库环境文件。排障先看 `/api/maintenance` 和 `search` / `interest` 日志。
 
-### iMessage、远程执行与日志
+### 日志
 
-- `CODEX_REMOTE_CONTACT_IMESSAGE_CODEX_MODEL`、`..._REASONING_EFFORT`、`..._MEMORY_LIMIT`、`..._ATTACHMENTS` 和 `..._IMAGE_DELIVERY` 控制 macOS iMessage。
-- `CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MODEL`、`..._REASONING_EFFORT`、`..._SKILL`、`..._MEMORY_LIMIT` 和 `..._IDLE_TTL_MS` 控制确认式远程执行。
+- Hub 只保留一条 QQ/OneBot 消息链路。旧的 `CODEX_REMOTE_CONTACT_IMESSAGE_*` 与 `CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_*` 变量会被忽略。
 - `CODEX_REMOTE_CONTACT_LOG_LEVEL` 默认 `debug`；`LOG_CONSOLE`、`LOG_CONSOLE_LEVELS`、`LOG_MAX_BYTES` 和 `LOG_MAX_FILES` 控制控制台与轮转。
 - `CODEX_REMOTE_CONTACT_SQLITE_TIMEOUT_MS` 和 `..._MAX_OUTPUT_BYTES` 限制本地 SQLite 查询。
 

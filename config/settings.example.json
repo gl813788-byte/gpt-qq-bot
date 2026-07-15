@@ -62,24 +62,12 @@
       }
     }
   },
-  "imessage": {
-    "trustedHandles": [],
-    "replyHandle": ""
-  },
   "ai": {
     "model": "gpt-5.4-mini",
-    "reasoningEffort": "low",
-    "imessageModel": "gpt-5.4",
-    "imessageReasoningEffort": "medium"
-  },
-  "remoteExecution": {
-    "model": "gpt-5.4",
-    "reasoningEffort": "medium",
-    "skill": "none"
+    "reasoningEffort": "low"
   },
   "unifiedMemory": {
     "autoWriteOnSkillRecall": false,
-    "autoWriteOnIMessageRecall": true,
     "manualHandoffCommand": true
   },
   "branding": {

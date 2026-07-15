@@ -13,8 +13,7 @@ environment + runtime paths
     initial app state
           |
           v
- HTTP hub / channel adapters -----> QQ / OneBot
-          |                         iMessage
+ HTTP hub / channel adapter ------> QQ / OneBot
           v
  domain services -------------> memory, persona, stickers, web search
           |
@@ -29,12 +28,12 @@ environment + runtime paths
 | Path | Responsibility | Change here when... |
 | --- | --- | --- |
 | `src/app/` | Application state and startup composition | changing global state shape or startup lifecycle |
-| `src/channels/qq/` | QQ and OneBot transport boundary | parsing or validating incoming QQ events |
+| `src/channels/qq/` | Single QQ and OneBot message transport boundary | parsing or validating incoming QQ events |
 | `src/config/` | Environment normalization and runtime defaults | adding an environment variable or changing a deployment default |
 | `src/qq-enhancer/` | Optional QQ reply behavior | changing context images, proactive interest or reply style |
 | `src/unified-memory/` | Cross-channel memory | changing recall, storage or prompt formatting |
 | `src/*.js` | Existing domain and infrastructure modules | changing the named capability while it is migrated incrementally |
-| `modules/` | Platform clients and optional integrations | changing macOS UI, launchers, system control or social bridge |
+| `modules/` | Platform clients and optional integrations | changing shared UI, launchers or the QQ social bridge |
 | `scripts/` | Operator and deployment commands | changing checks, deployment or the `ncc` CLI |
 | `test/` | Node test suite | every behavior change or extracted boundary |
 | `data/` | Local persistent state | never source code; preserve across updates |
@@ -71,7 +70,7 @@ process environment / config/local.env
 
 - **HTTP:** the dashboard and management API expose public state, maintenance status and logs. Non-loopback access is rejected unless remote binding and authentication are explicitly configured.
 - **OneBot:** webhook payloads are authenticated or restricted to loopback, size-limited, normalized and deduplicated before QQ policy runs.
-- **Codex:** child processes receive a controlled environment, concurrency limits and per-channel model settings.
+- **Codex:** child processes receive a controlled environment, concurrency limits and QQ model settings.
 - **Storage:** settings, memory and social state are local files. Load/save behavior should move behind repositories as it is extracted.
 
 ## Adding a feature
@@ -87,10 +86,9 @@ process environment / config/local.env
 The remaining `src/server.js` code should be reduced in behavior-preserving slices:
 
 1. Move dashboard/API route handlers into `src/channels/http/` with explicit service dependencies.
-2. Move iMessage polling and sending into `src/channels/imessage/`.
-3. Move OneBot API calls and QQ reply delivery into `src/channels/qq/`.
-4. Move Codex CLI execution and quota discovery into `src/infrastructure/codex/`.
-5. Move settings and memory persistence into repositories under `src/infrastructure/storage/`.
+2. Move OneBot API calls and QQ reply delivery into `src/channels/qq/`.
+3. Move Codex CLI execution and quota discovery into `src/infrastructure/codex/`.
+4. Move settings and memory persistence into repositories under `src/infrastructure/storage/`.
 
 Each slice should keep the public API stable and land with its own regression tests. Avoid a single large file-move commit: it makes behavioral review and rollback harder.
 

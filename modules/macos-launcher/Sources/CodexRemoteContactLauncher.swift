@@ -15,10 +15,6 @@ private let hubPort = 3789
 private let plistPath = "\(projectDir)/config/local.gpt-qq-bot.chat-hub.plist"
 private let clientAppPath = "\(projectDir)/build/Codex QQ Bot.app"
 private let llbotAppPath = "\(projectDir)/modules/qq-llbot/LLBot.app"
-private let keepAwakePidPath = "\(projectDir)/data/keep-awake.pid"
-private let brightnessStatePath = "\(projectDir)/data/previous-brightness.txt"
-private let backlightOffScriptPath = "\(projectDir)/modules/system-control/backlight-off-keep-awake.command"
-private let backlightRestoreScriptPath = "\(projectDir)/modules/system-control/backlight-restore.command"
 
 final class CodexRemoteContactLauncherApp: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
@@ -86,7 +82,7 @@ final class CodexRemoteContactLauncherApp: NSObject, NSApplicationDelegate {
     }
 
     private func buildWindow() {
-        let frame = NSRect(x: 0, y: 0, width: 460, height: 480)
+        let frame = NSRect(x: 0, y: 0, width: 460, height: 360)
         window = NSWindow(
             contentRect: frame,
             styleMask: [.titled, .closable, .miniaturizable],
@@ -122,8 +118,6 @@ final class CodexRemoteContactLauncherApp: NSObject, NSApplicationDelegate {
 
         let grid = NSGridView(views: [
             [makeButton("启动 Hub + 客户端", action: #selector(startHubAndClient)), makeButton("打开 LLBot", action: #selector(openLLBot))],
-            [makeButton("黑屏后台运行", action: #selector(startDisplayOff)), makeButton("停止黑屏后台", action: #selector(stopKeepAwake))],
-            [makeButton("关闭背光", action: #selector(turnBacklightOff)), makeButton("恢复背光", action: #selector(restoreBacklight))],
             [makeButton("打开控制台网页", action: #selector(openHubWeb)), makeButton("一键退出", action: #selector(stopAll))]
         ])
         grid.rowSpacing = 12
@@ -180,31 +174,6 @@ final class CodexRemoteContactLauncherApp: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc private func startDisplayOff() {
-        runTask("黑屏后台运行") {
-            try startKeepAwakeIfNeeded()
-            _ = run("/usr/bin/pmset", ["displaysleepnow"])
-        }
-    }
-
-    @objc private func stopKeepAwake() {
-        runTask("停止黑屏后台") {
-            stopKeepAwakeProcess()
-        }
-    }
-
-    @objc private func turnBacklightOff() {
-        runTask("关闭背光") {
-            _ = run(backlightOffScriptPath, [])
-        }
-    }
-
-    @objc private func restoreBacklight() {
-        runTask("恢复背光") {
-            _ = run(backlightRestoreScriptPath, [])
-        }
-    }
-
     @objc private func openHubWeb() {
         runTask("打开控制台网页") {
             try startHubIfNeeded()
@@ -214,8 +183,6 @@ final class CodexRemoteContactLauncherApp: NSObject, NSApplicationDelegate {
 
     @objc private func stopAll() {
         runTask("一键退出") {
-            _ = run(backlightRestoreScriptPath, [], allowFailure: true)
-            stopKeepAwakeProcess()
             stopHub()
             _ = run("/usr/bin/osascript", ["-e", "tell application \"CodexRemoteContactClient\" to quit"], allowFailure: true)
             _ = run("/usr/bin/osascript", ["-e", "tell application \"LLBot\" to quit"], allowFailure: true)
@@ -251,9 +218,7 @@ final class CodexRemoteContactLauncherApp: NSObject, NSApplicationDelegate {
         let hub = isPortListening(hubPort) ? "Hub 在线" : "Hub 未启动"
         let llbot = isAppRunning("LLBot") ? "LLBot 已打开" : "LLBot 未打开"
         let client = isAppRunning("CodexRemoteContactClient") ? "客户端已打开" : "客户端未打开"
-        let awake = isKeepAwakeRunning() ? "黑屏后台已开启" : "黑屏后台未开启"
-        let backlight = FileManager.default.fileExists(atPath: brightnessStatePath) ? "背光已关闭" : "背光正常"
-        statusLabel.stringValue = "\(hub)\n\(llbot)  ·  \(client)\n\(awake)  ·  \(backlight)"
+        statusLabel.stringValue = "\(hub)\n\(llbot)  ·  \(client)"
     }
 }
 
@@ -274,34 +239,6 @@ private func stopHub() {
     if let pid = listeningPid(hubPort) {
         _ = run("/bin/kill", ["-TERM", pid], allowFailure: true)
     }
-}
-
-private func startKeepAwakeIfNeeded() throws {
-    if isKeepAwakeRunning() { return }
-    try FileManager.default.createDirectory(atPath: "\(projectDir)/data", withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(atPath: "\(projectDir)/tmp", withIntermediateDirectories: true)
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/caffeinate")
-    process.arguments = ["-dimsu"]
-    process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
-    try process.run()
-    try String(process.processIdentifier).write(toFile: keepAwakePidPath, atomically: true, encoding: .utf8)
-}
-
-private func stopKeepAwakeProcess() {
-    guard let pid = try? String(contentsOfFile: keepAwakePidPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
-          !pid.isEmpty
-    else { return }
-    _ = run("/bin/kill", [pid], allowFailure: true)
-    try? FileManager.default.removeItem(atPath: keepAwakePidPath)
-}
-
-private func isKeepAwakeRunning() -> Bool {
-    guard let pid = try? String(contentsOfFile: keepAwakePidPath, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines),
-          !pid.isEmpty
-    else { return false }
-    return run("/bin/kill", ["-0", pid], allowFailure: true).status == 0
 }
 
 private func isAppRunning(_ appName: String) -> Bool {

@@ -110,7 +110,7 @@
               <div class="hero-copy">
                 <span id="heroStatus" class="hero-status"><span class="status-dot pending"></span><span data-i18n="connecting">正在连接</span></span>
                 <h2 data-i18n="heroTitle">你的本地智能通讯中枢</h2>
-                <p data-i18n="heroBody">在一个安静、清晰的界面里掌握 QQ、iMessage、Codex 和记忆系统。</p>
+                <p data-i18n="heroBody">在一个安静、清晰的界面里掌握 QQ、OneBot、Codex 和记忆系统。</p>
                 <div class="hero-actions">
                   <button class="button primary" type="button" data-go-view="channels">
                     <span data-i18n="manageChannels">管理通道</span>
@@ -135,15 +135,12 @@
                   <circle class="network-ring ring-outer" cx="350" cy="170" r="126" />
                   <circle class="network-ring ring-inner" cx="350" cy="170" r="78" />
                   <path id="linkQq" class="network-link" d="M138 92C224 92 238 142 350 170" />
-                  <path id="linkMessage" class="network-link" d="M150 264C238 252 250 198 350 170" />
                   <path id="linkCodex" class="network-link" d="M350 170C444 142 472 90 554 92" />
                   <path id="linkMemory" class="network-link" d="M350 170C443 195 470 250 552 258" />
                   <path class="network-flow flow-a" d="M138 92C224 92 238 142 350 170" />
-                  <path class="network-flow flow-b" d="M150 264C238 252 250 198 350 170" />
                   <path class="network-flow flow-c" d="M350 170C444 142 472 90 554 92" />
                   <path class="network-flow flow-d" d="M350 170C443 195 470 250 552 258" />
                   <g class="network-packet packet-a"><circle r="4" /><circle class="packet-glow" r="10" /></g>
-                  <g class="network-packet packet-b"><circle r="4" /><circle class="packet-glow" r="10" /></g>
                   <g class="network-packet packet-c"><circle r="4" /><circle class="packet-glow" r="10" /></g>
                 </svg>
                 <div class="orbital-core">
@@ -151,7 +148,6 @@
                   <img src="/images/nexus-core.webp" alt="" width="720" height="720" />
                 </div>
                 <div class="network-node node-qq"><span><svg viewBox="0 0 32 32"><path d="M10.5 22.5c-2.6-1.8-3.2-5.4-1.3-7.7-.2-5.1 2.4-8.8 6.8-8.8s7 3.7 6.8 8.8c1.9 2.3 1.3 5.9-1.3 7.7M11 18c.7 5.6 9.3 5.6 10 0M12.5 26l1.8-3m5.2 3-1.8-3" /></svg></span><small>QQ</small></div>
-                <div class="network-node node-imessage"><span><svg viewBox="0 0 32 32"><path d="M7 15.5C7 10.8 11 7 16 7s9 3.8 9 8.5S21 24 16 24c-1.5 0-3-.4-4.2-1l-4.3 2 1.2-4.1A8.2 8.2 0 0 1 7 15.5Z" /><path d="M12 15.5h.1m3.9 0h.1m3.9 0h.1" /></svg></span><small>iMessage</small></div>
                 <div class="network-node node-codex"><span><svg viewBox="0 0 32 32"><path d="m13 8-7 8 7 8m6-16 7 8-7 8m0-19-6 22" /></svg></span><small>Codex</small></div>
                 <div class="network-node node-memory"><span><svg viewBox="0 0 32 32"><path d="M8 9c0-2 3.6-3.5 8-3.5S24 7 24 9s-3.6 3.5-8 3.5S8 11 8 9Zm0 0v7c0 2 3.6 3.5 8 3.5s8-1.5 8-3.5V9M8 16v7c0 2 3.6 3.5 8 3.5s8-1.5 8-3.5v-7" /></svg></span><small>Memory</small></div>
               </div>
@@ -214,7 +210,7 @@
               <div>
                 <span class="section-kicker" data-i18n="connectionRules">CONNECTION RULES</span>
                 <h2 data-i18n="channelsHeading">管理每一条消息通道</h2>
-                <p data-i18n="channelsBody">控制启停、访问范围和可信联系人，所有改动会立即写入本地 Hub。</p>
+                <p data-i18n="channelsBody">控制 QQ/OneBot 启停与访问范围，所有改动会立即写入同一个本地 Hub。</p>
               </div>
             </div>
 
@@ -244,49 +240,12 @@
                   <button class="button primary" type="submit" data-i18n="add">添加</button>
                 </form>
               </article>
-
-              <article class="surface channel-card imessage-card">
-                <div class="channel-card-head">
-                  <div class="channel-identity">
-                    <span class="channel-icon imessage"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M7 15.5C7 10.8 11 7 16 7s9 3.8 9 8.5S21 24 16 24c-1.5 0-3-.4-4.2-1l-4.3 2 1.2-4.1A8.2 8.2 0 0 1 7 15.5Z" /><path d="M12 15.5h.1m3.9 0h.1m3.9 0h.1" /></svg></span>
-                    <div><h2>iMessage</h2><p id="imessageStatusText">—</p></div>
-                  </div>
-                  <label class="toggle-control">
-                    <input id="imessageToggle" type="checkbox" aria-label="启用 iMessage 通道" data-i18n-aria-label="toggleIMessage" />
-                    <span aria-hidden="true"></span>
-                  </label>
-                </div>
-                <div class="channel-meta" id="imessageChannelMeta"></div>
-                <div class="subsection-head">
-                  <div><h3 data-i18n="trustedContacts">可信联系人</h3><p data-i18n="trustedContactsHint">仅响应这些号码或邮箱。</p></div>
-                  <span id="handleCount" class="count-pill">0</span>
-                </div>
-                <div id="handleList" class="token-list"></div>
-                <form id="addHandleForm" class="add-form" novalidate>
-                  <label class="field">
-                    <span data-i18n="phoneOrEmail">手机号或邮箱</span>
-                    <input id="handleInput" autocomplete="off" placeholder="+86… / name@example.com" />
-                  </label>
-                  <button class="button primary" type="submit" data-i18n="add">添加</button>
-                </form>
-                <form id="replyHandleForm" class="reply-handle-form">
-                  <label class="field">
-                    <span data-i18n="defaultReplyAccount">默认回复账号</span>
-                    <input id="replyHandleInput" autocomplete="off" placeholder="可留空" data-i18n-placeholder="optional" />
-                  </label>
-                  <button class="button ghost" type="submit" data-i18n="save">保存</button>
-                </form>
-              </article>
             </div>
 
             <div class="event-grid">
               <section class="surface">
                 <div class="section-heading compact"><h2 data-i18n="qqRecent">QQ 最近事件</h2><span id="qqEventCount" class="quiet-label">0</span></div>
                 <div id="qqEvents" class="event-list"></div>
-              </section>
-              <section class="surface">
-                <div class="section-heading compact"><h2 data-i18n="imessageRecent">iMessage 最近事件</h2><span id="imessageEventCount" class="quiet-label">0</span></div>
-                <div id="imessageEvents" class="event-list"></div>
               </section>
             </div>
           </section>
@@ -392,7 +351,7 @@
               <div>
                 <span class="section-kicker" data-i18n="contextVault">CONTEXT VAULT</span>
                 <h2 data-i18n="memoryHeading">可见、可控的本地记忆</h2>
-                <p data-i18n="memoryBody">浏览跨端摘要、群聊上下文和远程执行记录，并精确清理不再需要的内容。</p>
+                <p data-i18n="memoryBody">浏览统一摘要与 QQ 群聊/私聊上下文，并精确清理不再需要的内容。</p>
               </div>
               <button id="refreshMemory" class="button ghost" type="button" data-i18n="refreshMemory">刷新记忆</button>
             </div>
@@ -402,8 +361,6 @@
                 <div id="memoryTabs" class="segmented-tabs" role="tablist" aria-label="记忆类型" data-i18n-aria-label="memoryType">
                   <button id="memoryTabUnified" class="active" type="button" role="tab" aria-selected="true" aria-controls="memoryView" tabindex="0" data-memory-tab="unified" data-i18n="unified">统一记忆</button>
                   <button id="memoryTabQq" type="button" role="tab" aria-selected="false" aria-controls="memoryView" tabindex="-1" data-memory-tab="qq">QQ</button>
-                  <button id="memoryTabImessage" type="button" role="tab" aria-selected="false" aria-controls="memoryView" tabindex="-1" data-memory-tab="imessage">iMessage</button>
-                  <button id="memoryTabRemote" type="button" role="tab" aria-selected="false" aria-controls="memoryView" tabindex="-1" data-memory-tab="remoteExecution" data-i18n="remoteExecution">远程执行</button>
                 </div>
                 <label class="search-field">
                   <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6" /><path d="m16 16 4 4" /></svg>
@@ -529,7 +486,7 @@
             <section class="surface about-card">
               <div>
                 <span class="brand-mark small" aria-hidden="true"><svg viewBox="0 0 44 44"><path d="M10 26.2c0-8.8 5.1-15.2 12.2-15.2 7.5 0 11.8 5.4 11.8 12.1 0 6.2-3.9 10.1-9 10.1-4.8 0-7.8-3.2-7.8-7.1 0-3.7 2.4-6.1 5.4-6.1 2.8 0 4.5 1.8 4.5 4.1" /></svg></span>
-                <div><h2>Codex Remote Contact</h2><p data-i18n="aboutBody">QQ / OneBot、iMessage 与 Codex CLI 的本地优先通讯中枢。</p></div>
+                <div><h2>Codex Remote Contact</h2><p data-i18n="aboutBody">QQ / OneBot 与 Codex CLI 的本地优先通讯中枢。</p></div>
               </div>
               <div id="runtimeFacts" class="runtime-facts"></div>
             </section>

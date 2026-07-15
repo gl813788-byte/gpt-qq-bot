@@ -49,10 +49,6 @@ export function createEnvironmentConfig(env = process.env) {
       || env.CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP_TIMEOUT_MS,
     12_000
   );
-  const imessageAttachmentSendingEnabled = env.CODEX_REMOTE_CONTACT_IMESSAGE_ATTACHMENTS === "1";
-  const imessageCodexModel = env.CODEX_REMOTE_CONTACT_IMESSAGE_CODEX_MODEL || "gpt-5.4";
-  const imessageCodexReasoningEffort = env.CODEX_REMOTE_CONTACT_IMESSAGE_REASONING_EFFORT || "medium";
-
   return {
     logMaxBytes: numberOrDefault(env.CODEX_REMOTE_CONTACT_LOG_MAX_BYTES, 5 * 1024 * 1024),
     logMaxFiles: numberOrDefault(env.CODEX_REMOTE_CONTACT_LOG_MAX_FILES, 5),
@@ -82,8 +78,6 @@ export function createEnvironmentConfig(env = process.env) {
     codexReasoningEffort: env.CODEX_REMOTE_CONTACT_REASONING_EFFORT || "low",
     codexMaxConcurrency,
     codexMaxPending,
-    imessageCodexModel,
-    imessageCodexReasoningEffort,
     codexQuotaCacheTtlMs,
 
     qqEnhancerEnabled: env.CODEX_REMOTE_CONTACT_QQ_ENHANCER !== "0",
@@ -186,15 +180,6 @@ export function createEnvironmentConfig(env = process.env) {
     openRouterBaseUrl: env.OPENROUTER_BASE_URL || env.CODEX_REMOTE_CONTACT_OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1",
     tavilyApiKey: env.TAVILY_API_KEY || env.CODEX_REMOTE_CONTACT_TAVILY_API_KEY || "",
 
-    imessageMemoryLimit: numberOrDefault(env.CODEX_REMOTE_CONTACT_IMESSAGE_MEMORY_LIMIT, 120),
-    imessageAttachmentSendingEnabled,
-    imessageImageDelivery: env.CODEX_REMOTE_CONTACT_IMESSAGE_IMAGE_DELIVERY
-      || (imessageAttachmentSendingEnabled ? "attachment" : "photos"),
-    remoteExecutionMemoryLimit: numberOrDefault(env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MEMORY_LIMIT, 160),
-    remoteExecutionIdleTtlMs: numberOrDefault(env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_IDLE_TTL_MS, 15 * 60_000),
-    remoteExecutionModel: env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MODEL || imessageCodexModel,
-    remoteExecutionReasoningEffort: env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_REASONING_EFFORT || imessageCodexReasoningEffort,
-    remoteExecutionSkill: env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_SKILL || "none",
     sqliteTimeoutMs,
     sqliteMaxOutputBytes,
 
@@ -205,9 +190,7 @@ export function createEnvironmentConfig(env = process.env) {
       `http://localhost:${hubPort}`,
       `http://[::1]:${hubPort}`
     ]),
-    allowRemoteHubBinding: env.CODEX_REMOTE_CONTACT_ALLOW_REMOTE === "1",
-    proxyShortcutName: env.CODEX_REMOTE_CONTACT_PROXY_TOGGLE_SHORTCUT || "切换VPN",
-    proxyConfirmTtlMs: numberOrDefault(env.CODEX_REMOTE_CONTACT_PROXY_CONFIRM_TTL_MS, 3 * 60_000)
+    allowRemoteHubBinding: env.CODEX_REMOTE_CONTACT_ALLOW_REMOTE === "1"
   };
 }
 

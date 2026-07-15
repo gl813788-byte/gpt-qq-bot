@@ -90,9 +90,7 @@ Minimal configuration:
 | `qq.webLookup.enabled` | Runtime QQ web-lookup switch, persistently editable from the dashboard |
 | `qq.proactive.*` | Ordinary message/minute interest triggers and judge policy |
 | `qq.commandPermissions` | Public and user-specific non-owner command access |
-| `imessage.*` | Trusted handles and reply target |
-| `ai.*` | QQ and iMessage models and reasoning efforts |
-| `remoteExecution.*` | Confirmation-gated execution model, effort and skill |
+| `ai.*` | QQ model and reasoning effort |
 | `unifiedMemory.*` | Automatic writes and manual handoff behavior |
 | `branding.*` | Assistant name, owner label and mention aliases |
 | `network.allowLanAccess` | Persistent dashboard LAN switch |
@@ -174,10 +172,9 @@ Self-persona thresholds use `CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_*`; account st
 
 Run `npm run ncc -- search-config` to initialize the repository environment. Diagnose `/api/maintenance` and the `search` / `interest` logs before editing prompts.
 
-### iMessage, remote execution and logs
+### Logs
 
-- iMessage uses `CODEX_REMOTE_CONTACT_IMESSAGE_*` model, effort, memory, attachment and delivery variables.
-- Remote execution uses `CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_*` model, effort, skill, memory and idle-TTL variables and remains confirmation-gated.
+- The Hub has one QQ/OneBot message transport. Legacy `CODEX_REMOTE_CONTACT_IMESSAGE_*` and `CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_*` variables are ignored.
 - Logging uses `CODEX_REMOTE_CONTACT_LOG_LEVEL` (`debug` by default), `LOG_CONSOLE`, `LOG_CONSOLE_LEVELS`, `LOG_MAX_BYTES` and `LOG_MAX_FILES` with the same prefix.
 - SQLite operations are bounded by `CODEX_REMOTE_CONTACT_SQLITE_TIMEOUT_MS` and `CODEX_REMOTE_CONTACT_SQLITE_MAX_OUTPUT_BYTES`.
 

@@ -4,10 +4,10 @@ English and 简体中文 are presented together because this directory is a capa
 
 ## Scope / 职责
 
-- Run the locally authenticated Codex CLI for QQ, iMessage and confirmation-gated remote execution.
-- 为 QQ、iMessage 和需要确认的远程执行调用本机已登录的 Codex CLI。
-- Apply per-channel model/reasoning settings, bounded concurrency and cancellation.
-- 应用各通道模型/思考强度、并发上限和取消逻辑。
+- Run the locally authenticated Codex CLI for the QQ/OneBot Agent path.
+- 为 QQ/OneBot Agent 链路调用本机已登录的 Codex CLI。
+- Apply QQ model/reasoning settings, bounded concurrency and cancellation.
+- 应用 QQ 模型/思考强度、并发上限和取消逻辑。
 - Build a controlled child environment and refresh the active Codex profile before new work.
 - 构造受控子进程环境，并在新任务前刷新当前 Codex profile。
 
@@ -43,6 +43,6 @@ npm run verify
 curl -fsS http://127.0.0.1:3789/api/maintenance | jq '.codex // .'
 ```
 
-Remote execution must remain confirmation-gated. Never copy Codex credentials into project files.
+Never copy Codex credentials into project files.
 
-远程执行必须保留二次确认；不要把 Codex 凭据复制到项目文件。
+不要把 Codex 凭据复制到项目文件。

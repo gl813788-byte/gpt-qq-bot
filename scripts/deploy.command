@@ -125,7 +125,7 @@ ensure_project_files() {
     cp "$PROJECT_DIR/config/settings.example.json" "$PROJECT_DIR/data/settings.json"
     log "已根据示例创建 data/settings.json。"
   fi
-  for file in imessage-memory.json remote-execution-memory.json unified-memory.json; do
+  for file in unified-memory.json; do
     if [ ! -f "$PROJECT_DIR/data/$file" ] && [ -f "$PROJECT_DIR/data/$file.example" ]; then
       cp "$PROJECT_DIR/data/$file.example" "$PROJECT_DIR/data/$file"
     fi

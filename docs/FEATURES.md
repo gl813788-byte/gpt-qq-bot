@@ -40,7 +40,7 @@ Codex defaults to two active child processes and 32 pending jobs. Each group or 
 | Public long-term memory | Stable, reusable, non-sensitive facts | `data/qq-public-memory.json` |
 | Adaptive statistics | Group rhythm, structural style and interaction counts | `data/qq-personas.json` |
 | Global self-persona | Privacy-filtered summaries from individual scopes | `data/qq-self-persona.json` |
-| Unified memory | QQ, iMessage and recent Codex context | Data owned by `src/unified-memory/` |
+| Unified memory | QQ and durable local context | Data owned by `src/unified-memory/` |
 
 `/新对话` clears short context but preserves long-lived social impressions. Explicit memory-clear APIs remove the selected longer-lived layer. Writes are bounded, privacy-filtered, serialized and atomically replaced.
 
@@ -102,14 +102,9 @@ GET /api/memory
 
 JSONL logs support level, category, trace, group, sender, query, time and latency filters. A QQ lifecycle shares one trace from inbound routing through judge, search, Codex and delivery.
 
-## Optional macOS capabilities
+## macOS client
 
-- iMessage polling and replies for trusted handles.
-- Confirmation-gated Codex remote execution; GUI work needs Accessibility and Screen Recording permissions.
-- Shadowrocket node inspection, probes and confirmed switching.
-- Built-in-display backlight, display sleep and keep-awake scripts.
-
-These modules are not prerequisites for the core QQ deployment on Linux or Windows.
+The native macOS client is a WebKit wrapper around the same local dashboard and QQ/OneBot Hub used by the browser. It does not read the Messages database, poll iMessage, require Messages Automation and Full Disk Access, or expose macOS-only proxy, display, keep-awake or desktop-control features.
 
 ## Explicit boundaries
 

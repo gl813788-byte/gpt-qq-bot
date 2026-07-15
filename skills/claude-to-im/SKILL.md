@@ -71,7 +71,7 @@ Use this skill as the project-specific operating manual, not only as a process l
 Runtime pipeline:
 
 ```text
-OneBot webhook / dashboard API / iMessage
+OneBot webhook / dashboard API
   -> HTTP origin, host, token, body-size and concurrency checks
   -> channel normalization and untrusted-path stripping
   -> sender/group/self enrichment and event deduplication
@@ -79,7 +79,7 @@ OneBot webhook / dashboard API / iMessage
   -> rolling transcript + social memory + persona + media context
   -> Codex Agent loop with bounded internal tools
   -> validate and remove hidden markers
-  -> OneBot/iMessage delivery
+  -> OneBot delivery
   -> atomic persistence + structured logs + public state
 ```
 
@@ -133,7 +133,7 @@ Important configuration groups:
 | QQ behavior | `CODEX_REMOTE_CONTACT_QQ_ENHANCER`, memory limits, `CODEX_REMOTE_CONTACT_QQ_PROACTIVE*`, `CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA*`, `CODEX_REMOTE_CONTACT_QQ_ACCOUNT_STICKER*`, bubble separator/delay/count | Environment creates defaults; the matching `qq.enhancer` and `qq.proactive` settings persist user changes. Adaptive signals never bypass the interest judge. |
 | Search | `CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP`, provider/preset/provider order/timeouts, `TAVILY_API_KEY`, `OPENROUTER_API_KEY`, base URLs | Search is performed by the Hub. Diagnose provider attempts through maintenance state and `search` logs before changing prompts. |
 | Memory/media | QQ group/private limits, `QQ_IMAGE_MAX_BYTES`, `CODEX_REMOTE_CONTACT_SAFE_FETCH_MODE`, SQLite timeout/output caps, unified-memory settings | Validate real paths and size limits. Safe fetch defaults to `strict`; `proxy-compatible` additionally permits DNS names mapped to proxy Fake-IP range `198.18.0.0/15`, but still blocks literal private IPs and every other reserved range. Deliverable task files must remain under the current request's `output/` workspace. |
-| iMessage/remote | iMessage model/reasoning/memory/attachments and remote-execution model/reasoning/skill/idle TTL | macOS only; trusted handles, Full Disk Access and Automation are required. Remote execution remains confirmation-gated. |
+| macOS client | No separate message settings; it renders the same dashboard and uses the same QQ/OneBot Hub | The native wrapper must not add a second transport or macOS-only proxy, display, keep-awake or desktop-control surface. |
 | Logs | `CODEX_REMOTE_CONTACT_LOG_LEVEL`, `CODEX_REMOTE_CONTACT_LOG_CONSOLE`, `CODEX_REMOTE_CONTACT_LOG_CONSOLE_LEVELS`, `CODEX_REMOTE_CONTACT_LOG_MAX_BYTES`, `CODEX_REMOTE_CONTACT_LOG_MAX_FILES`, optional log path | JSONL defaults to `runtime/logs/hub.jsonl`; keep trace, category, group and sender context useful without leaking secrets. |
 
 Use `/root/Codex-Remote-Contact/src/config/environment.js` for exact names, defaults and bounds, and `config/settings.example.json` for the persisted schema. Remaining direct `process.env` reads in `server.js` are migration debt, not a pattern for new code.
@@ -298,7 +298,7 @@ Do not run the old `~/.claude-to-im` daemon for QQ unless the user explicitly as
 ## Local Dashboard
 
 - Serve `/`, `/dashboard`, `/client.css`, `/client.js`, and explicitly registered image assets from the Hub. Keep executable code and styles in external files to satisfy the dashboard CSP.
-- Treat the dashboard as a local operational surface: overview, QQ/iMessage channels, unified memory, structured logs, and device-local preferences. It supports Chinese/English, light/dark/system themes, responsive layouts, and `Cmd/Ctrl+K` quick actions.
+- Treat the dashboard as a local operational surface: overview, the QQ/OneBot channel, unified memory, structured logs, and local preferences. The exact same assets serve browsers and the macOS wrapper. It supports Chinese/English, light/dark/system themes, responsive layouts, and `Cmd/Ctrl+K` quick actions.
 - The dashboard uses six focused views: Overview, Channels, Intelligence, Memory, Live Logs, and Settings. Keep channel connection/allowlist/contact controls separate from Bot behavior. Intelligence may persist the QQ enhancer, web lookup, proactive-interest and judge switches plus message/minute cadence, judge model, idle timeout, and recent-context size through `/api/qq/bot-settings`; explicit @Bot replies remain independent from proactive-interest settings. Its diagnostic chips may expose provider names, credential-configured booleans, active generation counts, and pending reply counts, but never secret values.
 - The Live Logs view requests verbose structured entries once per second while visible and enabled, renders every safe `details` field inline in chronological order with distinct level/category/trace/error/outcome/latency colors, and follows the newest row by default. Keep pause, follow, row-limit, filtering, and raw-JSON detail controls; page visibility pauses live polling. Browser logs are operational diagnostics and must retain the same redaction boundary as `/api/logs`.
 - The Settings page has a persistent LAN-access switch. It keeps the default loopback-only binding when off and dynamically rebinds the Hub to `0.0.0.0` when on without restarting NapCat or the Hub process. Enabling it creates a persistent API token automatically; loopback requests remain usable without a token, remote management API requests require that token, and the token can only be copied from a loopback-loaded dashboard. Displayed LAN URLs exclude proxy/VPN tunnels and virtual/container adapters, prioritizing physical Wi-Fi/Ethernet addresses that other LAN devices can actually reach. If client proxy software still intercepts private traffic, its rules must set the displayed address to DIRECT/bypass. An explicit `CODEX_REMOTE_CONTACT_HOST` environment value remains authoritative and makes the web switch read-only.
@@ -356,7 +356,7 @@ Important behavior:
 - OneBot poke notices are handled only when `target_id` is the bot's own QQ id. Other users poking each other, or bot-originated poke notices, are ignored. A poke targeting the bot is passed to the agent as a normal trigger, and the agent can optionally emit `[[qq_command:/拍一拍 发送者]]` or `[[qq_command:/拍一拍 QQ号]]` to send a poke action back through OneBot. NapCat poke calls include both `user_id` and `target_id`, preserve both endpoint errors for diagnosis, and when the model explicitly says it is poking back but omitted the hidden command, the Hub performs the poke deterministically before retaining that visible claim.
 - The QQ bot also has its own public long-term memory store at `/root/Codex-Remote-Contact/data/qq-public-memory.json`. This is for the bot's internal use and is not shown in `/菜单`. The bot may emit `[[qq_command:/记忆 列表]]`, `[[qq_command:/记忆 添加 内容]]`, `[[qq_command:/记忆 修改 编号 内容]]`, or `[[qq_command:/记忆 删除 编号]]` to maintain shared long-term facts. Memory ids can be list positions or `#id`. It should write only stable, reusable, non-sensitive facts, and delete or update entries that become wrong or obsolete.
 - The usual default requested by the user is QQ model `gpt-5.5` with reasoning effort `low`, when that model and effort are present in the live Codex model catalog.
-- Every Hub-launched Codex process follows the current main Codex login configuration without requiring a Hub restart. Before each child starts, the Hub rereads `/root/.codex/config.toml`, clears login variables inherited from the Hub, and matches custom provider/base-URL settings to the corresponding env file in `/root/.codex/ncc-profiles/`; official `codex login` uses the shared auth files under the current `HOME` / `CODEX_HOME`. Non-auth settings from `active.env` are still reloaded. A main-login change or `ncc codex-use NAME` therefore affects the next QQ/remote-execution request, while already-running generations keep the auth state they started with.
+- Every Hub-launched Codex process follows the current main Codex login configuration without requiring a Hub restart. Before each child starts, the Hub rereads `/root/.codex/config.toml`, clears login variables inherited from the Hub, and matches custom provider/base-URL settings to the corresponding env file in `/root/.codex/ncc-profiles/`; official `codex login` uses the shared auth files under the current `HOME` / `CODEX_HOME`. Non-auth settings from `active.env` are still reloaded. A main-login change or `ncc codex-use NAME` therefore affects the next QQ request, while already-running generations keep the auth state they started with.
 - QQ replies can request local media delivery by emitting markers on their own lines:
   - Images: `[[qq_image:/absolute/path/to/image.png]]`
   - Files: `[[qq_file:/absolute/path/to/file]]` or `[[qq_file:/absolute/path/to/file|filename.ext]]`

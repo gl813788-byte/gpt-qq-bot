@@ -1,6 +1,6 @@
 <div align="center">
 
-# Codex QQ Bot
+# Codex Remote Contact
 
 ### Connect local Codex capabilities to QQ
 
@@ -69,7 +69,7 @@ QQ / NapCat / OneBot
           +-----> Codex CLI / current login and models
           +-----> QQ memory, persona, interest, and stickers
           +-----> web search, logs, and maintenance state
-          +-----> iMessage / macOS automation (optional)
+          +-----> browser and macOS dashboard clients
 ```
 
 Core capabilities:
@@ -80,7 +80,7 @@ Core capabilities:
 - Three memory layers: rolling conversation, social impressions/topics, and unified long-term memory, all with bounds and sensitive-data filtering.
 - QQ administration for model/reasoning choice, allowlists, permissions, bans, moderation, requests, and selected QQ Space actions.
 - Local dashboard for health, maintenance, memory, structured logs, themes, and optional LAN access.
-- Optional macOS integrations for iMessage, Shadowrocket, display/backlight control, and GUI automation.
+- macOS client and browser dashboard use the same QQ/OneBot Hub and require no Messages database or iMessage automation permissions.
 
 See [Features](docs/FEATURES.md) for complete boundaries.
 
@@ -134,7 +134,7 @@ src/
   qq-enhancer/         QQ replies, images, and proactive interest
   unified-memory/      unified memory and recent Codex context
   server.js            composition root and runtime logic under gradual extraction
-modules/               platform clients, NapCat extension, and macOS helpers
+modules/               shared clients, launchers, and NapCat extensions
 scripts/               deployment, ncc, logs, and static checks
 data/                  local persistent state; most runtime files are untracked
 runtime/               logs, replies, task workspaces, and generated output
@@ -170,6 +170,6 @@ Run `npm run verify` for every behavioral change. Configuration, initial state, 
 
 - The Hub binds to loopback by default. Remote access must be explicitly enabled with a management token and should sit behind a TLS reverse proxy with access control.
 - Never commit `data/settings.json`, `config/local.env`, tokens, cookies, QR codes, logs, or runtime databases.
-- OneBot callbacks, owner authority, local-file markers, and remote execution have separate validation. Do not remove those boundaries for convenience.
-- Enable iMessage, Shadowrocket, screen control, or GUI automation only after understanding the macOS permission impact.
+- OneBot callbacks, owner authority, and local-file markers have separate validation. Do not remove those boundaries for convenience.
+- The macOS client is only a native wrapper for the same dashboard; macOS-only proxy, display, keep-awake and desktop-control features are not part of the project.
 - This is a local automation tool, not a hosted public Bot service.

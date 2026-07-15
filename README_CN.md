@@ -1,6 +1,6 @@
 <div align="center">
 
-# Codex QQ Bot
+# Codex Remote Contact
 
 ### 让 Codex 把本机能力接入 QQ
 
@@ -69,7 +69,7 @@ QQ / NapCat / OneBot
           +-----> Codex CLI / 当前登录模型
           +-----> QQ 记忆、人格、兴趣与表情系统
           +-----> 联网搜索、日志和维护状态
-          +-----> iMessage / macOS 自动化（可选）
+          +-----> 浏览器与 macOS 仪表盘客户端
 ```
 
 主要能力：
@@ -80,7 +80,7 @@ QQ / NapCat / OneBot
 - 三层记忆：滚动会话、社交印象/话题、统一长期记忆；均有边界与敏感信息过滤。
 - QQ 管理：模型与思考强度、白名单、权限、ban、群管理、好友/入群申请和 QQ 空间动作。
 - 本地仪表盘：运行状态、维护信息、记忆、结构化日志、主题和可选局域网访问。
-- 可选 macOS 能力：iMessage、Shadowrocket、显示器/背光与 GUI 自动化。
+- macOS 客户端与浏览器仪表盘共用同一条 QQ/OneBot Hub 链路，不需要 Messages 数据库或 iMessage 自动化权限。
 
 完整功能边界见 [功能说明](docs/FEATURES_CN.md)。
 
@@ -134,7 +134,7 @@ src/
   qq-enhancer/         QQ 回复、图片与主动兴趣增强
   unified-memory/      统一记忆与最近 Codex 上下文
   server.js            组合根与仍在渐进拆分的运行时逻辑
-modules/               平台客户端、NapCat 扩展和 macOS 辅助模块
+modules/               共享客户端、启动器和 NapCat 扩展
 scripts/               部署、ncc、日志与静态检查
 data/                  本地持久状态；多数运行文件不跟踪
 runtime/               日志、回复、临时任务与生成物；不跟踪
@@ -170,6 +170,6 @@ npm run verify
 
 - Hub 默认只监听回环地址。远程访问必须显式开启、配置管理 token，并建议放在带 TLS 与访问控制的反向代理后。
 - 不要提交 `data/settings.json`、`config/local.env`、token、Cookie、二维码、日志或运行数据库。
-- OneBot 回调、主人权限、本地文件 marker 和远程执行都有额外校验；不要为了方便绕过这些边界。
-- iMessage、Shadowrocket、屏幕控制和 GUI 自动化只在你理解 macOS 权限影响时启用。
+- OneBot 回调、主人权限和本地文件 marker 都有额外校验；不要为了方便绕过这些边界。
+- macOS 客户端只是同一仪表盘的原生外壳；项目不再包含 macOS 独有的代理、显示器、防休眠或桌面控制能力。
 - 这是本地自动化工具，不是托管式公网 Bot 服务。

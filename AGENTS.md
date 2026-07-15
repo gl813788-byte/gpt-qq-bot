@@ -28,7 +28,7 @@ This repository runs a local Hub between QQ/OneBot and Codex CLI. Treat it as a 
 - Never delete or overwrite `data/`, `runtime/`, local databases, `config/local.env`, login files or untracked state unless the user explicitly asks.
 - Do not commit secrets, tokens, cookies, QR codes, chat logs or private message data.
 - Keep the Hub on loopback by default. Remote binding requires explicit user intent, an API token and restricted CORS.
-- Do not weaken OneBot webhook authentication, owner checks, group allowlists or remote-execution confirmation.
+- Do not weaken OneBot webhook authentication, owner checks, group allowlists or local-file marker validation.
 
 ## Verification
 

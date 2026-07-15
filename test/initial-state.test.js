@@ -6,9 +6,7 @@ import { createEnvironmentConfig } from "../src/config/environment.js";
 test("creates isolated application state from normalized configuration", () => {
   const config = createEnvironmentConfig({
     CODEX_REMOTE_CONTACT_QQ_ENHANCER: "0",
-    CODEX_REMOTE_CONTACT_QQ_MEMORY_LIMIT: "25",
-    CODEX_REMOTE_CONTACT_IMESSAGE_MEMORY_LIMIT: "80",
-    CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_SKILL: "shell"
+    CODEX_REMOTE_CONTACT_QQ_MEMORY_LIMIT: "25"
   });
   const first = createInitialState({
     config,
@@ -26,8 +24,10 @@ test("creates isolated application state from normalized configuration", () => {
   assert.equal(first.qq.enhancer.enabled, false);
   assert.equal(first.qq.proactive.enabled, false);
   assert.equal(first.qq.memory.perGroupLimit, 25);
-  assert.equal(first.imessage.memory.perHandleLimit, 80);
-  assert.equal(first.remoteExecution.skill, "shell");
+  assert.deepEqual(first.channels, { qq: false });
+  assert.equal("imessage" in first, false);
+  assert.equal("remoteExecution" in first, false);
+  assert.equal("proxy" in first, false);
   assert.equal(first.maintenance.startedAt, "2026-01-01T00:00:00.000Z");
 
   first.qq.allowedGroups.push("123456");

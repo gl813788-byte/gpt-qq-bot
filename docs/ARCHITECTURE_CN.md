@@ -14,7 +14,6 @@
           |
           v
  HTTP Hub / 通道适配器 -----> QQ / OneBot
-          |                   iMessage
           v
        领域服务 -----------> 记忆、人格、贴纸、联网搜索
           |
@@ -29,12 +28,12 @@
 | 路径 | 职责 | 适合在这里修改 |
 | --- | --- | --- |
 | `src/app/` | 应用状态和启动组合 | 全局状态结构、启动生命周期 |
-| `src/channels/qq/` | QQ / OneBot 传输边界 | 解析、校验和归一化 QQ 事件 |
+| `src/channels/qq/` | 唯一的 QQ / OneBot 消息传输边界 | 解析、校验和归一化 QQ 事件 |
 | `src/config/` | 环境变量与运行默认值 | 新环境变量、默认值、范围约束 |
 | `src/qq-enhancer/` | 可选 QQ 回复增强 | 图片、主动兴趣、回复风格 |
 | `src/unified-memory/` | 跨通道统一记忆 | 召回、存储、提示词格式 |
 | `src/*.js` | 现有领域与基础设施模块 | 修改对应能力并渐进迁移 |
-| `modules/` | 平台客户端和可选集成 | macOS、启动器、系统控制、社交桥接 |
+| `modules/` | 平台客户端和可选集成 | 共享界面、启动器、QQ 社交桥接 |
 | `scripts/` | 部署与运维命令 | 检查、部署、日志和仓库 `ncc` |
 | `test/` | Node.js 测试 | 每次行为调整或模块抽取 |
 | `data/` | 本地持久状态 | 不是源码；升级时必须保留 |
@@ -71,7 +70,7 @@
 
 - **HTTP：**仪表盘和管理 API 提供公开状态、维护信息和日志；没有显式开启远程绑定与认证时拒绝非回环访问。
 - **OneBot：**Webhook 先经过认证或回环限制、大小限制、归一化和去重，再进入 QQ 策略。
-- **Codex：**子进程使用受控环境、并发限制和各通道模型配置。
+- **Codex：**子进程使用受控环境、并发限制和 QQ 模型配置。
 - **存储：**设置、记忆和社交状态保存在本地文件，后续应按小步抽取到独立 repository。
 
 ## 新增功能的步骤
@@ -87,10 +86,9 @@
 后续按行为不变的小切片继续缩小 `src/server.js`：
 
 1. 仪表盘/API 路由移到 `src/channels/http/`。
-2. iMessage 轮询和发送移到 `src/channels/imessage/`。
-3. OneBot API 调用和 QQ 回复发送移到 `src/channels/qq/`。
-4. Codex CLI 执行和额度发现移到 `src/infrastructure/codex/`。
-5. 设置与记忆持久化移到 `src/infrastructure/storage/`。
+2. OneBot API 调用和 QQ 回复发送移到 `src/channels/qq/`。
+3. Codex CLI 执行和额度发现移到 `src/infrastructure/codex/`。
+4. 设置与记忆持久化移到 `src/infrastructure/storage/`。
 
 每个切片都应保持公共接口兼容并带回归测试。避免一次性大规模移动文件，否则难以审查行为变化和回滚。
 

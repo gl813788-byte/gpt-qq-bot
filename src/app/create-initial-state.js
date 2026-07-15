@@ -15,13 +15,10 @@ export function createInitialState({
       provider: "codex-cli",
       model: config.codexModel || "default",
       reasoningEffort: config.codexReasoningEffort,
-      imessageModel: config.imessageCodexModel,
-      imessageReasoningEffort: config.imessageCodexReasoningEffort,
       workspace: codexWorkspaceDir
     },
     channels: {
-      qq: false,
-      imessage: true
+      qq: false
     },
     qq: {
       groupMode: "mention-only",
@@ -81,43 +78,11 @@ export function createInitialState({
       selfPersona: createEmptyQqSelfPersona(),
       conversationMemory: createEmptyQqConversationMemory()
     },
-    imessage: {
-      trustedHandles: [],
-      replyHandle: "",
-      lastRowId: 0,
-      cursorReady: false,
-      watchStartedAtAppleDate: 0,
-      status: "idle",
-      lastError: null,
-      events: [],
-      memory: {
-        perHandleLimit: config.imessageMemoryLimit,
-        entries: createRecord()
-      }
-    },
-    proxy: {
-      pendingAction: null
-    },
     unifiedMemory: {
       autoWriteOnSkillRecall: false,
-      autoWriteOnIMessageRecall: true,
       manualHandoffCommand: true
     },
     unifiedMemoryPendingClear: null,
-    remoteExecution: {
-      enabled: false,
-      pendingAction: null,
-      model: config.remoteExecutionModel,
-      reasoningEffort: config.remoteExecutionReasoningEffort,
-      skill: config.remoteExecutionSkill,
-      idleTtlMs: config.remoteExecutionIdleTtlMs,
-      lastActivityAt: null,
-      busy: false,
-      memory: {
-        limit: config.remoteExecutionMemoryLimit,
-        entries: []
-      }
-    },
     maintenance: {
       startedAt,
       oneBot: {
