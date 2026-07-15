@@ -6,8 +6,10 @@ import {
   isQqStickerStyleMessage
 } from "./qq-human-behavior.js";
 
-const profileVersion = 3;
+const profileVersion = 4;
 const bootstrapVersion = 1;
+const interruptionBootstrapVersion = 1;
+const interruptionWindowSeconds = 120;
 const hourCount = 24;
 const weekdayCount = 7;
 const activeDayLimit = 45;
@@ -29,6 +31,11 @@ export function recordQqAdaptiveHumanMessage(group, member, event = {}, {
   const features = getHumanMessageFeatures(event);
   const groupLearning = ensureQqAdaptiveLearning(group);
   const memberLearning = ensureQqAdaptiveLearning(member);
+  const interruption = getInterruptionFeatures(
+    groupLearning,
+    observedAt,
+    String(event.senderId)
+  );
 
   if (groupLearning.coldProactiveAwaitingHuman) {
     const coldAt = Date.parse(groupLearning.lastColdProactiveAt || "");
@@ -39,8 +46,38 @@ export function recordQqAdaptiveHumanMessage(group, member, event = {}, {
   clearUnansweredBotStreak(groupLearning, observedAt);
   clearUnansweredBotStreak(memberLearning, observedAt);
   notePostBotFollowUp(groupLearning, memberLearning, event.senderId, observedAt);
-  applyHumanSample(groupLearning, features, clock, observedAt, String(event.senderId), true);
+  applyHumanSample(groupLearning, features, clock, observedAt, String(event.senderId), true, interruption);
   applyHumanSample(memberLearning, features, clock, observedAt, String(event.senderId), false);
+  return true;
+}
+
+export function backfillQqAdaptiveInterruptionLearning(group, entries = []) {
+  if (!group) return false;
+  const learning = ensureQqAdaptiveLearning(group);
+  if (learning.interruptionBootstrapVersion >= interruptionBootstrapVersion) return false;
+  const humans = (Array.isArray(entries) ? entries : [])
+    .filter((entry) => !entry?.isAssistant && entry?.senderId !== "assistant" && normalizeId(entry?.senderId))
+    .map((entry) => ({
+      at: resolveObservedAt({}, entry?.at),
+      senderId: normalizeId(entry?.senderId)
+    }));
+  let opportunityCount = 0;
+  let interruptionCount = 0;
+  let previous = null;
+  for (const current of humans) {
+    if (previous) {
+      const gapSeconds = Math.round((current.at.getTime() - previous.at.getTime()) / 1000);
+      if (gapSeconds >= 0 && gapSeconds <= interruptionWindowSeconds) {
+        opportunityCount += 1;
+        if (current.senderId !== previous.senderId) interruptionCount += 1;
+      }
+    }
+    previous = current;
+  }
+  learning.interruptionOpportunityCount = boundedNumber(opportunityCount);
+  learning.interruptionCount = boundedNumber(interruptionCount);
+  learning.interruptionTrackingStartedAt = humans[0]?.at?.toISOString?.() || null;
+  learning.interruptionBootstrapVersion = interruptionBootstrapVersion;
   return true;
 }
 
@@ -477,6 +514,9 @@ export function formatQqAdaptiveLearningContext(signals = {}) {
   return [
     "自动适应信号（只含行为统计，不含个人原话）：",
     `- 本群已学习 ${group.sampleSize} 条，活跃日均约 ${group.messagesPerActiveDay || 0} 条，常见时段 ${groupHours || "尚不稳定"}；当前时段活跃度为 ${activityLabel(group.activityLevel)}。`,
+    Number(group.interruptionSampleSize || 0) > 0
+      ? `- 两分钟内的真人活跃衔接共 ${group.interruptionSampleSize} 次，换人插话率 ${percentage(group.interruptionRate)}；这是时机参考，不代表 Bot 必须插话。`
+      : null,
     `- ${memberLine}`,
     group.styleReviewSummary ? `- 最近一次真人/Bot 差异复盘：${group.styleReviewSummary}。` : null,
     ...guidance.map((item) => `- 已压缩的改进规则：${item}`),
@@ -512,6 +552,10 @@ function createQqAdaptiveLearning() {
     questionCount: 0,
     directBotInteractionCount: 0,
     burstContinuationCount: 0,
+    interruptionOpportunityCount: 0,
+    interruptionCount: 0,
+    interruptionBootstrapVersion: 0,
+    interruptionTrackingStartedAt: null,
     botReplyCount: 0,
     botStickerReplyCount: 0,
     botMultiBubbleReplyCount: 0,
@@ -552,12 +596,19 @@ function normalizeQqAdaptiveLearning(value) {
     "sampleCount", "textSampleCount", "textCharSum", "shortTextCount", "longTextCount",
     "stickerCount", "imageCount", "emojiCount", "replyCount", "mentionCount", "questionCount",
     "directBotInteractionCount", "burstContinuationCount", "botReplyCount", "botStickerReplyCount",
+    "interruptionOpportunityCount", "interruptionCount",
     "botMultiBubbleReplyCount", "botReplyCharSum", "botReplyFollowUpCount",
     "lastStyleReviewSampleCount", "lastStyleReviewBotReplyCount", "styleHumanSampleSize", "styleBotSampleSize",
     "unansweredBotStreak"
   ]) base[key] = boundedNumber(source[key]);
+  base.interruptionCount = Math.min(base.interruptionCount, base.interruptionOpportunityCount);
   base.version = profileVersion;
   base.bootstrapVersion = clamp(Math.floor(Number(source.bootstrapVersion || 0)), 0, bootstrapVersion);
+  base.interruptionBootstrapVersion = clamp(
+    Math.floor(Number(source.interruptionBootstrapVersion || 0)),
+    0,
+    interruptionBootstrapVersion
+  );
   base.hourCounts = normalizeCounterArray(source.hourCounts, hourCount);
   base.weekdayCounts = normalizeCounterArray(source.weekdayCounts, weekdayCount);
   base.activeDays = [...new Set((Array.isArray(source.activeDays) ? source.activeDays : [])
@@ -568,7 +619,7 @@ function normalizeQqAdaptiveLearning(value) {
     .map(Number)
     .filter((seconds) => Number.isFinite(seconds) && seconds >= 0 && seconds <= 86400)
     .slice(-recentGapLimit);
-  for (const key of ["firstSeenAt", "lastMessageAt", "lastBotReplyAt", "botTrackingStartedAt", "lastStyleReviewAt", "styleReviewWindowStartedAt", "lastColdProactiveCheckAt", "lastColdProactiveAt", "lastPrivateProactiveCheckAt", "lastPrivateProactiveAt"]) {
+  for (const key of ["firstSeenAt", "lastMessageAt", "interruptionTrackingStartedAt", "lastBotReplyAt", "botTrackingStartedAt", "lastStyleReviewAt", "styleReviewWindowStartedAt", "lastColdProactiveCheckAt", "lastColdProactiveAt", "lastPrivateProactiveCheckAt", "lastPrivateProactiveAt"]) {
     base[key] = validIsoDate(source[key]);
   }
   base.lastSenderId = normalizeId(source.lastSenderId);
@@ -580,7 +631,7 @@ function normalizeQqAdaptiveLearning(value) {
   return base;
 }
 
-function applyHumanSample(learning, features, clock, observedAt, senderId, groupLevel) {
+function applyHumanSample(learning, features, clock, observedAt, senderId, groupLevel, interruption = null) {
   increment(learning, "sampleCount");
   if (features.textLength > 0) {
     increment(learning, "textSampleCount");
@@ -595,6 +646,12 @@ function applyHumanSample(learning, features, clock, observedAt, senderId, group
   if (features.mention) increment(learning, "mentionCount");
   if (features.question) increment(learning, "questionCount");
   if (features.directBotInteraction) increment(learning, "directBotInteractionCount");
+  if (groupLevel) {
+    learning.interruptionBootstrapVersion = interruptionBootstrapVersion;
+    learning.interruptionTrackingStartedAt ||= observedAt.toISOString();
+    if (interruption?.opportunity) increment(learning, "interruptionOpportunityCount");
+    if (interruption?.interruption) increment(learning, "interruptionCount");
+  }
 
   const previousAt = Date.parse(learning.lastMessageAt || "");
   const gapSeconds = Number.isFinite(previousAt) ? Math.max(0, Math.round((observedAt.getTime() - previousAt) / 1000)) : null;
@@ -607,6 +664,21 @@ function applyHumanSample(learning, features, clock, observedAt, senderId, group
   learning.lastMessageAt = observedAt.toISOString();
   learning.lastSenderId = senderId;
   touchTimeBucket(learning, clock);
+}
+
+function getInterruptionFeatures(learning, observedAt, senderId) {
+  const previousAt = Date.parse(learning.lastMessageAt || "");
+  const gapSeconds = Number.isFinite(previousAt)
+    ? Math.round((observedAt.getTime() - previousAt) / 1000)
+    : null;
+  const opportunity = gapSeconds != null
+    && gapSeconds >= 0
+    && gapSeconds <= interruptionWindowSeconds
+    && Boolean(learning.lastSenderId);
+  return {
+    opportunity,
+    interruption: opportunity && learning.lastSenderId !== senderId
+  };
 }
 
 function notePostBotFollowUp(groupLearning, memberLearning, senderId, observedAt) {
@@ -680,6 +752,11 @@ function summarizeLearning(learning, currentHour, { confidenceAt }) {
     questionMessageRatio: ratio(learning.questionCount, samples),
     directBotInteractionRatio: ratio(learning.directBotInteractionCount, samples),
     burstContinuationRatio: ratio(learning.burstContinuationCount, samples),
+    interruptionSampleSize: learning.interruptionOpportunityCount,
+    interruptionCount: learning.interruptionCount,
+    interruptionRate: ratio(learning.interruptionCount, learning.interruptionOpportunityCount),
+    interruptionWindowSeconds,
+    interruptionTrackingStartedAt: learning.interruptionTrackingStartedAt,
     gapSampleSize: learning.recentGapSeconds.length,
     medianGapSeconds: quantile(learning.recentGapSeconds, 0.5),
     activeHours,

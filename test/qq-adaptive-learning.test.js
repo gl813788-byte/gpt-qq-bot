@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  backfillQqAdaptiveInterruptionLearning,
   buildQqAdaptiveLearningSignals,
   deriveQqLearnedSocialHours,
   ensureQqAdaptiveLearning,
@@ -45,6 +46,46 @@ test("learns bounded per-group and per-member timing and expression statistics",
   assert.ok(signals.group.activeHours.includes(20));
   assert.ok(signals.member.emojiMessageRatio > 0);
   assert.ok(ensureQqAdaptiveLearning(group).recentGapSeconds.length <= 64);
+});
+
+test("learns and backfills the group speaker-switch interjection rate from two-minute transitions", () => {
+  const group = {};
+  const members = {};
+  const start = Date.UTC(2026, 6, 1, 12, 0);
+  const samples = [
+    { senderId: "10001", offsetSeconds: 0 },
+    { senderId: "10001", offsetSeconds: 30 },
+    { senderId: "20002", offsetSeconds: 90 },
+    { senderId: "30003", offsetSeconds: 400 },
+    { senderId: "40004", offsetSeconds: 460 }
+  ];
+  for (const [index, sample] of samples.entries()) {
+    members[sample.senderId] ||= {};
+    recordQqAdaptiveHumanMessage(group, members[sample.senderId], humanEvent(index, {
+      senderId: sample.senderId,
+      at: new Date(start + sample.offsetSeconds * 1000).toISOString()
+    }));
+  }
+  const signals = buildQqAdaptiveLearningSignals(group, null, { now: start + 500_000 });
+  assert.equal(signals.version, 4);
+  assert.equal(signals.group.interruptionWindowSeconds, 120);
+  assert.equal(signals.group.interruptionSampleSize, 3);
+  assert.equal(signals.group.interruptionCount, 2);
+  assert.equal(signals.group.interruptionRate, 0.667);
+  assert.match(formatQqAdaptiveLearningContext(signals), /换人插话率 67%/);
+
+  const migrated = { adaptive: { bootstrapVersion: 1 } };
+  const recentEntries = samples.slice(0, 3).map((sample, index) => ({
+    senderId: sample.senderId,
+    text: `消息${index}`,
+    at: new Date(start + sample.offsetSeconds * 1000).toISOString()
+  }));
+  assert.equal(backfillQqAdaptiveInterruptionLearning(migrated, recentEntries), true);
+  assert.equal(backfillQqAdaptiveInterruptionLearning(migrated, recentEntries), false);
+  const migratedSignals = buildQqAdaptiveLearningSignals(migrated, null, { now: start + 500_000 });
+  assert.equal(migratedSignals.group.interruptionSampleSize, 2);
+  assert.equal(migratedSignals.group.interruptionCount, 1);
+  assert.equal(migratedSignals.group.interruptionRate, 0.5);
 });
 
 test("personalizes reply shape and proactive cadence with learned weak signals", () => {
@@ -294,5 +335,7 @@ test("exposes detailed safe group-level learning parameters for the dashboard", 
   assert.ok(summary.emojiMessageRatio > 0);
   assert.ok(Array.isArray(summary.activeHours));
   assert.ok(Object.hasOwn(summary, "medianGapSeconds"));
+  assert.ok(Object.hasOwn(summary, "interruptionSampleSize"));
+  assert.ok(Object.hasOwn(summary, "interruptionRate"));
   assert.ok(Object.hasOwn(summary, "styleHumanSampleSize"));
 });

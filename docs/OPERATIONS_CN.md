@@ -179,6 +179,22 @@ npm run verify
 | `ncc` 命令不认识参数 | 调用了另一套同名控制器 | `command -v ncc`、`readlink -f`、`ncc help`；仓库命令改用 `npm run ncc --` |
 | dead screen session | 异常退出留下 socket | 确认没有活进程后 `screen -wipe`，再启动 |
 
+## 临时公网访问
+
+设置页提供一个默认关闭的**公网临时访问**开关，底层使用 [Cloudflare Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/)。它保持 Hub 监听 `127.0.0.1`，只启动一个本地 `cloudflared` 子进程转发到 `http://127.0.0.1:3789`。
+
+开启前，按 Cloudflare 对应平台说明安装 `cloudflared`，并确保 Hub 继承的 PATH 能找到它。仪表盘不会自动安装或下载依赖。命令缺失、启动失败或在超时内没有返回地址时，API 会明确报错，并且不会保留公网地址。
+
+开启后：
+
+1. 若尚无管理 token，Hub 会自动创建并持久化一个。
+2. 仪表盘显示当前随机的 `https://*.trycloudflare.com` 地址；重启或重新开启后地址可能变化。
+3. 把地址和 token 分开发给可信访问者；访问者在仪表盘提示框中输入 token，token 只保存在该浏览器标签页。
+4. 所有非回环管理 API 仍必须携带 token；同源 CORS 只放行当前精确的隧道 Host。
+5. 只有从回环地址加载的本机页面才能启停隧道或读取 token；关闭开关会终止子进程。
+
+开关的期望状态会持久化，因此开启状态下重启 Hub 会重新创建隧道。Quick Tunnel 只适合临时开发/测试，不应作为长期生产暴露方案。需要稳定公网服务时，应使用受管的命名隧道，或带独立身份认证、限速与监控的 TLS 反向代理。
+
 ## 局域网访问
 
 默认只使用 `127.0.0.1`。只有用户明确要求时才开启：
@@ -187,4 +203,4 @@ npm run verify
 2. 限制 CORS，不使用无 token 的 `*`。
 3. 防火墙只放行需要的局域网段，代理/VPN 对私网地址使用直连。
 4. 从另一设备验证页面与带 token API；确认 token 没有进入 Git、日志或截图。
-5. 公网访问应通过带 TLS、访问控制和限速的反向代理，不直接暴露 Hub。
+5. 长期公网访问应使用受管命名隧道，或带 TLS、访问控制和限速的反向代理，不要把 Hub 直接绑定到公网。

@@ -25,6 +25,7 @@ test("creates isolated application state from normalized configuration", () => {
   assert.equal(first.qq.proactive.enabled, false);
   assert.equal(first.qq.memory.perGroupLimit, 25);
   assert.deepEqual(first.channels, { qq: false });
+  assert.deepEqual(first.network, { allowLanAccess: false, publicTunnelEnabled: false });
   assert.equal("imessage" in first, false);
   assert.equal("remoteExecution" in first, false);
   assert.equal("proxy" in first, false);

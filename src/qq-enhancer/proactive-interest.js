@@ -606,6 +606,7 @@ function buildJudgeMessages(event, assessment, config, { formatRetry = false } =
         "你是 QQ 群聊 Bot 的话题兴趣判定器，只判断未被 @ 时，当前话题是否真的吸引这个 Bot。",
         "达到配置的消息数或分钟间隔时，普通群消息会交给你判断；规则评分、blockers、labels 只作为参考信号，不是硬性过滤器。",
         "最主要的标准是话题是否符合 Bot 自己长期形成的兴趣，以及 Bot 是否产生了具体想法、信息或好笑的接点；不要把“现在适不适合插话”当成主要标准。",
+        "groupHumanRhythm 中的 learnedInterruptionRate 是自动适应从真人群聊学习出的换人插话率，只能作为时机参考：高插话率不代表必须回复，低插话率也不是硬性禁言；样本少时应忽略。",
         "两个人正在来回、已经有人回答或普通生活碎片只能作为轻微降权；只在话题已经结束、回复必然答错对象、只能复述或连续无人回应时明显降低。",
         "关系距离越近会提高短期兴趣，连续无人回应会降低有效兴趣；这些数值由 Hub 提供，不要自行改写。",
         "先做语义判断：结合当前消息、被引用消息和最近上下文，判断发言者真正表达的意思，以及是否在暗示或期待 Bot 说什么、回答什么或做什么。不要只按字面关键词猜；如果没有在对 Bot 提要求，也要明确写出没有明确期待。",
@@ -673,7 +674,10 @@ function buildJudgeMessages(event, assessment, config, { formatRetry = false } =
           p90TextChars: Number(config.humanStyle.p90TextChars || 0),
           imageMessageRatio: Number(config.humanStyle.imageMessageRatio || 0),
           emojiMessageRatio: Number(config.humanStyle.emojiMessageRatio || 0),
-          replyMessageRatio: Number(config.humanStyle.replyMessageRatio || 0)
+          replyMessageRatio: Number(config.humanStyle.replyMessageRatio || 0),
+          learnedInterruptionSampleSize: Number(config.humanStyle.adaptiveLearning?.group?.interruptionSampleSize || 0),
+          learnedInterruptionRate: Number(config.humanStyle.adaptiveLearning?.group?.interruptionRate || 0),
+          learnedInterruptionWindowSeconds: Number(config.humanStyle.adaptiveLearning?.group?.interruptionWindowSeconds || 120)
         } : null,
         recentMessages: recent,
         outputPolicy: {

@@ -71,6 +71,7 @@ import {
   isQqSilentReply
 } from "./qq-human-behavior.js";
 import {
+  backfillQqAdaptiveInterruptionLearning,
   buildQqAdaptiveLearningSignals,
   ensureQqAdaptiveLearning,
   formatQqAdaptiveLearningContext,
@@ -116,6 +117,7 @@ import { runJsonProcess } from "./process-runner.js";
 import { createDashboardAssetHandler } from "./dashboard-assets.js";
 import { applyDashboardBotSettings, readDashboardBotSettings } from "./dashboard-bot-settings.js";
 import { selectLanAccessAddresses } from "./network-access.js";
+import { createPublicTunnelManager } from "./public-tunnel.js";
 import { requestHasValidToken } from "./request-auth.js";
 import {
   buildOneBotPokeAttempts,
@@ -487,6 +489,9 @@ const state = createInitialState({
   codexWorkspaceDir,
   qqProactiveInterestPreset: defaultQqProactiveInterestPreset()
 });
+const publicTunnelManager = createPublicTunnelManager({
+  targetUrl: `http://127.0.0.1:${hubPort}`
+});
 
 const oneBotEventDeduplicator = createOneBotEventDeduplicator();
 const qqProactiveLatestEventByGroupId = new Map();
@@ -611,6 +616,7 @@ async function loadSettings() {
     const body = JSON.parse(await readFile(settingsPath, "utf8"));
     if (body.network && typeof body.network === "object") {
       state.network.allowLanAccess = body.network.allowLanAccess === true;
+      state.network.publicTunnelEnabled = body.network.publicTunnelEnabled === true;
       const savedToken = String(body.network.apiToken || "").trim();
       if (savedToken.length >= 24 && savedToken.length <= 512) {
         persistedNetworkApiToken = savedToken;
@@ -713,6 +719,7 @@ async function saveSettings() {
       updatedAt: new Date().toISOString(),
       network: {
         allowLanAccess: state.network.allowLanAccess,
+        publicTunnelEnabled: state.network.publicTunnelEnabled,
         apiToken: persistedNetworkApiToken
       },
       ai: {
@@ -1509,7 +1516,11 @@ function buildPublicState() {
       port: hubPort,
       safeFetchMode,
       apiTokenConfigured: Boolean(managementApiToken),
-      lanUrls: buildLanAccessUrls()
+      lanUrls: buildLanAccessUrls(),
+      publicTunnel: {
+        enabled: state.network.publicTunnelEnabled,
+        ...publicTunnelManager.status()
+      }
     },
     ai: {
       provider: state.ai.provider,
@@ -2653,7 +2664,12 @@ async function judgeQqProactiveEvent(event, { triggerMode = "message", countMess
     currentAndQuotedKeywords: interestKeywordMatch.keywords || [],
     recentContextKeywords: recentContextKeywordHits,
     relationship: adaptive.relationshipInterest,
-    cadence: adaptive.proactiveIntervals
+    cadence: adaptive.proactiveIntervals,
+    interruption: {
+      sampleSize: adaptive.signals.group.interruptionSampleSize,
+      rate: adaptive.signals.group.interruptionRate,
+      windowSeconds: adaptive.signals.group.interruptionWindowSeconds
+    }
   };
   const proactiveDecision = await Promise.resolve(shouldProactivelyReplyToQq(event, state.qq, {
     stripMentionText,
@@ -7314,24 +7330,28 @@ function backfillQqAdaptiveLearningFromRecentMessages() {
   for (const [groupId, entries] of Object.entries(state.qq.memory.recentMessages)) {
     if (!Array.isArray(entries)) continue;
     const group = getQqPersonaGroup(groupId);
-    if (ensureQqAdaptiveLearning(group).bootstrapVersion >= 1) continue;
-    for (const entry of entries) {
-      if (entry?.isAssistant || entry?.senderId === "assistant") {
-        continue;
+    if (ensureQqAdaptiveLearning(group).bootstrapVersion < 1) {
+      for (const entry of entries) {
+        if (entry?.isAssistant || entry?.senderId === "assistant") {
+          continue;
+        }
+        if (!entry?.senderId) continue;
+        const member = getQqPersonaMember(groupId, entry.senderId, entry.senderLabel);
+        recordQqAdaptiveHumanMessage(group, member, {
+          ...entry,
+          ...(groupId.startsWith("private:") ? { type: "private_message", senderId: groupId.slice("private:".length) } : { groupId }),
+          senderName: entry.senderLabel,
+          isReplyToSelf: Boolean(entry.replyContext?.isSelf)
+        }, { at: entry.at });
+        ensureQqAdaptiveLearning(member).bootstrapVersion = 1;
       }
-      if (!entry?.senderId) continue;
-      const member = getQqPersonaMember(groupId, entry.senderId, entry.senderLabel);
-      recordQqAdaptiveHumanMessage(group, member, {
-        ...entry,
-        ...(groupId.startsWith("private:") ? { type: "private_message", senderId: groupId.slice("private:".length) } : { groupId }),
-        senderName: entry.senderLabel,
-        isReplyToSelf: Boolean(entry.replyContext?.isSelf)
-      }, { at: entry.at });
-      ensureQqAdaptiveLearning(member).bootstrapVersion = 1;
+      ensureQqAdaptiveLearning(group).bootstrapVersion = 1;
+      maybeReviewQqAdaptiveLanguageStyle(group, entries, { force: true });
+      changed = true;
     }
-    ensureQqAdaptiveLearning(group).bootstrapVersion = 1;
-    maybeReviewQqAdaptiveLanguageStyle(group, entries, { force: true });
-    changed = true;
+    if (!groupId.startsWith("private:")) {
+      changed = backfillQqAdaptiveInterruptionLearning(group, entries) || changed;
+    }
   }
   return changed;
 }
@@ -8623,7 +8643,9 @@ async function handleApi(req, res) {
   }
   const requestOrigin = String(req.headers.origin || "").trim();
   const allowLanSameOrigin = isLanAccessEnabled() && isRequestOriginSameHost(requestOrigin, req.headers.host);
-  const requestAllowedOrigins = allowLanSameOrigin
+  const allowPublicTunnelSameOrigin = publicTunnelManager.isRequestHost(req.headers.host)
+    && isRequestOriginSameHost(requestOrigin, req.headers.host);
+  const requestAllowedOrigins = allowLanSameOrigin || allowPublicTunnelSameOrigin
     ? [...hubAllowedOrigins, requestOrigin]
     : hubAllowedOrigins;
   if (!isRequestOriginAllowed(requestOrigin, requestAllowedOrigins)) {
@@ -8662,12 +8684,63 @@ async function handleApi(req, res) {
 
   if (req.method === "GET" && req.url === "/api/network/access-token") {
     if (!trustedLoopbackRequest) {
-      return sendJson(res, 403, { error: "The LAN access token is only available from this computer" });
+      return sendJson(res, 403, { error: "The network access token is only available from this computer" });
     }
     if (!managementApiToken) {
-      return sendJson(res, 404, { error: "LAN access has not created an API token yet" });
+      return sendJson(res, 404, { error: "Remote access has not created an API token yet" });
     }
     return sendJson(res, 200, { token: managementApiToken });
+  }
+
+  if (req.method === "POST" && req.url === "/api/network/public-tunnel") {
+    if (!trustedLoopbackRequest) {
+      return sendJson(res, 403, { error: "The public tunnel can only be controlled from this computer" });
+    }
+    const body = await readBody(req, { requireJson: true });
+    if (typeof body.enabled !== "boolean") {
+      return sendJson(res, 400, { error: "enabled must be a boolean" });
+    }
+    const previousEnabled = state.network.publicTunnelEnabled;
+    const previousManagementToken = managementApiToken;
+    const previousPersistedToken = persistedNetworkApiToken;
+    if (body.enabled) {
+      ensureNetworkAccessToken();
+      try {
+        await publicTunnelManager.start();
+        state.network.publicTunnelEnabled = true;
+        await saveSettings();
+      } catch (error) {
+        state.network.publicTunnelEnabled = previousEnabled;
+        managementApiToken = previousManagementToken;
+        persistedNetworkApiToken = previousPersistedToken;
+        if (!previousEnabled) await publicTunnelManager.stop().catch(() => undefined);
+        throw error;
+      }
+    } else {
+      await publicTunnelManager.stop();
+      state.network.publicTunnelEnabled = false;
+      try {
+        await saveSettings();
+      } catch (error) {
+        state.network.publicTunnelEnabled = previousEnabled;
+        if (previousEnabled) {
+          await publicTunnelManager.start().catch((restartError) => logger.error(
+            "Unable to restore public tunnel after settings save failure",
+            { error: restartError },
+            "web"
+          ));
+        }
+        throw error;
+      }
+    }
+    const tunnelStatus = publicTunnelManager.status();
+    logger.info("Dashboard public tunnel updated", {
+      enabled: body.enabled,
+      running: tunnelStatus.running,
+      provider: tunnelStatus.provider,
+      publicUrl: tunnelStatus.publicUrl
+    }, "web");
+    return sendJson(res, 200, buildPublicState());
   }
 
   if (req.method === "POST" && req.url === "/api/network/lan-access") {
@@ -8955,7 +9028,12 @@ async function handleApi(req, res) {
 }
 
 await loadSettings();
-if (isLanAccessEnabled() && !managementApiToken) {
+await publicTunnelManager.refreshAvailability().catch((error) => logger.warn(
+  "Unable to inspect public tunnel dependency",
+  { error },
+  "web"
+));
+if ((isLanAccessEnabled() || state.network.publicTunnelEnabled) && !managementApiToken) {
   ensureNetworkAccessToken();
   await saveSettings();
 }
@@ -9001,7 +9079,7 @@ const server = createServer(async (req, res) => {
       url: req.url,
       error
     }, "web");
-    const statusCode = Number.isInteger(error.statusCode) && error.statusCode >= 400 && error.statusCode < 500
+    const statusCode = Number.isInteger(error.statusCode) && error.statusCode >= 400 && error.statusCode < 600
       ? error.statusCode
       : 500;
     sendJson(res, statusCode, { error: statusCode === 500 ? "Internal server error" : error.message });
@@ -9065,6 +9143,15 @@ function scheduleHubRebind(nextHost) {
 }
 
 await listenHub(currentHubHost);
+if (state.network.publicTunnelEnabled) {
+  trackBackgroundTask(
+    publicTunnelManager.start().then((tunnelStatus) => logger.success("Dashboard public tunnel started", {
+      provider: tunnelStatus.provider,
+      publicUrl: tunnelStatus.publicUrl
+    }, "web")),
+    (error) => logger.error("Unable to restore dashboard public tunnel", { error }, "web")
+  );
+}
 
 let shutdownPromise = null;
 function shutdown(signal) {
@@ -9085,6 +9172,11 @@ function shutdown(signal) {
     oneBotWebhookLimiter.close(shutdownError);
     qqReplyScheduler.close(shutdownError);
     shutdownController.abort(shutdownError);
+    const stopPublicTunnel = publicTunnelManager.stop().catch((error) => logger.warn(
+      "Unable to stop dashboard public tunnel cleanly",
+      { error },
+      "web"
+    ));
 
     for (const child of activeCodexChildren) {
       try {
@@ -9112,6 +9204,7 @@ function shutdown(signal) {
       timer.unref?.();
     });
     const closeMode = await Promise.race([closeServer, forceClose]);
+    await stopPublicTunnel;
     await waitForBackgroundTasks();
     await Promise.all([
       qqMemoryWriter.close(),

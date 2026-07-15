@@ -96,6 +96,8 @@ npm run ncc -- setup
 | `unifiedMemory.*` | 自动写入与手动交接策略 |
 | `branding.*` | 助手名称、主人称呼和 @ 别名 |
 | `network.allowLanAccess` | 仪表盘持久化的局域网开关 |
+| `network.publicTunnelEnabled` | Cloudflare 临时 Quick Tunnel 的持久期望状态；默认 `false` |
+| `network.apiToken` | 自动生成的远程管理 token；真实值只能保留在未跟踪本机设置或环境中 |
 
 网页端“智能行为”页可持久化修改 `qq.enhancer.enabled`、`qq.webLookup.enabled`、主动兴趣开关、判定开关、消息/分钟间隔、判定模型、静默超时和最近上下文数量。显式 @ Bot 的正常回复不依赖主动兴趣开关。模型切换应使用当前 Codex 登录实际提供的模型列表；不要把历史模型名当成永久可用值。
 

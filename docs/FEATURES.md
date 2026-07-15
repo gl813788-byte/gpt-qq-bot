@@ -47,7 +47,7 @@ Codex defaults to two active child processes and 32 pending jobs. Each group or 
 ## Adaptive social behavior
 
 - `qq-human-behavior` derives anonymous short-window message length, rate, bursts, media/emoji, reply/mention, question and punctuation signals without copying a member's wording.
-- `qq-adaptive-learning` persists activity, structure, interaction distance and post-Bot feedback to weakly tune length, sticker probability, bubble rhythm and delay.
+- `qq-adaptive-learning` persists activity, structure, interaction distance and post-Bot feedback to weakly tune length, sticker probability, bubble rhythm and delay. It also treats consecutive human messages no more than two minutes apart as active transitions and records the share whose sender changes as the group-level interjection rate.
 - A persisted 24-hour review clock can produce at most five compact style improvements and replaces the previous set to keep prompts bounded.
 - The global self-persona is generated only from privacy-filtered scope summaries. Raw private content must not cross scopes.
 - Adaptive data changes style and cadence; it never bypasses allowlists, permissions or the interest judge.
@@ -61,6 +61,8 @@ Three constrained paths exist:
 3. **Private interest:** interaction frequency, time since activity and unanswered Bot output dynamically tune probability and cooldown.
 
 The ordinary group judge streams through OpenRouter with a strict JSON Schema containing `analysis`, `semanticIntent`, `shouldReply`, `interest`, `reason` and `replyStyle`. `semanticIntent` is bounded, untrusted supporting context describing what the speaker may mean and what they appear to expect the Bot to say or do; it cannot bypass the interest threshold by itself. Hub performs at most one format retry for structurally invalid provider output. Timeouts, HTTP errors and rate limits are not blindly retried. The timeout measures idle time before the first token or between token chunks, so an active stream may continue to completion under a final token cap.
+
+The interest judge receives the learned group interjection rate, its active-transition sample count and the measurement window. These are timing references only: a high rate never triggers a reply by itself, and a low rate is not a hard silence rule. The structured model decision and interest threshold remain authoritative.
 
 Proactive work does not force itself behind active generation. New activity suppresses stale results. Cold/private paths cannot invoke management tools, multi-bubble delivery or fallback chatter. State and decisions use the `interest` log category.
 
@@ -89,7 +91,7 @@ Inspect the effective provider, attempts and recent errors through `/api/mainten
 
 ## Dashboard, API and logs
 
-The local dashboard exposes service/channel state, allowlists, models, memory, adaptive learning, proactive interest, maintenance, structured log filters, language, theme and responsive layouts. Its persistent LAN switch creates a management token; the token can only be retrieved from a loopback-loaded dashboard.
+The local dashboard exposes service/channel state, allowlists, models, memory, adaptive learning, proactive interest, maintenance, structured log filters, language, theme and responsive layouts. Its persistent LAN switch creates a management token; the token can only be retrieved from a loopback-loaded dashboard. A separate, default-off Cloudflare Quick Tunnel switch can create a temporary HTTPS address without rebinding the Hub away from loopback. Remote management APIs still require the same token, while tunnel start/stop and token-copy controls remain local-only.
 
 Core read endpoints:
 

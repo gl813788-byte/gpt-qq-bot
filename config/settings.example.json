@@ -1,6 +1,11 @@
 {
   "version": 1,
   "updatedAt": null,
+  "network": {
+    "allowLanAccess": false,
+    "publicTunnelEnabled": false,
+    "apiToken": ""
+  },
   "qq": {
     "allowedGroups": [],
     "ownerUserIds": [],

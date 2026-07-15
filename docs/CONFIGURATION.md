@@ -94,6 +94,8 @@ Minimal configuration:
 | `unifiedMemory.*` | Automatic writes and manual handoff behavior |
 | `branding.*` | Assistant name, owner label and mention aliases |
 | `network.allowLanAccess` | Persistent dashboard LAN switch |
+| `network.publicTunnelEnabled` | Persistent desired state for the temporary Cloudflare Quick Tunnel; defaults to `false` |
+| `network.apiToken` | Generated remote-management token; keep the real value only in untracked local settings or the environment |
 
 The dashboard Intelligence view can persist the enhancer, web lookup, proactive-interest and judge switches plus message/minute cadence, judge model, idle timeout and recent-context size. Explicit @Bot replies do not depend on proactive interest. Switch models only to entries currently advertised by the active Codex login.
 

@@ -173,6 +173,22 @@ Do not pull directly over local changes; let Codex assess conflicts and update s
 | `ncc` rejects a documented command | Wrong same-name controller | Inspect `command -v ncc`, `readlink -f`, `ncc help`; use `npm run ncc --` for repository commands |
 | Dead screen socket | Previous abnormal exit | Confirm no live process, run `screen -wipe`, then restart |
 
+## Temporary public access
+
+The Settings page has a default-off **Temporary public access** switch backed by [Cloudflare Quick Tunnels](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/). It keeps the Hub on `127.0.0.1` and starts a local `cloudflared` child process that forwards only to `http://127.0.0.1:3789`.
+
+Before enabling it, install `cloudflared` using Cloudflare's platform instructions and make sure the executable is on the PATH inherited by the Hub. The dashboard never installs or downloads the dependency. If it is missing, fails to start, or does not return a URL within the startup timeout, the API returns an error and no public URL is retained.
+
+When enabled:
+
+1. The Hub creates a persistent management token if one does not already exist.
+2. The dashboard displays the active random `https://*.trycloudflare.com` URL. The address can change after a restart or re-enable.
+3. Send the address and token separately to a trusted visitor. The visitor enters the token in the dashboard prompt; it is stored only in that browser tab.
+4. Every non-loopback management API request still requires the token. Same-origin CORS is admitted only for the exact active tunnel host.
+5. Only a loopback-loaded dashboard can start or stop the tunnel or retrieve the token. Disabling the switch terminates the child process.
+
+The desired switch state is persisted, so an enabled tunnel is recreated when the Hub restarts. Quick Tunnels are intended for temporary development/testing, not durable production exposure. For a stable public service, use a managed named tunnel or TLS reverse proxy with independent identity controls, rate limits and monitoring.
+
 ## LAN access
 
 The default remains `127.0.0.1`. Enable LAN only on explicit request:
@@ -181,4 +197,4 @@ The default remains `127.0.0.1`. Enable LAN only on explicit request:
 2. Restrict CORS; never use unauthenticated `*`.
 3. Limit firewall access to required private subnets and bypass private addresses in proxy/VPN rules.
 4. Test the page and token-authenticated API from another device, and confirm the token is absent from Git, logs and screenshots.
-5. Put public access behind a TLS reverse proxy with authentication and rate limits; do not expose Hub directly.
+5. For durable public access, use a managed named tunnel or TLS reverse proxy with authentication and rate limits; do not bind Hub directly to the public internet.

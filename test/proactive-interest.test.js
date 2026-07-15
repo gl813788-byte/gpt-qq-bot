@@ -115,7 +115,14 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
       p90TextChars: 12,
       imageMessageRatio: 0.18,
       emojiMessageRatio: 0.06,
-      replyMessageRatio: 0.12
+      replyMessageRatio: 0.12,
+      adaptiveLearning: {
+        group: {
+          interruptionSampleSize: 48,
+          interruptionRate: 0.625,
+          interruptionWindowSeconds: 120
+        }
+      }
     }
   });
 
@@ -147,6 +154,10 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
   assert.match(requestBody.messages[0].content, /先做语义判断/);
   const judgeInput = JSON.parse(requestBody.messages[1].content);
   assert.equal(judgeInput.groupHumanRhythm.multiMessageRunRatio, 0.38);
+  assert.equal(judgeInput.groupHumanRhythm.learnedInterruptionSampleSize, 48);
+  assert.equal(judgeInput.groupHumanRhythm.learnedInterruptionRate, 0.625);
+  assert.equal(judgeInput.groupHumanRhythm.learnedInterruptionWindowSeconds, 120);
+  assert.match(requestBody.messages[0].content, /换人插话率/);
 });
 
 test("proactive judge retries once when structured output omits semantic intent", async () => {

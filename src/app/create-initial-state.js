@@ -9,7 +9,8 @@ export function createInitialState({
 }) {
   return {
     network: {
-      allowLanAccess: false
+      allowLanAccess: false,
+      publicTunnelEnabled: false
     },
     ai: {
       provider: "codex-cli",

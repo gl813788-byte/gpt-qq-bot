@@ -481,6 +481,19 @@
                   <button id="copyLanToken" class="button compact ghost" type="button" data-i18n="copyLanToken">复制访问令牌</button>
                 </div>
               </section>
+
+              <section class="surface settings-card public-tunnel-card">
+                <div class="settings-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18a4 4 0 0 1-.7-7.9A6 6 0 0 1 18 11a3.5 3.5 0 0 1-.5 7H7Zm5-9v8m-3-3 3 3 3-3" /></svg></div>
+                <div class="settings-copy"><h2 data-i18n="publicTunnel">内网穿透</h2><p id="publicTunnelHint" data-i18n="publicTunnelHint">通过 Cloudflare Quick Tunnel 生成临时 HTTPS 地址；远端仍需访问令牌。</p><code id="publicTunnelUrl">未开启公网访问</code></div>
+                <div class="setting-controls public-tunnel-controls">
+                  <label class="inline-toggle icon-only">
+                    <input id="publicTunnelToggle" type="checkbox" aria-label="内网穿透" data-i18n-aria-label="publicTunnel" />
+                    <span aria-hidden="true"></span>
+                  </label>
+                  <button id="copyPublicTunnelUrl" class="button compact ghost" type="button" data-i18n="copyPublicTunnelUrl">复制公网地址</button>
+                  <button id="copyPublicTunnelToken" class="button compact ghost" type="button" data-i18n="copyLanToken">复制访问令牌</button>
+                </div>
+              </section>
             </div>
 
             <section class="surface about-card">

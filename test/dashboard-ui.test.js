@@ -120,3 +120,14 @@ test("dashboard live log view requests verbose entries and renders every detail 
   assert.match(css, /\.log-detail-grid\s*\{/);
   assert.match(css, /\.log-detail\.is-error\s*\{/);
 });
+
+test("dashboard exposes local-only token-protected temporary public tunnel controls", () => {
+  for (const id of ["publicTunnelToggle", "publicTunnelHint", "publicTunnelUrl", "copyPublicTunnelUrl", "copyPublicTunnelToken"]) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+  assert.match(javascript, /\/api\/network\/public-tunnel/);
+  assert.match(javascript, /publicTunnelToggle"\)\.disabled = !app\.state \|\| !localBrowser/);
+  assert.match(javascript, /copyPublicTunnelToken"\)\.disabled = !tunnelRunning \|\| !network\.apiTokenConfigured \|\| !localBrowser/);
+  assert.match(javascript, /publicTunnelEnableMessage/);
+  assert.match(css, /\.public-tunnel-card\s*\{/);
+});
