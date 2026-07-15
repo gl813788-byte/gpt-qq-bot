@@ -14,10 +14,11 @@ import {
   isLoopbackRequestHost,
   isRequestOriginAllowed,
   isRequestOriginSameHost,
-  parseAllowedOrigins,
   readBody,
   sendJson
 } from "./http-utils.js";
+import { createEnvironmentConfig } from "./config/environment.js";
+import { createInitialState } from "./app/create-initial-state.js";
 import { createLogger } from "./logger.js";
 import { buildLogsResponse } from "./log-api.js";
 import { importOptionalModule } from "./optional-modules.js";
@@ -126,6 +127,16 @@ import {
   getQqGroupRecentContextLimit,
   snapshotQqContextImages
 } from "./qq-enhancer/context-images.js";
+import {
+  createOneBotEventDeduplicator,
+  getEventDedupeKey,
+  isOneBotPokeNotice,
+  isOneBotPokeToSelf,
+  normalizeOneBotEvent,
+  normalizeOneBotPokeEvent,
+  normalizeQqIdentifier,
+  stripUntrustedQqLocalImagePaths
+} from "./channels/qq/onebot-event.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const projectDir = join(__dirname, "..");
@@ -133,6 +144,7 @@ const dashboardAssetDir = join(projectDir, "modules", "mac-client", "Resources")
 const handleDashboardAsset = createDashboardAssetHandler({ directory: dashboardAssetDir });
 const brotliDecompressAsync = promisify(brotliDecompress);
 const qqSendableImageExtensions = new Set([".png", ".jpg", ".jpeg", ".webp", ".gif"]);
+const environmentConfig = createEnvironmentConfig();
 const {
   codexWorkspaceDir,
   codexTmpDir,
@@ -164,13 +176,92 @@ const {
   backlightOffScriptPath,
   backlightRestoreScriptPath
 } = createRuntimePaths({ projectDir });
+const {
+  logMaxBytes,
+  logMaxFiles,
+  logLevel,
+  logConsoleOutput,
+  logConsoleLevels,
+  oneBotApiBase,
+  oneBotAccessToken,
+  environmentManagementApiToken,
+  oneBotRequestTimeoutMs,
+  oneBotHealthTtlMs,
+  oneBotMaxConcurrency,
+  oneBotMaxPending,
+  codexCliPath,
+  codexModel,
+  codexReasoningEffort,
+  codexMaxConcurrency,
+  codexMaxPending,
+  imessageCodexModel,
+  imessageCodexReasoningEffort,
+  codexQuotaCacheTtlMs,
+  qqEnhancerEnabled,
+  qqMemoryLimit,
+  qqGroupMemoryLimit,
+  qqProactiveReplyEnabled,
+  qqProactiveJudgeEveryMessages,
+  qqProactiveJudgeEveryMinutes,
+  qqProactiveMinutePollMs,
+  qqProactiveJudgeEnabled,
+  qqAccountStickersEnabled,
+  qqAccountStickerCount,
+  qqAccountStickerCacheMs,
+  defaultQqProactiveJudgeModel,
+  qqProactiveJudgeModel,
+  qqProactiveJudgeTimeoutMs,
+  qqProactiveJudgeMinInterest,
+  qqSelfPersonaScopeInitialMessages,
+  qqSelfPersonaScopeMessages,
+  qqSelfPersonaScopeBotReplies,
+  qqSelfPersonaScopeCooldownHours,
+  qqSelfPersonaGenerationInitialMessages,
+  qqSelfPersonaGenerationMessages,
+  qqSelfPersonaGenerationBotReplies,
+  qqSelfPersonaGenerationScopeSummaries,
+  qqSelfPersonaGenerationCooldownHours,
+  qqSelfPersonaFailureRetryHours,
+  qqWebLookupEnabled,
+  qqWebLookupTimeoutMs,
+  qqWebLookupAttemptTimeoutMs,
+  qqWebSearchProvider,
+  qqWebSearchPreset,
+  qqWebSearchProviderConfig,
+  qqSocialExtensionBase,
+  qqOwnerFileImageTasksEnabled,
+  qqImageMaxBytes,
+  qqBubbleSeparator,
+  qqBubbleSendDelayMs,
+  qqBubbleMaxCount,
+  openRouterApiKey,
+  openRouterBaseUrl,
+  tavilyApiKey,
+  imessageMemoryLimit,
+  imessageAttachmentSendingEnabled,
+  imessageImageDelivery,
+  remoteExecutionMemoryLimit,
+  remoteExecutionIdleTtlMs,
+  sqliteTimeoutMs,
+  sqliteMaxOutputBytes,
+  hubPort,
+  hubHostOverride,
+  hubAllowedOrigins,
+  allowRemoteHubBinding,
+  proxyShortcutName,
+  proxyConfirmTtlMs
+} = environmentConfig;
 const logger = createLogger({
   filePath: logFilePath,
-  maxBytes: Number(process.env.CODEX_REMOTE_CONTACT_LOG_MAX_BYTES || 5 * 1024 * 1024),
-  maxFiles: Number(process.env.CODEX_REMOTE_CONTACT_LOG_MAX_FILES || 5),
-  minLevel: process.env.CODEX_REMOTE_CONTACT_LOG_LEVEL || "debug",
-  consoleOutput: process.env.CODEX_REMOTE_CONTACT_LOG_CONSOLE !== "0",
-  consoleLevels: process.env.CODEX_REMOTE_CONTACT_LOG_CONSOLE_LEVELS || "success,warn,error"
+  maxBytes: logMaxBytes,
+  maxFiles: logMaxFiles,
+  minLevel: logLevel,
+  consoleOutput: logConsoleOutput,
+  consoleLevels: logConsoleLevels
+});
+const codexModelCatalog = createCodexModelCatalog({
+  codexPath: codexCliPath,
+  envProvider: () => buildCodexChildEnv()
 });
 
 function fallbackMemoryStore() {
@@ -291,119 +382,9 @@ if (qqEnhancerModule) {
   }
 }
 
-const oneBotApiBase = process.env.ONEBOT_API_BASE || "http://127.0.0.1:3000";
-const oneBotAccessToken = String(process.env.ONEBOT_ACCESS_TOKEN || process.env.CODEX_REMOTE_CONTACT_ONEBOT_TOKEN || "").trim();
-const environmentManagementApiToken = String(process.env.CODEX_REMOTE_CONTACT_API_TOKEN || "").trim();
 let managementApiToken = environmentManagementApiToken;
 let persistedNetworkApiToken = "";
-const oneBotRequestTimeoutMs = Math.max(1000, Math.min(30000, Number(process.env.CODEX_REMOTE_CONTACT_ONEBOT_TIMEOUT_MS || 10000) || 10000));
-const oneBotHealthTtlMs = Math.max(5_000, Math.min(60_000, Number(process.env.CODEX_REMOTE_CONTACT_ONEBOT_HEALTH_TTL_MS || 15_000) || 15_000));
-const oneBotMaxConcurrencyValue = String(process.env.CODEX_REMOTE_CONTACT_ONEBOT_MAX_CONCURRENCY ?? "").trim();
-const oneBotMaxConcurrencyRaw = oneBotMaxConcurrencyValue ? Number(oneBotMaxConcurrencyValue) : 8;
-const oneBotMaxConcurrency = Number.isFinite(oneBotMaxConcurrencyRaw)
-  ? Math.max(1, Math.min(32, Math.floor(oneBotMaxConcurrencyRaw)))
-  : 8;
-const oneBotMaxPendingValue = String(process.env.CODEX_REMOTE_CONTACT_ONEBOT_MAX_PENDING ?? "").trim();
-const oneBotMaxPendingRaw = oneBotMaxPendingValue ? Number(oneBotMaxPendingValue) : 32;
-const oneBotMaxPending = Number.isFinite(oneBotMaxPendingRaw)
-  ? Math.max(0, Math.min(256, Math.floor(oneBotMaxPendingRaw)))
-  : 32;
-const codexCliPath = process.env.CODEX_CLI_PATH || "/Applications/Codex.app/Contents/Resources/codex";
-const codexModelCatalog = createCodexModelCatalog({
-  codexPath: codexCliPath,
-  envProvider: () => buildCodexChildEnv()
-});
-const codexModel = process.env.CODEX_REMOTE_CONTACT_CODEX_MODEL || "gpt-5.4-mini";
-const codexReasoningEffort = process.env.CODEX_REMOTE_CONTACT_REASONING_EFFORT || "low";
-const codexMaxConcurrencyRaw = Number(process.env.CODEX_REMOTE_CONTACT_CODEX_MAX_CONCURRENCY || 2);
-const codexMaxConcurrency = Number.isFinite(codexMaxConcurrencyRaw)
-  ? Math.max(1, Math.min(8, Math.floor(codexMaxConcurrencyRaw)))
-  : 2;
-const codexMaxPendingRaw = Number(process.env.CODEX_REMOTE_CONTACT_CODEX_MAX_PENDING || 32);
-const codexMaxPending = Number.isFinite(codexMaxPendingRaw)
-  ? Math.max(0, Math.min(256, Math.floor(codexMaxPendingRaw)))
-  : 32;
-const imessageCodexModel = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_CODEX_MODEL || "gpt-5.4";
-const imessageCodexReasoningEffort = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_REASONING_EFFORT || "medium";
-const qqEnhancerEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_ENHANCER !== "0";
-const qqMemoryLimit = Number(process.env.CODEX_REMOTE_CONTACT_QQ_MEMORY_LIMIT || 10);
-const qqGroupMemoryLimit = Number(process.env.CODEX_REMOTE_CONTACT_QQ_GROUP_MEMORY_LIMIT || 200);
-const qqProactiveReplyEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE !== "0";
-const qqProactiveJudgeEveryMessages = Math.max(1, Math.min(1000, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE_EVERY_MESSAGES || 20))));
-const qqProactiveJudgeEveryMinutes = Math.max(0, Math.min(1440, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE_EVERY_MINUTES || 5))));
-const qqProactiveMinutePollMs = Math.max(5000, Math.min(60000, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_MINUTE_POLL_MS || 15000))));
-const qqProactiveJudgeEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE !== "0";
-const qqAccountStickersEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_ACCOUNT_STICKERS !== "0";
-const qqAccountStickerCount = Math.max(1, Number(process.env.CODEX_REMOTE_CONTACT_QQ_ACCOUNT_STICKER_COUNT || 80));
-const qqAccountStickerCacheMs = Math.max(30 * 1000, Number(process.env.CODEX_REMOTE_CONTACT_QQ_ACCOUNT_STICKER_CACHE_MS || 5 * 60 * 1000));
-const defaultQqProactiveJudgeModel = "nousresearch/hermes-3-llama-3.1-405b:free";
-const qqProactiveJudgeModel = process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE_MODEL || defaultQqProactiveJudgeModel;
-const qqProactiveJudgeTimeoutMs = Number(process.env.CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE_TIMEOUT_MS || 6500);
-const qqProactiveJudgeMinInterest = 20;
-const qqSelfPersonaScopeInitialMessages = Math.max(16, Math.min(200, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_INITIAL_MESSAGES || 64))));
-const qqSelfPersonaScopeMessages = Math.max(16, Math.min(400, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_MESSAGES || 96))));
-const qqSelfPersonaScopeBotReplies = Math.max(4, Math.min(160, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_BOT_REPLIES || 24))));
-const qqSelfPersonaScopeCooldownHours = Math.max(1, Math.min(168, Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_SCOPE_COOLDOWN_HOURS || 4)));
-const qqSelfPersonaGenerationInitialMessages = Math.max(40, Math.min(1000, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_INITIAL_MESSAGES || 160))));
-const qqSelfPersonaGenerationMessages = Math.max(40, Math.min(2000, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_MESSAGES || 320))));
-const qqSelfPersonaGenerationBotReplies = Math.max(12, Math.min(600, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_BOT_REPLIES || 80))));
-const qqSelfPersonaGenerationScopeSummaries = Math.max(2, Math.min(40, Math.floor(Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_SCOPE_SUMMARIES || 12))));
-const qqSelfPersonaGenerationCooldownHours = Math.max(1, Math.min(720, Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_GENERATION_COOLDOWN_HOURS || 12)));
-const qqSelfPersonaFailureRetryHours = Math.max(0.25, Math.min(24, Number(process.env.CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_FAILURE_RETRY_HOURS || 1)));
-const openRouterApiKey = process.env.OPENROUTER_API_KEY || process.env.CODEX_REMOTE_CONTACT_OPENROUTER_API_KEY || "";
-const openRouterBaseUrl = process.env.OPENROUTER_BASE_URL || process.env.CODEX_REMOTE_CONTACT_OPENROUTER_BASE_URL || "https://openrouter.ai/api/v1";
-const imessageMemoryLimit = Number(process.env.CODEX_REMOTE_CONTACT_IMESSAGE_MEMORY_LIMIT || 120);
-const remoteExecutionMemoryLimit = Number(process.env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MEMORY_LIMIT || 160);
-const remoteExecutionIdleTtlMs = Number(process.env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_IDLE_TTL_MS || 15 * 60 * 1000);
-const sqliteTimeoutMsRaw = Number(process.env.CODEX_REMOTE_CONTACT_SQLITE_TIMEOUT_MS || 8_000);
-const sqliteTimeoutMs = Number.isFinite(sqliteTimeoutMsRaw)
-  ? Math.max(1_000, Math.min(30_000, Math.floor(sqliteTimeoutMsRaw)))
-  : 8_000;
-const sqliteMaxOutputBytesRaw = Number(process.env.CODEX_REMOTE_CONTACT_SQLITE_MAX_OUTPUT_BYTES || 2 * 1024 * 1024);
-const sqliteMaxOutputBytes = Number.isFinite(sqliteMaxOutputBytesRaw)
-  ? Math.max(64 * 1024, Math.min(16 * 1024 * 1024, Math.floor(sqliteMaxOutputBytesRaw)))
-  : 2 * 1024 * 1024;
-const codexQuotaCacheTtlMsRaw = Number(process.env.CODEX_REMOTE_CONTACT_QUOTA_CACHE_TTL_MS || 30_000);
-const codexQuotaCacheTtlMs = Number.isFinite(codexQuotaCacheTtlMsRaw)
-  ? Math.max(5_000, Math.min(5 * 60_000, Math.floor(codexQuotaCacheTtlMsRaw)))
-  : 30_000;
-const qqWebLookupEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP !== "0";
-const qqWebLookupTimeoutMs = Number(
-  process.env.CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS
-  || process.env.CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP_TIMEOUT_MS
-  || 12000
-);
-const qqWebLookupAttemptTimeoutMs = Number(
-  process.env.CODEX_REMOTE_CONTACT_QQ_WEB_ATTEMPT_TIMEOUT_MS
-  || Math.min(6500, Math.max(2500, Math.floor(qqWebLookupTimeoutMs * 0.55)))
-);
-const qqWebSearchProvider = String(process.env.CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER || "auto").trim().toLowerCase();
-const qqWebSearchPreset = String(process.env.CODEX_REMOTE_CONTACT_QQ_WEB_PRESET || "balanced").trim().toLowerCase();
-const qqWebSearchProviderConfig = String(process.env.CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS || "").trim();
-const qqSocialExtensionBase = String(process.env.CODEX_REMOTE_CONTACT_QQ_SOCIAL_API_BASE || "").trim().replace(/\/$/, "");
-const tavilyApiKey = process.env.TAVILY_API_KEY || process.env.CODEX_REMOTE_CONTACT_TAVILY_API_KEY || "";
-const qqOwnerFileImageTasksEnabled = process.env.CODEX_REMOTE_CONTACT_QQ_OWNER_FILE_IMAGE_TASKS !== "0";
-const qqImageMaxBytesRaw = Number(process.env.CODEX_REMOTE_CONTACT_QQ_IMAGE_MAX_BYTES || 20 * 1024 * 1024);
-const qqImageMaxBytes = Number.isFinite(qqImageMaxBytesRaw)
-  ? Math.max(256 * 1024, Math.min(100 * 1024 * 1024, Math.floor(qqImageMaxBytesRaw)))
-  : 20 * 1024 * 1024;
-const qqBubbleSeparator = normalizeQqBubbleSeparator(process.env.CODEX_REMOTE_CONTACT_QQ_BUBBLE_SEPARATOR || "|||");
-const qqBubbleSendDelayMs = Math.max(0, Number(process.env.CODEX_REMOTE_CONTACT_QQ_BUBBLE_SEND_DELAY_MS || 650));
-const qqBubbleMaxCount = Math.max(1, Number(process.env.CODEX_REMOTE_CONTACT_QQ_BUBBLE_MAX_COUNT || 6));
-const hubPortRaw = Number(process.env.CODEX_REMOTE_CONTACT_PORT || 3789);
-const hubPort = Number.isInteger(hubPortRaw) && hubPortRaw > 0 && hubPortRaw <= 65535 ? hubPortRaw : 3789;
-const hubHostOverride = String(process.env.CODEX_REMOTE_CONTACT_HOST || "").trim();
 let currentHubHost = hubHostOverride || "127.0.0.1";
-const hubAllowedOrigins = parseAllowedOrigins(process.env.CODEX_REMOTE_CONTACT_CORS_ORIGINS, [
-  `http://127.0.0.1:${hubPort}`,
-  `http://localhost:${hubPort}`,
-  `http://[::1]:${hubPort}`
-]);
-const allowRemoteHubBinding = process.env.CODEX_REMOTE_CONTACT_ALLOW_REMOTE === "1";
-const proxyShortcutName = process.env.CODEX_REMOTE_CONTACT_PROXY_TOGGLE_SHORTCUT || "切换VPN";
-const proxyConfirmTtlMs = Number(process.env.CODEX_REMOTE_CONTACT_PROXY_CONFIRM_TTL_MS || 3 * 60 * 1000);
-const imessageAttachmentSendingEnabled = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_ATTACHMENTS === "1";
-const imessageImageDelivery = process.env.CODEX_REMOTE_CONTACT_IMESSAGE_IMAGE_DELIVERY || (imessageAttachmentSendingEnabled ? "attachment" : "photos");
 const baseBuildQqStickerCatalog = buildQqStickerCatalog;
 const baseResolveQqReplyMedia = resolveQqReplyMedia;
 let qqAccountStickerCatalogCache = {
@@ -522,157 +503,18 @@ function normalizeQqPresetList(value, fallback) {
   return list.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 20);
 }
 
-const state = {
-  network: {
-    allowLanAccess: false
-  },
-  ai: {
-    provider: "codex-cli",
-    model: codexModel || "default",
-    reasoningEffort: codexReasoningEffort,
-    imessageModel: imessageCodexModel,
-    imessageReasoningEffort: imessageCodexReasoningEffort,
-    workspace: codexWorkspaceDir
-  },
-  channels: {
-    qq: false,
-    imessage: true
-  },
-  qq: {
-    groupMode: "mention-only",
-    allowedGroups: [],
-    ownerUserIds: [],
-    bannedUserIds: [],
-    bannedUntilByUserId: createSafeRecord(),
-    enhancer: {
-      enabled: qqEnhancerEnabled
-    },
-    webLookup: {
-      enabled: qqWebLookupEnabled
-    },
-    proactive: {
-      enabled: qqEnhancerEnabled && qqProactiveReplyEnabled,
-      judgeEveryMessages: qqProactiveJudgeEveryMessages,
-      judgeEveryMinutes: qqProactiveJudgeEveryMinutes,
-      messageCountByGroupId: createSafeRecord(),
-      lastJudgeAtByGroupId: createSafeRecord(),
-      judgeInFlightByGroupId: createSafeRecord(),
-      pendingImageRequests: createSafeRecord(),
-      judge: {
-        enabled: qqProactiveJudgeEnabled,
-        provider: "openrouter",
-        model: qqProactiveJudgeModel,
-        baseUrl: openRouterBaseUrl,
-        timeoutMs: qqProactiveJudgeTimeoutMs,
-        minInterest: qqProactiveJudgeMinInterest,
-        maxRecentMessages: 8,
-        apiKeyConfigured: Boolean(openRouterApiKey),
-        preset: defaultQqProactiveInterestPreset()
-      }
-    },
-    commandPermissions: {
-      publicCommands: createSafeRecord(),
-      userCommands: createSafeRecord()
-    },
-    activeGeneration: null,
-    activeGenerations: createSafeRecord(),
-    pendingReplies: createSafeRecord(),
-    events: [],
-    memory: {
-      enabled: true,
-      perGroupLimit: qqMemoryLimit,
-      groupRecentLimit: qqGroupMemoryLimit,
-      entries: createSafeRecord(),
-      recentMessages: createSafeRecord()
-    },
-    publicMemory: {
-      enabled: true,
-      maxEntries: 120,
-      entries: []
-    },
-    personas: {
-      groups: createSafeRecord()
-    },
-    selfPersona: createEmptyQqSelfPersona(),
-    conversationMemory: createEmptyQqConversationMemory()
-  },
-  imessage: {
-    trustedHandles: [],
-    replyHandle: "",
-    lastRowId: 0,
-    cursorReady: false,
-    watchStartedAtAppleDate: 0,
-    status: "idle",
-    lastError: null,
-    events: [],
-    memory: {
-      perHandleLimit: imessageMemoryLimit,
-      entries: createSafeRecord()
-    }
-  },
-  proxy: {
-    pendingAction: null
-  },
-  unifiedMemory: {
-    autoWriteOnSkillRecall: false,
-    autoWriteOnIMessageRecall: true,
-    manualHandoffCommand: true
-  },
-  unifiedMemoryPendingClear: null,
-  remoteExecution: {
-    enabled: false,
-    pendingAction: null,
-    model: process.env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MODEL || imessageCodexModel,
-    reasoningEffort: process.env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_REASONING_EFFORT || imessageCodexReasoningEffort,
-    skill: process.env.CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_SKILL || "none",
-    idleTtlMs: remoteExecutionIdleTtlMs,
-    lastActivityAt: null,
-    busy: false,
-    memory: {
-      limit: remoteExecutionMemoryLimit,
-      entries: []
-    }
-  },
-  maintenance: {
-    startedAt: new Date().toISOString(),
-    oneBot: {
-      ok: false,
-      lastCheckedAt: null,
-      lastError: null,
-      selfId: null,
-      nickname: null
-    },
-    codex: {
-      path: codexCliPath,
-      lastRunAt: null,
-      lastDurationMs: null,
-      lastOk: null,
-      lastError: null,
-      quota: null
-    },
-    webLookup: {
-      enabled: qqWebLookupEnabled,
-      effectiveProvider: null,
-      providerPreset: qqWebSearchPreset,
-      configuredProviders: [],
-      lastQuery: null,
-      lastRunAt: null,
-      lastDurationMs: null,
-      lastOk: null,
-      lastError: null,
-      lastProviderErrors: [],
-      lastAttempts: []
-    }
-  }
-};
+const state = createInitialState({
+  config: environmentConfig,
+  codexWorkspaceDir,
+  qqProactiveInterestPreset: defaultQqProactiveInterestPreset()
+});
 
-const seenOneBotMessageIds = new Map();
+const oneBotEventDeduplicator = createOneBotEventDeduplicator();
 const qqProactiveLatestEventByGroupId = new Map();
 const qqGroupActivityVersionByGroupId = new Map();
 const qqColdInterestStatusByGroupId = new Map();
 const qqPrivateInterestStatusByUserId = new Map();
 const qqAdaptiveLearningSnapshotLoggedGroups = new Set();
-const seenMessageTtlMs = 10 * 60 * 1000;
 const stoppedQqGenerationIds = new Set();
 const activeCodexChildren = new Set();
 const backgroundTasks = new Set();
@@ -11409,109 +11251,6 @@ async function attachReplyContext(event) {
   }
 }
 
-function normalizeOneBotEvent(payload) {
-  const segments = Array.isArray(payload.message) ? payload.message : [];
-  const hasAudioSegment = segments.some((segment) => ["record", "voice", "audio"].includes(String(segment?.type || "").toLowerCase()));
-  const textFromSegments = segments
-    .filter((segment) => segment?.type === "text")
-    .map((segment) => segment.data?.text ?? "")
-    .join("")
-    .trim();
-  const hasAtSegment = segments.some((segment) => segment?.type === "at");
-  const hasSelfAtSegment = segments.some((segment) => isSelfAtSegment(segment, payload.self_id));
-  const atTargets = segments
-    .filter((segment) => segment?.type === "at")
-    .map((segment) => segment.data?.qq ?? segment.data?.id ?? segment.data?.uin)
-    .filter((target) => target != null)
-    .map(String);
-  const replySegment = segments.find((segment) => segment?.type === "reply");
-  const replyMessageId = replySegment?.data?.id || replySegment?.data?.message_id;
-  const messageType = payload.message_type === "private" ? "private_message" : "group_message";
-  const images = extractOneBotImageInputs(payload);
-  const contentContext = extractQqRichMessageContent(segments, payload.raw_message || textFromSegments);
-  const forwardIds = segments
-    .filter((segment) => String(segment?.type || "").toLowerCase() === "forward")
-    .map((segment) => String(segment?.data?.id || segment?.data?.res_id || "").trim())
-    .filter(Boolean);
-  for (const match of String(payload.raw_message || "").matchAll(/\[CQ:forward,[^\]]*\bid=([^,\]]+)/gi)) {
-    if (match[1]) forwardIds.push(match[1]);
-  }
-
-  return {
-    type: payload.message_type === "group" && hasSelfAtSegment ? "group_at" : messageType,
-    selfId: normalizeQqIdentifier(payload.self_id),
-    groupId: normalizeQqIdentifier(payload.group_id),
-    senderId: normalizeQqIdentifier(payload.user_id),
-    senderName: payload.sender?.card || payload.sender?.nickname || String(payload.user_id || "群友"),
-    text: contentContext.displayText || payload.raw_message || textFromSegments,
-    contentContext: {
-      ...contentContext,
-      forwardIds: [...new Set(forwardIds)]
-    },
-    images,
-    hasAudioSegment,
-    hasAtSegment,
-    hasSelfAtSegment,
-    atTargets,
-    hasReplySegment: Boolean(replySegment),
-    replyMessageId: replyMessageId == null ? undefined : String(replyMessageId),
-    isReplyToSelf: false,
-    raw: payload
-  };
-}
-
-function isOneBotPokeNotice(payload) {
-  return payload?.post_type === "notice"
-    && payload?.notice_type === "notify"
-    && payload?.sub_type === "poke";
-}
-
-function isOneBotPokeToSelf(payload) {
-  if (!isOneBotPokeNotice(payload)) return false;
-  const selfId = normalizeQqIdentifier(payload.self_id) || "";
-  const targetId = normalizeQqIdentifier(payload.target_id) || "";
-  const senderId = getOneBotPokeSenderId(payload);
-  return Boolean(selfId && targetId === selfId && senderId && senderId !== selfId);
-}
-
-function getOneBotPokeSenderId(payload) {
-  return normalizeQqIdentifier(payload?.sender_id ?? payload?.user_id ?? payload?.operator_id) || "";
-}
-
-function normalizeOneBotPokeEvent(payload) {
-  const senderId = getOneBotPokeSenderId(payload);
-  const targetId = normalizeQqIdentifier(payload.target_id);
-  const isGroup = payload.group_id != null;
-  const senderName = payload.sender?.card || payload.sender?.nickname || `QQ ${senderId || "群友"}`;
-  return {
-    type: isGroup ? "group_poke" : "private_poke",
-    selfId: normalizeQqIdentifier(payload.self_id),
-    groupId: isGroup ? normalizeQqIdentifier(payload.group_id) : undefined,
-    senderId,
-    senderName,
-    text: `${senderName} 拍了拍你。`,
-    images: [],
-    hasAudioSegment: false,
-    hasAtSegment: false,
-    hasSelfAtSegment: false,
-    atTargets: [],
-    hasReplySegment: false,
-    replyMessageId: undefined,
-    isReplyToSelf: false,
-    poke: {
-      targetId,
-      rawInfo: payload.raw_info
-    },
-    raw: payload
-  };
-}
-
-function isSelfAtSegment(segment, selfId) {
-  if (segment?.type !== "at" || selfId == null) return false;
-  const target = segment.data?.qq ?? segment.data?.id ?? segment.data?.uin;
-  return target != null && String(target) === String(selfId);
-}
-
 function enrichQqEvent(event, { allowOwner = event?.ownerSourceTrusted !== false } = {}) {
   const senderId = normalizeQqIdentifier(event?.senderId);
   const groupId = normalizeQqIdentifier(event?.groupId);
@@ -11527,52 +11266,6 @@ function enrichQqEvent(event, { allowOwner = event?.ownerSourceTrusted !== false
     isOwner,
     senderLabel: getSenderLabel(senderId, event.senderName)
   };
-}
-
-function normalizeQqIdentifier(value) {
-  const id = String(value ?? "").trim();
-  return /^\d{4,20}$/.test(id) ? id : undefined;
-}
-
-function stripUntrustedQqLocalImagePaths(event) {
-  if (!Array.isArray(event?.images)) return event;
-  return {
-    ...event,
-    images: event.images.map((image) => {
-      const file = String(image?.file || "").replace(/^file:\/\//, "");
-      if (!isAbsolute(file)) return image;
-      return { ...image, file: "", path: "", file_path: "", filePath: "" };
-    })
-  };
-}
-
-function getEventDedupeKey(event) {
-  const raw = event.raw || {};
-  if (raw.message_id != null) return `message_id:${raw.message_id}`;
-  if (raw.message_seq != null && event.groupId && event.senderId) {
-    return `message_seq:${event.groupId}:${event.senderId}:${raw.message_seq}`;
-  }
-  if (isQqPokeEvent(event)) {
-    const scope = event.groupId ? `group:${event.groupId}` : `private:${event.senderId || ""}`;
-    const targetId = event.poke?.targetId || raw.target_id || "";
-    const time = raw.time || "";
-    return `poke:${scope}:${event.senderId || ""}:${targetId}:${time}`;
-  }
-  return null;
-}
-
-function rememberEvent(key) {
-  if (!key) return false;
-  const normalizedKey = String(key).slice(0, 256);
-  const now = Date.now();
-  while (seenOneBotMessageIds.size > 0) {
-    const [oldestKey, oldestAt] = seenOneBotMessageIds.entries().next().value;
-    if (now - oldestAt <= seenMessageTtlMs && seenOneBotMessageIds.size < 10_000) break;
-    seenOneBotMessageIds.delete(oldestKey);
-  }
-  if (seenOneBotMessageIds.has(normalizedKey)) return true;
-  seenOneBotMessageIds.set(normalizedKey, now);
-  return false;
 }
 
 async function handleApi(req, res) {
@@ -11827,7 +11520,7 @@ async function handleApi(req, res) {
       }
       ensureQqTraceId(event);
       const dedupeKey = getEventDedupeKey(event);
-      if (rememberEvent(dedupeKey)) {
+      if (oneBotEventDeduplicator.remember(dedupeKey)) {
         const record = {
           id: crypto.randomUUID(),
           receivedAt: new Date().toISOString(),
@@ -11855,7 +11548,9 @@ async function handleApi(req, res) {
       return sendJson(res, 200, { ignored: true, reason: "Only group/private message events are handled" });
     }
 
-    const normalizedOneBotEvent = normalizeOneBotEvent(payload);
+    const normalizedOneBotEvent = normalizeOneBotEvent(payload, {
+      extractImageInputs: extractOneBotImageInputs
+    });
     const normalizedEvent = await attachQqRichMessageContext(
       trustedOneBotRequest ? normalizedOneBotEvent : stripUntrustedQqLocalImagePaths(normalizedOneBotEvent)
     );
@@ -11865,7 +11560,7 @@ async function handleApi(req, res) {
     }
     ensureQqTraceId(event);
     const dedupeKey = getEventDedupeKey(event);
-    if (rememberEvent(dedupeKey)) {
+    if (oneBotEventDeduplicator.remember(dedupeKey)) {
       const record = {
         id: crypto.randomUUID(),
         receivedAt: new Date().toISOString(),

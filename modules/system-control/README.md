@@ -1,10 +1,12 @@
-# System Control Module / 系统控制模块
+# macOS System Control / macOS 系统控制
 
-Scripts in this folder manage display sleep, keep-awake, and built-in display backlight.
+Optional scripts for display sleep, keep-awake and built-in-display backlight. They are not required for QQ, OneBot or Hub.
 
-这个目录里的脚本用于管理显示器休眠、防休眠和内置屏背光。
+用于显示器休眠、防休眠和内置屏背光的可选脚本；QQ、OneBot 和 Hub 不依赖这些能力。
 
-Useful commands / 常用命令：
+## Commands / 命令
+
+Run them from this directory or use the full path:
 
 ```bash
 ./build-backlight-helper.command
@@ -14,13 +16,22 @@ Useful commands / 常用命令：
 ./stop-keep-awake.command
 ```
 
-`backlight-off-keep-awake.command` uses a small C helper compiled from `src/codexremotecontact-backlight.c`. The helper only targets online built-in displays and skips external displays.
+| Script | Purpose / 用途 |
+| --- | --- |
+| `build-backlight-helper.command` | Compile the local C helper / 编译本地 C helper |
+| `backlight-off-keep-awake.command` | Turn off built-in backlight while keeping the system awake / 关闭内置屏背光并保持系统唤醒 |
+| `backlight-restore.command` | Restore saved backlight state / 恢复保存的背光状态 |
+| `keep-awake-display-off.command` | Keep work running with display sleep / 保持任务运行并允许显示器关闭 |
+| `stop-keep-awake.command` | Stop the matching keep-awake process / 停止对应防休眠进程 |
 
-`backlight-off-keep-awake.command` 使用由 `src/codexremotecontact-backlight.c` 编译出来的小型 C helper。它只处理在线的内置显示器，并跳过外接显示器。
+The helper built from `src/codexremotecontact-backlight.c` targets online built-in displays only and skips external displays.
 
-Requirements / 依赖：
+由 `src/codexremotecontact-backlight.c` 编译的 helper 只处理在线内置屏，跳过外接显示器。
 
-- Xcode Command Line Tools for compiling the helper.
-- Xcode Command Line Tools：用于编译 helper。
-- `brightness` is optional but useful for debugging and fallback workflows.
-- `brightness` 可选，适用于电脑GUI控制。
+## Requirements and safety / 依赖与安全
+
+- macOS and Xcode Command Line Tools / macOS 与 Xcode Command Line Tools。
+- `brightness` is optional for diagnostics and fallback workflows / `brightness` 仅用于可选排障与备用流程。
+- Build before the first backlight command and verify `modules/system-control/bin/` / 首次控制背光前先编译并检查输出目录。
+- Do not run display-changing commands merely to test project code; use them only on explicit request / 不要为了测试项目代码改变显示器状态，只在明确请求时使用。
+- Restore backlight and stop keep-awake when the task ends / 任务结束时恢复背光并停止防休眠。

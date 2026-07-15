@@ -2,7 +2,7 @@
 set -euo pipefail
 
 resolve_script_path() {
-  local source="$0"
+  local source="${1:-$0}"
   while [ -L "$source" ]; do
     local dir
     dir="$(cd -P "$(dirname "$source")" && pwd)"
@@ -12,7 +12,7 @@ resolve_script_path() {
   cd -P "$(dirname "$source")" && pwd
 }
 
-SCRIPT_DIR="$(resolve_script_path)"
+SCRIPT_DIR="$(resolve_script_path "$0")"
 PROJECT_DIR="${GPT_QQ_BOT_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 SETTINGS_FILE="$PROJECT_DIR/data/settings.json"
 LOCAL_ENV_FILE="$PROJECT_DIR/config/local.env"

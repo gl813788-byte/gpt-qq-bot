@@ -1,0 +1,209 @@
+# 配置参考
+
+简体中文 | [English](CONFIGURATION.md)
+
+项目把“可持久修改的用户设置”和“密钥/进程启动参数”分开保存。部署或修改配置时，优先让 Codex 检查当前机器并做字段级合并，避免整文件覆盖。
+
+## 配置来源与优先级
+
+```text
+进程环境变量
+    -> src/config/environment.js 归一化为启动默认值
+    -> data/settings.json 覆盖可持久字段
+    -> 运行时通过仪表盘或 QQ 命令修改并原子保存
+```
+
+- `npm run ncc -- start` 会先加载 `config/local.env`。
+- 直接执行 `npm start` 不会自动加载 `config/local.env`，只继承当前 shell 的环境。
+- 本机定制的全局 `ncc` 可能改用 `/root/.napcat-codex-control.env` 与 `/root/.codex/ncc-profiles/active.env`；先运行 `ncc help` 判断命令来源。
+- `data/settings.json` 加载后会覆盖对应的环境默认值，例如模型、群白名单和主动兴趣开关。
+- OneBot、管理 API、OpenRouter 和 Tavily 密钥应保留在未跟踪环境文件中。
+
+## 配置文件
+
+| 文件 | 用途 | 是否提交 |
+| --- | --- | --- |
+| `config/settings.example.json` | 持久配置 schema 与示例 | 是 |
+| `data/settings.json` | 当前机器的用户设置、权限和网络状态 | 否 |
+| `config/local.env` | 仓库 `ncc start` 使用的本地环境变量与密钥 | 否；权限建议 `600` |
+| `src/config/environment.js` | 环境变量名称、默认值、范围和归一化的权威实现 | 是 |
+| `runtime/logs/hub.jsonl` | 结构化运行日志，不是配置 | 否 |
+
+首次配置：
+
+```bash
+cp config/settings.example.json data/settings.json
+chmod 600 data/settings.json
+npm run ncc -- setup
+```
+
+已有 `data/settings.json` 时不要再次复制示例文件。
+
+## `data/settings.json`
+
+最小可用配置：
+
+```json
+{
+  "version": 1,
+  "qq": {
+    "allowedGroups": ["QQ群号"],
+    "ownerUserIds": ["主人QQ号"],
+    "bannedUserIds": [],
+    "bannedUntilByUserId": {},
+    "enhancer": { "enabled": true },
+    "proactive": {
+      "enabled": true,
+      "judgeEveryMessages": 20,
+      "judge": { "enabled": true }
+    },
+    "commandPermissions": {
+      "publicCommands": {
+        "menu": true,
+        "newDialog": true,
+        "stop": true,
+        "summary": true
+      },
+      "userCommands": {}
+    }
+  },
+  "ai": {
+    "model": "gpt-5.4-mini",
+    "reasoningEffort": "low"
+  },
+  "branding": {
+    "assistantName": "assistant",
+    "ownerLabel": "主人",
+    "assistantMentions": ["@assistant"]
+  }
+}
+```
+
+主要字段：
+
+| 路径 | 含义 |
+| --- | --- |
+| `qq.allowedGroups` | 允许处理的 QQ 群号；群号按字符串保存 |
+| `qq.ownerUserIds` | 拥有绝对管理权限的 QQ 号 |
+| `qq.bannedUserIds` / `bannedUntilByUserId` | 永久与临时 ban |
+| `qq.enhancer.enabled` | 图片、风格、兴趣等 QQ 增强总开关 |
+| `qq.proactive.*` | 普通消息/分钟兴趣触发与 judge 配置 |
+| `qq.commandPermissions` | 非主人可见且可执行的公共/用户级指令 |
+| `imessage.trustedHandles` | 允许触发 iMessage 的联系人 |
+| `imessage.replyHandle` | iMessage 回复目标 |
+| `ai.*` | QQ 与 iMessage 使用的模型和思考强度 |
+| `remoteExecution.*` | 远程执行通道模型、思考强度与 Skill |
+| `unifiedMemory.*` | 自动写入与手动交接策略 |
+| `branding.*` | 助手名称、主人称呼和 @ 别名 |
+| `network.allowLanAccess` | 仪表盘持久化的局域网开关 |
+
+模型切换应使用当前 Codex 登录实际提供的模型列表；不要把历史模型名当成永久可用值。
+
+## 核心环境变量
+
+### Hub 与安全
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CODEX_REMOTE_CONTACT_HOST` | 回环地址 | 显式监听地址 |
+| `CODEX_REMOTE_CONTACT_PORT` | `3789` | Hub 端口，必须为有效端口 |
+| `CODEX_REMOTE_CONTACT_ALLOW_REMOTE` | `0` | 设为 `1` 才允许显式非回环绑定 |
+| `CODEX_REMOTE_CONTACT_CORS_ORIGINS` | 本机三个默认 Origin | 允许的 Origin 列表 |
+| `CODEX_REMOTE_CONTACT_API_TOKEN` | 空 | 非回环管理 API 认证 token |
+
+非回环监听必须同时满足远程绑定开关和 API token；通配符 CORS 没有 token 时会拒绝启动。
+
+### Codex
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CODEX_CLI_PATH` | macOS App 内置路径 | Codex 可执行文件；Linux/Windows 部署应设置或保证 `codex` 可发现 |
+| `CODEX_REMOTE_CONTACT_CODEX_MODEL` | `gpt-5.4-mini` | QQ 默认模型 |
+| `CODEX_REMOTE_CONTACT_REASONING_EFFORT` | `low` | QQ 默认思考强度 |
+| `CODEX_REMOTE_CONTACT_CODEX_MAX_CONCURRENCY` | `2` | Codex 同时运行数，范围 1–8 |
+| `CODEX_REMOTE_CONTACT_CODEX_MAX_PENDING` | `32` | 等待队列，范围 0–256 |
+| `CODEX_REMOTE_CONTACT_QUOTA_CACHE_TTL_MS` | `30000` | 额度信息缓存时间 |
+
+### OneBot
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `ONEBOT_API_BASE` | `http://127.0.0.1:3000` | OneBot HTTP API |
+| `ONEBOT_ACCESS_TOKEN` | 空 | 首选 OneBot token |
+| `CODEX_REMOTE_CONTACT_ONEBOT_TOKEN` | 空 | OneBot token 兼容名称 |
+| `CODEX_REMOTE_CONTACT_ONEBOT_TIMEOUT_MS` | `10000` | 单次 API 超时，范围 1–30 秒 |
+| `CODEX_REMOTE_CONTACT_ONEBOT_MAX_CONCURRENCY` | `8` | Webhook 并发，范围 1–32 |
+| `CODEX_REMOTE_CONTACT_ONEBOT_MAX_PENDING` | `32` | Webhook 等待队列，范围 0–256 |
+
+Hub 和 OneBot 两端 token 应一致。未配置 token 时，Webhook 仅信任 Host 和真实连接地址都为回环的请求。
+
+### QQ 行为、兴趣与媒体
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CODEX_REMOTE_CONTACT_QQ_ENHANCER` | `1` | 设为 `0` 关闭增强启动默认值 |
+| `CODEX_REMOTE_CONTACT_QQ_MEMORY_LIMIT` | `10` | 轻量会话记忆上限 |
+| `CODEX_REMOTE_CONTACT_QQ_GROUP_MEMORY_LIMIT` | `200` | 群聊滚动记录上限 |
+| `CODEX_REMOTE_CONTACT_QQ_PROACTIVE` | `1` | 主动兴趣总开关默认值 |
+| `CODEX_REMOTE_CONTACT_QQ_PROACTIVE_JUDGE` | `1` | 语义 judge 开关 |
+| `..._JUDGE_EVERY_MESSAGES` | `20` | 普通未 @ 消息阈值，范围 1–1000 |
+| `..._JUDGE_EVERY_MINUTES` | `5` | 非空周期的分钟阈值；`0` 关闭分钟分支 |
+| `..._JUDGE_MODEL` | Hermes 3 405B free | OpenRouter judge 模型 |
+| `..._JUDGE_TIMEOUT_MS` | `6500` | judge 流式空闲超时 |
+| `CODEX_REMOTE_CONTACT_QQ_IMAGE_MAX_BYTES` | `20971520` | QQ 图片上限，默认 20 MiB |
+| `CODEX_REMOTE_CONTACT_QQ_BUBBLE_SEPARATOR` | `|||` | 多气泡分隔符 |
+| `..._BUBBLE_SEND_DELAY_MS` | `650` | 气泡间基础延迟 |
+| `..._BUBBLE_MAX_COUNT` | `6` | 一次回复最大气泡数 |
+
+自我人格刷新阈值使用 `CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_*`；账号贴纸使用 `CODEX_REMOTE_CONTACT_QQ_ACCOUNT_STICKER_*`。所有精确名称、范围和默认值以 `src/config/environment.js` 为准。
+
+### 联网搜索与 judge 服务
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CODEX_REMOTE_CONTACT_QQ_WEB_LOOKUP` | `1` | QQ 联网搜索 |
+| `CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDER` | `auto` | 首选 provider |
+| `CODEX_REMOTE_CONTACT_QQ_WEB_PRESET` | `balanced` | provider 预设 |
+| `CODEX_REMOTE_CONTACT_QQ_WEB_PROVIDERS` | 空 | 自定义 provider 顺序 |
+| `CODEX_REMOTE_CONTACT_QQ_WEB_TIMEOUT_MS` | `12000` | 整体搜索超时 |
+| `CODEX_REMOTE_CONTACT_QQ_WEB_ATTEMPT_TIMEOUT_MS` | 自动 | 单 provider 超时 |
+| `TAVILY_API_KEY` | 空 | Tavily key |
+| `OPENROUTER_API_KEY` | 空 | 主动兴趣 judge key |
+| `OPENROUTER_BASE_URL` | OpenRouter 官方 API | 可选兼容端点 |
+
+可运行 `npm run ncc -- search-config` 初始化仓库环境文件。排障先看 `/api/maintenance` 和 `search` / `interest` 日志。
+
+### iMessage、远程执行与日志
+
+- `CODEX_REMOTE_CONTACT_IMESSAGE_CODEX_MODEL`、`..._REASONING_EFFORT`、`..._MEMORY_LIMIT`、`..._ATTACHMENTS` 和 `..._IMAGE_DELIVERY` 控制 macOS iMessage。
+- `CODEX_REMOTE_CONTACT_REMOTE_EXECUTION_MODEL`、`..._REASONING_EFFORT`、`..._SKILL`、`..._MEMORY_LIMIT` 和 `..._IDLE_TTL_MS` 控制确认式远程执行。
+- `CODEX_REMOTE_CONTACT_LOG_LEVEL` 默认 `debug`；`LOG_CONSOLE`、`LOG_CONSOLE_LEVELS`、`LOG_MAX_BYTES` 和 `LOG_MAX_FILES` 控制控制台与轮转。
+- `CODEX_REMOTE_CONTACT_SQLITE_TIMEOUT_MS` 和 `..._MAX_OUTPUT_BYTES` 限制本地 SQLite 查询。
+
+## 本地环境文件示例
+
+```bash
+export CODEX_CLI_PATH=/usr/local/bin/codex
+export ONEBOT_API_BASE=http://127.0.0.1:3000
+export ONEBOT_ACCESS_TOKEN=请使用真实随机值
+export OPENROUTER_API_KEY=请使用真实密钥
+export TAVILY_API_KEY=请使用真实密钥
+export CODEX_REMOTE_CONTACT_LOG_LEVEL=debug
+```
+
+```bash
+chmod 600 config/local.env
+npm run ncc -- status
+```
+
+不要把真实秘密值复制到 issue、聊天记录、截图或 Git diff 中。
+
+## 修改与验证
+
+新增环境变量时：
+
+1. 在 `src/config/environment.js` 添加解析、默认值和范围限制。
+2. 把归一化值传给消费者，不在 `server.js` 新增直接读取。
+3. 补充 `test/environment-config.test.js`。
+4. 同步本页中英文版本和维护 Skill。
+5. 运行 `npm run verify`。
