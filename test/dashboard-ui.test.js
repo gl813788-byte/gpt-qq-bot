@@ -72,6 +72,54 @@ test("dashboard CSS defines desktop-to-mobile responsive breakpoints", () => {
   assert.ok(breakpoints.some((value) => value >= 800), "CSS must include a tablet/desktop breakpoint");
 });
 
+test("dashboard overview follows the editorial operations hierarchy with restrained motion", () => {
+  const overviewStart = html.indexOf('id="view-overview"');
+  const channelsStart = html.indexOf('id="view-channels"');
+  const overview = html.slice(overviewStart, channelsStart);
+
+  for (const className of ["overview-lead", "service-topology", "metric-ticker", "overview-operations-grid", "pulse-chart", "overview-lower-grid"]) {
+    assert.match(overview, new RegExp(`class="[^"]*${className}`));
+  }
+  for (const id of ["heroCard", "heroTitle", "heroBody", "serviceTopology", "overviewBrief", "overviewStats", "healthGrid", "pulseLine", "pulsePoint", "quotaOverview", "recentTimeline", "quickChannels"]) {
+    assert.match(overview, new RegExp(`id="${id}"`));
+  }
+  for (const service of ["QQ", "OneBot", "Codex", "Web", "HUB"]) assert.match(overview, new RegExp(`>${service}<`));
+  assert.match(css, /@keyframes draw-pulse/);
+  assert.match(css, /@keyframes editorial-enter/);
+  assert.match(css, /@keyframes precision-pulse/);
+  assert.match(css, /\.pulse-layout\s*\{\s*grid-template-columns:\s*1fr/);
+  assert.match(css, /\.health-grid\s*\{\s*grid-template-columns:\s*repeat\(4/);
+  assert.match(css, /\.pulse-chart svg\s*\{[^}]*width:\s*100%[^}]*height:\s*210px/);
+  assert.match(css, /@media \(prefers-reduced-motion: reduce\)/);
+});
+
+test("dashboard realtime visuals are driven by API samples instead of fixed demo values", () => {
+  assert.match(html, /id="pulseLine" class="pulse-line" d=""/);
+  assert.doesNotMatch(html, /M0 103C34 96/);
+  assert.match(javascript, /function recordRuntimeSample\(latencyMs\)/);
+  assert.match(javascript, /performance\.now\(\) - requestStartedAt/);
+  assert.match(javascript, /function renderRuntimePulse\(\)/);
+  assert.match(javascript, /Math\.round\(\(samples\[0\]\.at \+ latest\.at\) \/ 2\)/);
+  assert.match(javascript, /function renderServiceTopology\(\)/);
+  assert.match(javascript, /sessionStorage\.setItem\(`\$\{STORAGE_PREFIX\}runtimeSamples`/);
+  assert.match(javascript, /app\.view === "memory"[^\n]+refreshMemory/);
+  assert.match(javascript, /\["overview", "channels", "intelligence", "settings"\][^\n]+refreshMaintenance/);
+  assert.match(css, /\.topology-node\.ok i/);
+  assert.match(css, /\.topology-node\.bad i/);
+});
+
+test("dashboard keeps real channel, memory, log, and network controls in the redesigned workspaces", () => {
+  for (const className of ["event-table-head", "memory-shell", "log-filters", "settings-grid"]) {
+    assert.match(html, new RegExp(`class="[^"]*${className}`));
+  }
+  assert.match(javascript, /class="connection-row/);
+  assert.match(javascript, /memory-browser/);
+  assert.match(javascript, /class="event-row"/);
+  for (const id of ["qqToggle", "addGroupForm", "botSettingsForm", "memorySearch", "logFilterForm", "lanAccessToggle", "publicTunnelToggle"]) {
+    assert.match(html, new RegExp(`id="${id}"`));
+  }
+});
+
 test("dashboard logs keep localized copy and distinct severity/category colors", () => {
   assert.match(javascript, /entry\.messageZh\s*\|\|\s*entry\.message/);
   assert.match(javascript, /entry\.errorZh/);
@@ -113,7 +161,7 @@ test("dashboard live log view requests verbose entries and renders every detail 
     assert.match(html, new RegExp(`id="${id}"`));
   }
   assert.match(javascript, /verbose:\s*"1"/);
-  assert.match(javascript, /app\.view === "activity" && app\.liveLogs && now - app\.lastFetch\.logs >= 1_000/);
+  assert.match(javascript, /app\.view === "activity" && app\.liveLogs &&[^\n]+now - app\.lastFetch\.logs >= 1_000/);
   assert.match(javascript, /function renderLogDetails\(entry\)/);
   assert.match(javascript, /Object\.entries\(entry\.details \|\| \{\}\)/);
   assert.match(css, /\.live-log-state\.active\s*\{/);
