@@ -55,11 +55,22 @@ function proactiveState(timeoutMs = 1500, overrides = {}) {
   };
 }
 
-function jsonJudgeResponse({ shouldReply = true, interest = 88 } = {}) {
+function jsonJudgeResponse({
+  shouldReply = true,
+  interest = 88,
+  semanticIntent = "群友希望 Bot 对当前话题作出简短回应"
+} = {}) {
   return new Response(JSON.stringify({
     choices: [{
       message: {
-        content: `FINAL_JSON: {"shouldReply":${shouldReply},"interest":${interest},"reason":"测试","replyStyle":"简短"}`
+        content: `FINAL_JSON: ${JSON.stringify({
+          analysis: "测试判断",
+          semanticIntent,
+          shouldReply,
+          interest,
+          reason: "测试",
+          replyStyle: "简短"
+        })}`
       },
       finish_reason: "stop"
     }]
@@ -83,7 +94,7 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
       { data: sse({ choices: [{ delta: { reasoning: "分析一" } }] }) },
       { delayMs: 900, data: sse({ choices: [{ delta: { reasoning: "分析二" } }] }) },
       { delayMs: 900, data: sse({ choices: [{ delta: { content: "ANALYSIS: 话题相关，可以自然补充。\nFINAL_JSON: " } }] }) },
-      { delayMs: 900, data: sse({ choices: [{ delta: { content: "{\"shouldReply\":true,\"interest\":88,\"reason\":\"相关\",\"replyStyle\":\"简短\"}" }, finish_reason: "stop" }] }) },
+      { delayMs: 900, data: sse({ choices: [{ delta: { content: "{\"analysis\":\"话题相关\",\"semanticIntent\":\"群友希望 Bot 补充编程工具的看法\",\"shouldReply\":true,\"interest\":88,\"reason\":\"相关\",\"replyStyle\":\"简短\"}" }, finish_reason: "stop" }] }) },
       { data: sse("[DONE]") }
     ], options.signal);
   };
@@ -110,6 +121,8 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
 
   assert.equal(result.ok, true);
   assert.equal(result.modelJudge.interest, 88);
+  assert.equal(result.modelJudge.semanticIntent, "群友希望 Bot 补充编程工具的看法");
+  assert.equal(result.semanticIntent, "群友希望 Bot 补充编程工具的看法");
   assert.equal(result.modelJudge.finishReason, "stop");
   assert.deepEqual(result.replyContext, [
     { sender: "member1", text: "前面在讨论 Node 部署", replyToBot: false },
@@ -119,10 +132,63 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
   assert.equal(requestBody.stream, true);
   assert.equal(requestBody.max_tokens, 2048);
   assert.deepEqual(requestBody.reasoning, { effort: "none" });
-  assert.match(requestBody.messages[0].content, /先在普通回复正文中输出一行简短的 ANALYSIS:/);
-  assert.match(requestBody.messages[0].content, /最后必须单独输出一行 FINAL_JSON:/);
+  assert.deepEqual(requestBody.provider, { require_parameters: true });
+  assert.equal(requestBody.response_format.type, "json_schema");
+  assert.equal(requestBody.response_format.json_schema.strict, true);
+  assert.deepEqual(requestBody.response_format.json_schema.schema.required, [
+    "analysis",
+    "semanticIntent",
+    "shouldReply",
+    "interest",
+    "reason",
+    "replyStyle"
+  ]);
+  assert.match(requestBody.messages[0].content, /只输出一个符合响应 JSON Schema 的 JSON 对象/);
+  assert.match(requestBody.messages[0].content, /先做语义判断/);
   const judgeInput = JSON.parse(requestBody.messages[1].content);
   assert.equal(judgeInput.groupHumanRhythm.multiMessageRunRatio, 0.38);
+});
+
+test("proactive judge retries once when structured output omits semantic intent", async () => {
+  let fetchCount = 0;
+  const requestBodies = [];
+  const result = await shouldProactivelyReplyToQq(event, proactiveState(), {
+    openRouterApiKey: "configured-for-test",
+    fetch: async (_url, options) => {
+      fetchCount += 1;
+      requestBodies.push(JSON.parse(options.body));
+      if (fetchCount === 1) {
+        return new Response(JSON.stringify({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                analysis: "缺少语义字段",
+                shouldReply: true,
+                interest: 76,
+                reason: "测试",
+                replyStyle: "简短"
+              })
+            },
+            finish_reason: "stop"
+          }]
+        }), {
+          status: 200,
+          headers: { "content-type": "application/json" }
+        });
+      }
+      return jsonJudgeResponse({ shouldReply: true, interest: 76 });
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(fetchCount, 2);
+  assert.equal(result.modelJudge.attemptCount, 2);
+  assert.equal(result.modelJudge.formatRetryCount, 1);
+  assert.equal(result.modelJudge.structuredOutput, true);
+  assert.equal(result.modelJudge.interest, 76);
+  assert.equal(result.modelJudge.semanticIntent, "群友希望 Bot 对当前话题作出简短回应");
+  assert.equal(requestBodies[1].response_format.type, "json_schema");
+  assert.match(requestBodies[1].messages[0].content, /唯一一次格式重试/);
 });
 
 test("proactive judge aborts only after the token stream stays idle", async () => {

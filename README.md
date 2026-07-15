@@ -357,7 +357,7 @@ Proactive interest decisions are logged under the `interest` category. To inspec
 ncc logs --verbose --category interest
 ```
 
-The proactive-interest judge uses streaming output. `/兴趣超时` controls the maximum idle time before the first token or between tokens; generation may continue past that duration while tokens keep arriving. A token limit remains as a final guard against unbounded generation.
+The proactive-interest judge uses streaming output with a strict OpenRouter JSON Schema and requires a provider route that supports it. Every decision also includes a bounded semantic-intent summary: what the speaker actually means in context and whether they appear to expect the Bot to say, answer, or do anything. An affirmative decision passes that summary to the formal reply model as untrusted supporting context; it never bypasses the interest threshold by itself. If a provider still returns a structurally invalid decision, the Hub performs one bounded format retry; timeouts, rate limits, and other provider errors are not retried. `/兴趣超时` controls the maximum idle time before the first token or between tokens; generation may continue past that duration while tokens keep arriving. A token limit remains as a final guard against unbounded generation.
 
 Owners can adjust proactive interest settings from QQ:
 

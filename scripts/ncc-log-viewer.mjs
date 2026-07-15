@@ -448,12 +448,16 @@ function formatInterestDetails(details, options) {
     pushPart(parts, "模型可用", formatDetailValue(details.judgeApiKeyConfigured));
     pushPart(parts, "模型判断", details.modelShouldReply == null ? "" : formatDetailValue(details.modelShouldReply));
     pushPart(parts, "模型兴趣", details.modelInterest);
+    pushPart(parts, "语义判断", details.modelSemanticIntent);
     pushPart(parts, "模型理由", details.modelReason);
     pushPart(parts, "回复风格", details.modelReplyStyle);
     pushPart(parts, "模型用时", formatMs(details.modelDurationMs));
     pushPart(parts, "结束原因", details.modelFinishReason);
     pushPart(parts, "流式片段", details.modelStreamedTokenChunks);
     pushPart(parts, "推理字符", details.modelReasoningLength);
+    pushPart(parts, "请求次数", details.modelAttemptCount);
+    pushPart(parts, "格式重试", details.modelFormatRetryCount);
+    pushPart(parts, "结构化输出", details.modelStructuredOutput == null ? "" : formatDetailValue(details.modelStructuredOutput));
     pushPart(parts, "模型错误", humanError(details.modelError));
   }
   return parts.join(" · ");
@@ -557,6 +561,7 @@ function detailLabel(key) {
     judgeApiKeyConfigured: "模型 Key",
     modelShouldReply: "模型是否回复",
     modelInterest: "模型兴趣",
+    modelSemanticIntent: "模型语义判断",
     modelReason: "模型理由",
     modelReplyStyle: "回复风格",
     modelDurationMs: "模型用时",
@@ -564,6 +569,9 @@ function detailLabel(key) {
     modelFinishReason: "模型结束原因",
     modelStreamedTokenChunks: "模型流式片段",
     modelReasoningLength: "模型推理字符",
+    modelAttemptCount: "模型请求次数",
+    modelFormatRetryCount: "模型格式重试",
+    modelStructuredOutput: "模型结构化输出",
     modelError: "模型错误",
     triggerMode: "触发方式",
     messageCount: "待检查消息",
