@@ -18,12 +18,6 @@
 
 ---
 
-## 仪表盘预览
-
-![Codex Remote Contact 仪表盘总览](docs/assets/dashboard-overview-readme.png)
-
-总览会读取 Hub 的实时状态来展示服务拓扑、QQ / OneBot 健康度、Codex 额度、活动任务、最近事件和响应时间脉搏，不使用演示数据。
-
 ## 推荐方式：直接让 Codex 部署
 
 本项目的首选部署方式不是让你逐条复制命令，而是把下面的提示词交给 Codex。Codex 会检查系统、保护已有配置、安装依赖、验证项目、启动 Hub，并把扫码登录或缺失凭据等必须由你完成的步骤单独指出。

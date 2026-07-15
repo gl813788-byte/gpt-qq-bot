@@ -18,12 +18,6 @@
 
 ---
 
-## Dashboard preview
-
-![Codex Remote Contact dashboard overview](docs/assets/dashboard-overview-readme.png)
-
-The overview reads live Hub state for service topology, QQ / OneBot health, Codex quota, active work, recent activity, and the response-time pulse instead of rendering demo values.
-
 ## Recommended: let Codex deploy it
 
 The primary deployment path is to give Codex the prompt below. Codex should inspect the host, preserve existing configuration, install dependencies, verify the repository, start the Hub, and isolate only the steps that require you, such as scanning a QQ login QR code or supplying a missing credential.
