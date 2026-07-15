@@ -8644,7 +8644,7 @@ async function handleApi(req, res) {
   const requestOrigin = String(req.headers.origin || "").trim();
   const allowLanSameOrigin = isLanAccessEnabled() && isRequestOriginSameHost(requestOrigin, req.headers.host);
   const allowPublicTunnelSameOrigin = publicTunnelManager.isRequestHost(req.headers.host)
-    && isRequestOriginSameHost(requestOrigin, req.headers.host);
+    && publicTunnelManager.isRequestOrigin(requestOrigin);
   const requestAllowedOrigins = allowLanSameOrigin || allowPublicTunnelSameOrigin
     ? [...hubAllowedOrigins, requestOrigin]
     : hubAllowedOrigins;

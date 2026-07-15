@@ -6,6 +6,7 @@ import {
   createPublicTunnelManager,
   extractCloudflareQuickTunnelUrl,
   findExecutable,
+  isPublicTunnelRequestOrigin,
   isPublicTunnelRequestHost
 } from "../src/public-tunnel.js";
 
@@ -24,6 +25,15 @@ test("matches only the active public tunnel host", () => {
   assert.equal(isPublicTunnelRequestHost("QUIET-BIRD.TRYCLOUDFLARE.COM.", publicUrl), true);
   assert.equal(isPublicTunnelRequestHost("other.trycloudflare.com", publicUrl), false);
   assert.equal(isPublicTunnelRequestHost("quiet-bird.trycloudflare.com.evil.example", publicUrl), false);
+});
+
+test("matches only the active HTTPS public tunnel origin", () => {
+  const publicUrl = "https://quiet-bird.trycloudflare.com";
+  assert.equal(isPublicTunnelRequestOrigin("https://quiet-bird.trycloudflare.com", publicUrl), true);
+  assert.equal(isPublicTunnelRequestOrigin("http://quiet-bird.trycloudflare.com", publicUrl), false);
+  assert.equal(isPublicTunnelRequestOrigin("https://other.trycloudflare.com", publicUrl), false);
+  assert.equal(isPublicTunnelRequestOrigin("https://quiet-bird.trycloudflare.com/path", publicUrl), false);
+  assert.equal(isPublicTunnelRequestOrigin("https://quiet-bird.trycloudflare.com.evil.example", publicUrl), false);
 });
 
 test("finds cloudflared only from executable PATH entries", async () => {

@@ -30,6 +30,23 @@ export function isPublicTunnelRequestHost(requestHost, publicUrl) {
   }
 }
 
+export function isPublicTunnelRequestOrigin(requestOrigin, publicUrl) {
+  if (!requestOrigin || !publicUrl) return false;
+  try {
+    const originUrl = new URL(requestOrigin);
+    const activeUrl = new URL(publicUrl);
+    return originUrl.protocol === "https:"
+      && !originUrl.username
+      && !originUrl.password
+      && originUrl.pathname === "/"
+      && !originUrl.search
+      && !originUrl.hash
+      && originUrl.origin === activeUrl.origin;
+  } catch {
+    return false;
+  }
+}
+
 export async function findExecutable(command, {
   env = process.env,
   accessFile = access,
@@ -253,7 +270,8 @@ export function createPublicTunnelManager({
     start,
     stop,
     status,
-    isRequestHost: (requestHost) => isPublicTunnelRequestHost(requestHost, runtime.publicUrl)
+    isRequestHost: (requestHost) => isPublicTunnelRequestHost(requestHost, runtime.publicUrl),
+    isRequestOrigin: (requestOrigin) => isPublicTunnelRequestOrigin(requestOrigin, runtime.publicUrl)
   };
 }
 
