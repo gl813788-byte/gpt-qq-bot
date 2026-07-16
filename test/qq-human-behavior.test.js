@@ -189,11 +189,13 @@ test("formats anonymous evidence and recognizes proactive silence", () => {
     goal: "自然接话",
     maxChars: 18,
     maxSentences: 1,
-    preferMultiBubble: true
-  }, { proactive: true });
+    preferMultiBubble: true,
+    preferSticker: true
+  }, { proactive: true, bubbleSeparator: "---" });
   assert.match(context, /匿名统计/);
   assert.match(context, /2 条短气泡/);
   assert.match(context, /表情包规划/);
+  assert.match(context, /单独一行写 ---/);
   assert.match(context, /\[\[qq_silent\]\]/);
   assert.equal(isQqSilentReply("[[qq_silent]]\n[[qq_memory:{\"recentTopic\":\"闲聊\"}]]"), true);
 });

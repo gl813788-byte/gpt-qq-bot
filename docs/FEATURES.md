@@ -69,11 +69,11 @@ Proactive work does not force itself behind active generation. New activity supp
 ## Images, files, stickers and bubbles
 
 - QQ images, screenshots, quoted images, share cards and bounded forwarded images can enter context.
-- The model can request local delivery through `[[qq_image:...]]`, `[[qq_file:...]]` and `[[qq_sticker:...]]`.
+- The model can request local delivery through `[[qq_image:...]]`, `[[qq_file:...]]` and `[[qq_sticker:...]]`. Sticker delivery is selectable per reply: combine text and sticker in one QQ message, send only the sticker, or place the standalone multi-bubble separator between text and the sticker marker to send them as two ordered messages.
 - File/image tasks use `runtime/qq-task-workspaces/<request>/input|output`. Only real paths inside the current request's `output/` pass delivery validation, preventing arbitrary file disclosure and symlink escapes.
 - Local stickers, QQ account favorites and downloaded metadata form a bounded catalog. Animated items support bounded frame inspection, with labels stored separately.
 - Sticker-favorite judgment runs only inside an already-triggered lifecycle; an ordinary untriggered sticker does not call a model by itself.
-- A standalone `|||` splits consecutive bubbles. Separator, count and delay are configurable, and adaptation changes rhythm only for suitable social replies.
+- A standalone `|||` splits consecutive bubbles. For separate sticker delivery, the text bubble is sent first and the sticker-only bubble follows as its own message. Separator, count and delay are configurable, and adaptation changes rhythm only for suitable social replies.
 
 ## Commands, permissions and social tools
 

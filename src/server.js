@@ -37,6 +37,7 @@ import {
 } from "./qq-social-command.js";
 import { createQqStickerLabelStore, normalizeQqStickerTags } from "./qq-sticker-label-store.js";
 import { createQqStickerInventory } from "./qq-sticker-inventory.js";
+import { buildQqStickerReply, formatQqStickerSendModeInstruction } from "./qq-sticker-delivery.js";
 import { inspectAnimatedSticker, probeAnimation } from "./qq-animated-sticker.js";
 import {
   extractQqReplyStickerCandidates,
@@ -5302,7 +5303,8 @@ async function buildAssistantInstructions(event) {
     "收到的图片也是上下文：普通发图自然接梗；只有明确让你看图、评价截图/表情包，或图片是回答关键时才展开。看不清就直说，不能假装看见细节。",
     "发送本机图片用独立一行 [[qq_image:/absolute/path/to/image.png]]；画图、海报或表情包任务优先使用图像生成能力后再发送。",
     "如果你需要通过 QQ 发出本机普通文件，在回复中单独写一行 [[qq_file:/absolute/path/to/file]]；需要指定发送文件名时写 [[qq_file:/absolute/path/to/file|filename.ext]]。不要解释这个标记。",
-    "如果你想发表情包，优先使用 [[qq_sticker:表情包名]]，表情包名必须来自提示里列出的可用表情包库（本地、账号收藏或账号已下载）；不要编造不存在的表情包名。",
+    state.qq.enhancer.enabled ? formatQqStickerSendModeInstruction({ bubbleSeparator: qqBubbleSeparator }) : null,
+    "如果你想发表情包，表情包名必须来自提示里列出的可用表情包库（本地、账号收藏或账号已下载）；不要编造不存在的表情包名。",
     formatQqBubbleInstruction(),
     "如果提示里已有当前聊天记录，用户追问某人、群里、刚才或前文时直接据此回答，不再让用户补上一句；线索有限时用“看起来是在……”谨慎概括。",
     `只有在管理命令、权限动作、或需要区分身份时称呼“${ownerLabel}”；普通聊天即使发送者是${ownerLabel}也优先直接回答内容。其他群友绝不使用这个称呼。`,
@@ -5457,7 +5459,8 @@ async function buildModelReply(event, { replyScope = null } = {}) {
   const humanBehaviorPlan = buildQqHumanBehaviorPlan(event, conversationIntent, humanChatStyle, { text });
   const humanBehaviorContext = [
     formatQqHumanBehaviorContext(humanChatStyle, humanBehaviorPlan, {
-      proactive: Boolean(event.proactiveDecision)
+      proactive: Boolean(event.proactiveDecision),
+      bubbleSeparator: qqBubbleSeparator
     }),
     adaptiveSignals ? formatQqAdaptiveLearningContext(adaptiveSignals) : ""
   ].filter(Boolean).join("\n\n");
@@ -5590,7 +5593,7 @@ async function buildModelReply(event, { replyScope = null } = {}) {
       hasAnyQqImageReference(event) ? "" : null,
       state.qq.enhancer.enabled ? "可用表情包库（本地 + 账号收藏 + 账号已下载）：" : null,
       state.qq.enhancer.enabled ? formatQqStickerCatalog(stickerCatalog) : null,
-      state.qq.enhancer.enabled && stickerCatalog.length ? "你可以根据 QQ 原生标签或 Bot 标签直接选择 [[qq_sticker:表情包名]]。遇到未查看/未标注的表情时，可以主动调用 [[qq_command:/看表情 表情名]] 查看；首次查看后必须用 /表情标签 写入标签。已标注表情也能重复查看并覆盖更新标签。动图带【动图】标记；默认抽中段 3 帧，也可自选帧位、帧数和要识别的动图数量。只能选择提示里真实存在的表情包名。" : null,
+      state.qq.enhancer.enabled && stickerCatalog.length ? "你可以根据 QQ 原生标签或 Bot 标签选择真实表情名，并按语境决定图文合并、仅表情包或文字与表情包分开发送。遇到未查看/未标注的表情时，可以主动调用 [[qq_command:/看表情 表情名]] 查看；首次查看后必须用 /表情标签 写入标签。已标注表情也能重复查看并覆盖更新标签。动图带【动图】标记；默认抽中段 3 帧，也可自选帧位、帧数和要识别的动图数量。只能选择提示里真实存在的表情包名。" : null,
       "",
       event.qqColdProactive
         ? "兴趣回复冷群时间检查："
@@ -6139,7 +6142,10 @@ function encourageQqStickerReply(reply, event, stickerCatalog) {
   if (!shouldAutoAttachQqSticker(source, event)) return text;
   const name = chooseQqStickerName(source, stickerCatalog);
   if (!name) return text;
-  return `${text}\n[[qq_sticker:${name}]]`;
+  return buildQqStickerReply(text, name, {
+    mode: event?.qqHumanBehavior?.preferMultiBubble ? "separate" : "combined",
+    bubbleSeparator: qqBubbleSeparator
+  });
 }
 
 function isLowStickerValueReply(reply, event) {
@@ -7704,7 +7710,8 @@ async function ensureCodexReplyWorkspace() {
       "如果被要求画图、生成图、做海报或生成表情包，优先使用 image 2 能力生成图片，再用 [[qq_image:/absolute/path/to/image.png]] 发出。",
       "如果需要通过 QQ 发普通文件，单独输出一行 [[qq_file:/absolute/path/to/file]]；需要指定发送文件名时写 [[qq_file:/absolute/path/to/file|filename.ext]]。",
       "Hub 只会发送最终回复里显式写出的 QQ 图片/文件 marker；如果某次任务给了临时工作区，待发送文件在 QQ 发送完成前不要删除，Hub 会另开清理回合让你清理。",
-      state.qq.enhancer.enabled ? "如果要发表情包，优先输出 [[qq_sticker:表情包名]]；表情包名必须来自提示里的可用表情包库（本地、账号收藏或已识别的账号下载表情）。" : null,
+      state.qq.enhancer.enabled ? formatQqStickerSendModeInstruction({ bubbleSeparator: qqBubbleSeparator }) : null,
+      state.qq.enhancer.enabled ? "表情包名必须来自提示里的可用表情包库（本地、账号收藏或已识别的账号下载表情）。" : null,
       state.qq.enhancer.enabled ? "你可以主动调用 [[qq_command:/看表情 表情名]] 查看表情。未标注表情第一次查看后必须调用 /表情标签；已标注表情可以重复查看并覆盖更新标签。动图默认抽中段 3 帧，也可自行指定帧数、位置和要查看的动图数量。" : null,
       formatQqBubbleInstruction(),
       "群内 /stop 只会强制停止当前回复并开启新对话。",

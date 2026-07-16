@@ -1,3 +1,5 @@
+import { formatQqStickerSendModeInstruction } from "./qq-sticker-delivery.js";
+
 const mediaOnlyPattern = /^(?:\[(?:图片|表情|语音|文件)(?:[^\]]*)?\]|[\p{Extended_Pictographic}\uFE0F\s]+)$/u;
 const casualEmotionPattern = /(累|困|晕|烦|气死|难受|开心|高兴|想睡|睡懵|绷不住|笑死|离谱|无语|我去|卧槽|草|好耶|寄了|麻了)/i;
 const imageQuestionPattern = /(看|看看|识别|评价|锐评|什么图|这是啥|这是什么|什么梗|什么意思|图里|截图|表情包)/i;
@@ -236,7 +238,10 @@ export function buildQqHumanBehaviorPlan(event = {}, intent = {}, style = {}, { 
   };
 }
 
-export function formatQqHumanBehaviorContext(style = {}, plan = {}, { proactive = false } = {}) {
+export function formatQqHumanBehaviorContext(style = {}, plan = {}, {
+  proactive = false,
+  bubbleSeparator = "|||"
+} = {}) {
   const evidence = style.textSampleSize > 0
     ? `最近匿名统计了 ${style.textSampleSize} 条真人纯文字：中位数 ${style.medianTextChars} 字，90% 不超过 ${style.p90TextChars} 字，${Math.round(style.shortMessageRatio * 100)}% 不超过 12 字。`
     : "当前真人样本不足，使用保守的自然聊天基线。";
@@ -253,7 +258,7 @@ export function formatQqHumanBehaviorContext(style = {}, plan = {}, { proactive 
     ? `本轮可以自然带 1 个 emoji${plan.emojiPalette?.length ? `，近期群里常见的是 ${plan.emojiPalette.join(" ")}` : ""}；只在语气确实需要时用，不要每条固定挂同一个。`
     : "本轮不必为了像人而强塞文字 emoji。";
   const stickerInstruction = plan.preferSticker
-    ? `本轮适合发 1 张语境匹配的表情包；如果可用表情库里有合适项，在正常文字后输出 [[qq_sticker:真实表情名]]。不要为了完成指标硬配无关表情。`
+    ? `本轮适合发 1 张语境匹配的表情包；如果可用表情库里有合适项，可以按语境选图文合并、仅表情包或文字与表情包分开发送。不要为了完成指标硬配无关表情。\n${formatQqStickerSendModeInstruction({ bubbleSeparator })}`
     : "本轮默认不发表情包；只有语境非常贴合时才例外使用 1 张。";
   return [
     "真人化行为规划（根据当前会话真人消息的匿名统计动态生成，不模仿具体个人）：",
