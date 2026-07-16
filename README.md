@@ -18,9 +18,29 @@
 
 ---
 
-## Recommended: let Codex deploy it
+## Easiest install: one terminal command
 
-The primary deployment path is to give Codex the prompt below. Codex should inspect the host, preserve existing configuration, install dependencies, verify the repository, start the Hub, and isolate only the steps that require you, such as scanning a QQ login QR code or supplying a missing credential.
+If Node.js is installed, run either command below. There is no need to open GitHub, download an archive, or extract it manually:
+
+```bash
+npx -y codex-qq-bot
+# or
+pnpm dlx codex-qq-bot
+```
+
+If Node.js is not installed yet, use the lightweight bootstrap command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
+```
+
+The Chinese installer resolves the latest GitHub Release, downloads its project ZIP, checks the SHA-256 digest supplied by GitHub, validates the archive structure, and installs it into a stable directory. The default is `/root/Codex-Remote-Contact` for root and `~/Codex-Remote-Contact` for other users. It then enters the repository `ncc`: the first run checks the environment, installs dependencies, verifies the project, and guides configuration; later runs open the normal daily menu.
+
+An existing recognized installation is preserved, including its code, configuration, `data`, and `runtime`, and its current `ncc` is launched. An unrelated occupied directory is never overwritten. Run `npx -y codex-qq-bot --check` for a read-only preflight that downloads or changes no project files. On Windows, run the installer inside WSL.
+
+## Alternatively, let Codex deploy it
+
+If you want Codex to also operate OneBot startup, post-scan connection, and final acceptance, give it the prompt below. Codex should inspect the host, preserve existing configuration, install dependencies, verify the repository, start the Hub, and isolate only the steps that require you, such as scanning a QQ login QR code or supplying a missing credential.
 
 Copy the whole prompt into Codex:
 
@@ -45,7 +65,7 @@ Execute the deployment instead of only giving me a command list. Continue until 
 
 See [Deploy with Codex](docs/DEPLOY_WITH_CODEX.md) for the detailed workflow, upgrade prompt, and acceptance checklist.
 
-## Chinese one-click deployment file
+## One-click file for an extracted source archive
 
 After downloading and extracting the project, you may run the root-level `一键部署.command` as the single setup entry. Double-click it on macOS, or use a terminal on Linux / WSL:
 

@@ -11,6 +11,8 @@ const projectDir = fileURLToPath(new URL("..", import.meta.url));
 const launcherPath = fileURLToPath(new URL("一键部署.command", new URL("..", import.meta.url)));
 const nccPath = fileURLToPath(new URL("scripts/ncc.command", new URL("..", import.meta.url)));
 const deployPath = fileURLToPath(new URL("scripts/deploy.command", new URL("..", import.meta.url)));
+const remoteInstallerPath = fileURLToPath(new URL("install.sh", new URL("..", import.meta.url)));
+const npmInstallerPath = fileURLToPath(new URL("bin/codex-qq-bot.mjs", new URL("..", import.meta.url)));
 
 test("Chinese one-click deployment entry is executable and has valid Bash syntax", async () => {
   await access(launcherPath, constants.X_OK);
@@ -19,6 +21,81 @@ test("Chinese one-click deployment entry is executable and has valid Bash syntax
     encoding: "utf8"
   });
   assert.equal(syntax.status, 0, syntax.stderr);
+});
+
+test("remote and npm installers expose a Chinese no-GitHub-web entry", async () => {
+  await access(remoteInstallerPath, constants.X_OK);
+  await access(npmInstallerPath, constants.X_OK);
+  const syntax = spawnSync("bash", ["-n", remoteInstallerPath], {
+    cwd: projectDir,
+    encoding: "utf8"
+  });
+  assert.equal(syntax.status, 0, syntax.stderr);
+
+  for (const [command, args] of [
+    ["bash", [remoteInstallerPath, "--help"]],
+    [process.execPath, [npmInstallerPath, "--help"]]
+  ]) {
+    const help = spawnSync(command, args, { cwd: projectDir, encoding: "utf8" });
+    assert.equal(help.status, 0, help.stderr);
+    assert.match(help.stdout, /npx -y codex-qq-bot/);
+    assert.match(help.stdout, /pnpm dlx codex-qq-bot/);
+    assert.match(help.stdout, /不需要打开 GitHub 网页/);
+    assert.match(help.stdout, /中文首次部署/);
+  }
+});
+
+test("remote installer validates and extracts a local release without launching", async (t) => {
+  const zip = spawnSync("zip", ["-v"], { encoding: "utf8" });
+  if (zip.error?.code === "ENOENT") {
+    t.skip("zip command is unavailable");
+    return;
+  }
+
+  const home = await mkdtemp(join(tmpdir(), "codex-qq-bot-remote-install-"));
+  try {
+    const fixtureRoot = join(home, "fixture", "codex-qq-bot-v1.1.7");
+    await mkdir(join(fixtureRoot, "scripts"), { recursive: true });
+    await writeFile(join(fixtureRoot, "package.json"), '{"name":"fixture"}\n');
+    await writeFile(join(fixtureRoot, "一键部署.command"), "#!/usr/bin/env bash\nexit 0\n");
+    await writeFile(join(fixtureRoot, "scripts", "ncc.command"), "#!/usr/bin/env zsh\nexit 0\n");
+    await writeFile(join(fixtureRoot, "scripts", "deploy.command"), "#!/usr/bin/env zsh\nexit 0\n");
+    const archive = join(home, "fixture.zip");
+    const packed = spawnSync("zip", ["-qr", archive, "codex-qq-bot-v1.1.7"], {
+      cwd: join(home, "fixture"),
+      encoding: "utf8"
+    });
+    assert.equal(packed.status, 0, packed.stderr);
+
+    const target = join(home, "installed");
+    const installed = spawnSync("bash", [
+      remoteInstallerPath,
+      "--archive", archive,
+      "--install-dir", target,
+      "--no-launch"
+    ], { cwd: projectDir, encoding: "utf8" });
+    assert.equal(installed.status, 0, installed.stderr);
+    assert.match(installed.stdout, /无需打开 GitHub 网页/);
+    assert.match(installed.stdout, /ZIP 完整性/);
+    assert.match(installed.stdout, /项目已安装到/);
+    await access(join(target, "package.json"));
+    await access(join(target, "scripts", "ncc.command"), constants.X_OK);
+
+    const marker = join(home, "occupied", "keep.txt");
+    await mkdir(join(home, "occupied"));
+    await writeFile(marker, "保留\n");
+    const refused = spawnSync("bash", [
+      remoteInstallerPath,
+      "--archive", archive,
+      "--install-dir", join(home, "occupied"),
+      "--no-launch"
+    ], { cwd: projectDir, encoding: "utf8" });
+    assert.notEqual(refused.status, 0);
+    assert.match(refused.stderr, /拒绝覆盖/);
+    assert.equal(await readFile(marker, "utf8"), "保留\n");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
 });
 
 test("one-click launcher delegates first-run and later daily behavior to ncc", async () => {

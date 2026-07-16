@@ -2,9 +2,9 @@
 
 简体中文 | [English](OPERATIONS.md)
 
-部署首选让 Codex 按[部署指南](DEPLOY_WITH_CODEX_CN.md)执行并验收。本页用于部署后的日常运行与定位问题。
+全新安装首选 `npx -y codex-qq-bot`（或 `pnpm dlx codex-qq-bot`），无需打开 GitHub；也可以让 Codex 按[部署指南](DEPLOY_WITH_CODEX_CN.md)执行并验收。本页用于部署后的日常运行与定位问题。
 
-已解压源码包时，根目录 `一键部署.command` 会进入仓库版 `ncc`。首次运行 `ncc` 会自动检测环境、安装依赖、运行验证并引导填写配置；完成后再运行 `ncc` 就直接显示状态、启动、配置和日志等日常功能。
+公共安装器会取得最新正式 ZIP 后进入根目录 `一键部署.command`；已解压源码包时也可直接运行它。该文件会进入仓库版 `ncc`。首次运行 `ncc` 会自动检测环境、安装依赖、运行验证并引导填写配置；完成后再运行 `ncc` 就直接显示状态、启动、配置和日志等日常功能。
 
 ```bash
 ./一键部署.command

@@ -18,9 +18,29 @@
 
 ---
 
-## 推荐方式：直接让 Codex 部署
+## 最简单安装：终端粘贴一行
 
-本项目的首选部署方式不是让你逐条复制命令，而是把下面的提示词交给 Codex。Codex 会检查系统、保护已有配置、安装依赖、验证项目、启动 Hub，并把扫码登录或缺失凭据等必须由你完成的步骤单独指出。
+已安装 Node.js 时，直接运行下面任意一条；不需要打开 GitHub、手动下载或解压：
+
+```bash
+npx -y codex-qq-bot
+# 或者
+pnpm dlx codex-qq-bot
+```
+
+如果还没有 Node.js，可以使用轻量引导命令：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
+```
+
+中文安装器会自动查询最新 GitHub Release、下载项目 ZIP、核对 GitHub 提供的 SHA-256 摘要、检查压缩包结构并安装到稳定目录。root 用户默认使用 `/root/Codex-Remote-Contact`，其他用户默认使用 `~/Codex-Remote-Contact`。随后它会直接进入仓库版 `ncc`：第一次运行执行环境检测、依赖安装、项目验证和配置向导，部署完成后再运行就是日常功能菜单。
+
+如果目标目录已经是本项目，安装器会保留其中的代码、配置、`data` 和 `runtime`，直接进入现有 `ncc`；如果目录中是其他内容，则拒绝覆盖。可先运行 `npx -y codex-qq-bot --check` 做纯检查，不会下载或修改项目文件。Windows 请在 WSL 中执行。
+
+## 也可以直接让 Codex 部署
+
+如果你希望 Codex 同时负责启动 OneBot、扫码后的连接和最终验收，可以把下面的提示词直接交给它。Codex 会检查系统、保护已有配置、安装依赖、验证项目、启动 Hub，并把扫码登录或缺失凭据等必须由你完成的步骤单独指出。
 
 把整段复制到 Codex：
 
@@ -45,7 +65,7 @@ https://github.com/gl813788-byte/codex-qq-bot.git
 
 更完整的部署说明、升级提示词和验收表见 [Codex 部署指南](docs/DEPLOY_WITH_CODEX_CN.md)。
 
-## 中文一键部署文件
+## 已下载源码时的一键部署文件
 
 如果已下载并解压本项目，可以只运行根目录的 `一键部署.command`。macOS 可直接双击，Linux / WSL 可在终端执行：
 

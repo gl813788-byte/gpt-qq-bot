@@ -1,8 +1,30 @@
 {
   "name": "codex-qq-bot",
   "version": "1.1.7",
-  "private": true,
+  "private": false,
+  "description": "Codex QQ Bot 中文一键安装器",
   "type": "module",
+  "bin": {
+    "codex-qq-bot": "bin/codex-qq-bot.mjs"
+  },
+  "files": [
+    "bin/",
+    "install.sh"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gl813788-byte/codex-qq-bot.git"
+  },
+  "homepage": "https://github.com/gl813788-byte/codex-qq-bot#readme",
+  "keywords": [
+    "codex",
+    "qq",
+    "onebot",
+    "napcat"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "start": "node src/server.js",
     "deploy": "zsh scripts/deploy.command",

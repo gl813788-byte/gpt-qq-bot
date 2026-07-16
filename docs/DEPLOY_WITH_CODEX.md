@@ -4,7 +4,7 @@ English | [简体中文](DEPLOY_WITH_CODEX_CN.md)
 
 ## Why Codex should operate the deployment
 
-This project spans Node.js, Codex authentication, QQ/OneBot, local configuration, process lifecycle, and network checks. The repository includes a Chinese `一键部署.command` that preserves existing configuration, but host paths, OneBot implementations, and process supervisors may still differ. Codex can inspect the machine first, then choose the smallest safe and verifiable actions.
+This project spans Node.js, Codex authentication, QQ/OneBot, local configuration, process lifecycle, and network checks. The public installer and repository `ncc` preserve existing configuration, but host paths, OneBot implementations, and process supervisors may still differ. Codex can inspect the machine first, then choose the smallest safe and verifiable actions.
 
 A reliable deployment prompt includes a goal, host/repository context, constraints, and a definition of done, following the [official Codex prompting best practices](https://learn.chatgpt.com/guides/best-practices).
 
@@ -15,7 +15,24 @@ A reliable deployment prompt includes a goal, host/repository context, constrain
 3. Start Codex in a stable directory where it may write the installation. Do not run a long-lived deployment from Downloads.
 4. Keep the default permissions. Let Codex request approval for downloads, system packages, elevated commands, or writes outside the workspace.
 
-## Chinese one-click entry
+## One-line install without opening GitHub
+
+With Node.js installed, run:
+
+```bash
+npx -y codex-qq-bot
+# or pnpm dlx codex-qq-bot
+```
+
+Without Node.js, run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
+```
+
+This Chinese bootstrap resolves the latest formal Release through the GitHub API, downloads the versioned ZIP, validates GitHub's SHA-256 digest and the ZIP structure, and places the project in `/root/Codex-Remote-Contact` or `~/Codex-Remote-Contact`. It never overwrites an existing project or an unrelated non-empty directory. It then enters the repository `ncc`, so the same state machine performs environment checks, dependency installation, `npm run verify`, and guided configuration. `--check` reads release metadata without downloading or writing project files.
+
+## Chinese entry for existing source
 
 When the source has already been downloaded or extracted, run:
 
@@ -71,7 +88,7 @@ npm install
 npm run verify
 ```
 
-`一键部署.command` is the Chinese launcher; the repository `ncc` owns the first-run state machine. On its first run, `ncc` delegates environment preparation to the underlying deployment helper, which checks tools, creates missing local files, installs npm dependencies, runs `npm run verify`, and explicitly avoids replacing an unrelated global `ncc`. After success, `ncc` becomes the normal daily control menu.
+The `npx`, `pnpm dlx`, and remote `install.sh` entries only obtain a formal ZIP safely and place it in a stable directory before handing off to the Chinese `一键部署.command`. The repository `ncc` owns the first-run state machine: it checks tools, creates missing local files, installs npm dependencies, runs `npm run verify`, and explicitly avoids replacing an unrelated global `ncc`. After success, `ncc` becomes the normal daily control menu.
 
 ### 3. Configure the Hub
 
@@ -116,9 +133,9 @@ Safely upgrade this Codex QQ Bot installation. Inspect the Git worktree, active 
 
 Codex should continue through ordinary setup and verification instead of handing the remaining commands back to the user.
 
-## Manual fallback
+## Manual or offline fallback
 
-Use this only when Codex is unavailable:
+Use this only when both the public installer and Codex are unavailable:
 
 ```bash
 git clone https://github.com/gl813788-byte/codex-qq-bot.git
