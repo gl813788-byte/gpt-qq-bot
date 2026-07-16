@@ -10,7 +10,7 @@ const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const commandPath = join(projectDir, "scripts", "ncc.command");
 
 test("repository ncc resolves its project when invoked outside the checkout or through a symlink", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "codex-remote-contact-ncc-"));
+  const directory = await mkdtemp(join(tmpdir(), "codex-qq-bot-ncc-"));
   const symlinkPath = join(directory, "ncc");
   const env = { ...process.env };
   delete env.GPT_QQ_BOT_HOME;

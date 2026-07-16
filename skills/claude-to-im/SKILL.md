@@ -1,7 +1,7 @@
 ---
 name: claude-to-im
 description: |
-  Maintain, modify, deploy, operate, and diagnose the local Codex Remote Contact project
+  Maintain, modify, deploy, operate, and diagnose the local Codex QQ Bot project
   and its NapCat + OneBot QQ bridge for THIS Codex session. Use for any work on
   /root/Codex-Remote-Contact, including architecture/refactoring, configuration and
   environment variables, QQ message logic, commands and permissions, memory/persona,
@@ -14,7 +14,7 @@ description: |
   and /root/Codex-Remote-Contact, not the official QQ Bot OpenAPI channel.
 ---
 
-# Codex Remote Contact Project Maintenance
+# Codex QQ Bot Project Maintenance
 
 You are managing the local QQ bridge that lets the user talk to this Codex setup from QQ.
 
@@ -41,10 +41,10 @@ Default services:
 - NapCat QQ executable: `/root/Napcat/opt/QQ/qq`
 - NapCat WebUI: `http://127.0.0.1:6099/webui`
 - OneBot API: `http://127.0.0.1:3000`
-- Codex Remote Contact backend: `http://127.0.0.1:3789`
-- Codex Remote Contact dashboard: `http://127.0.0.1:3789/` (alias `/dashboard`)
+- Codex QQ Bot backend: `http://127.0.0.1:3789`
+- Codex QQ Bot dashboard: `http://127.0.0.1:3789/` (alias `/dashboard`)
 - Backend project: `/root/Codex-Remote-Contact`
-- The recommended public install is `npx -y codex-qq-bot` or `pnpm dlx codex-qq-bot`; when Node.js is absent, use the raw-main `install.sh` curl bootstrap. These Chinese remote entries resolve the latest formal GitHub Release ZIP, verify its GitHub SHA-256 digest and archive structure, publish it only into an absent/empty stable target, and then hand off to the repository launcher. They never require the GitHub web UI and must not overwrite an existing installation or unrelated directory. Public source archives retain the offline root-level `一键部署.command`. All entries converge on the repository `ncc`: on its first run, `scripts/ncc.command` owns a persisted state machine that checks the environment, prepares missing tools/Codex CLI/npm dependencies, runs `npm run verify`, guides owner/group/OneBot/branding/search setup, and records completion in `config/local.env`. Later repository-`ncc` runs open the normal control menu. Existing `data/settings.json`, `config/local.env`, and unrelated global `ncc` commands must be preserved. QQ/NapCat binaries are not bundled or silently installed.
+- The recommended public install is `npx -y codex-qq-bot` or `pnpm dlx codex-qq-bot`; when Node.js is absent, use the raw-main `install.sh` curl bootstrap. The npm installer revision is `1.1.7-1` and it still downloads the formal GitHub `v1.1.7` ZIP. These Chinese remote entries persist release metadata, partial/full downloads, verification, and extraction under a target-specific install cache; rerunning after interruption reuses completed stages and curl resumes a partial download. New installs default to `/root/Codex-QQ-Bot` or `~/Codex-QQ-Bot`, while an existing legacy `/root/Codex-Remote-Contact` installation is reused. Before exiting, the installer creates an `ncc` wrapper that enters the repository launcher when no different same-name controller exists, then explicitly tells the user to run `ncc`; it does not open the wizard by default. Existing installations, unrelated directories, `data/settings.json`, `config/local.env`, and unrelated global `ncc` commands must be preserved. The repository `ncc` continues to own environment preparation, dependencies, `npm run verify`, guided configuration, and the persisted first-run state. QQ/NapCat binaries are not bundled or silently installed.
 - Use `ncc` for process lifecycle and the dashboard for state, health, channel, memory, log, and local appearance controls. The dashboard does not replace `ncc` startup/login recovery.
 - Dashboard assets live in `/root/Codex-Remote-Contact/modules/mac-client/Resources` and are served through `/root/Codex-Remote-Contact/src/dashboard-assets.js`; the removed `modules/web-console` is not used.
 - Do not add separate shortcut scripts for QQ on/off/status. The user wants one control entry: `ncc` / `/root/napcat-codex-control.sh`.
@@ -187,7 +187,7 @@ Report tests, Hub, dashboard, OneBot login, QQ channel and recent fatal/error lo
 
 ## Codex-First Backend Deployment
 
-Use this when the user asks Codex to download, install, reinstall, upgrade, or deploy the Codex QQ Bot / Codex Remote Contact backend.
+Use this when the user asks Codex to download, install, reinstall, upgrade, or deploy the Codex QQ Bot backend.
 
 Codex is the deployment operator. Inspect the machine, execute safe in-scope commands, repair ordinary setup issues, run verification, start the services, and report the actual end state. Ask the user only for actions Codex cannot perform, such as scanning a QQ QR code, supplying a missing secret, or approving a privileged command. Do not stop after printing a command list when the requested deployment can continue automatically.
 
@@ -295,7 +295,7 @@ Map user intent to the existing control script whenever possible:
 
 Prefer the `ncc` alias in user-facing instructions when it is available; use the full `/root/napcat-codex-control.sh` path in scripts or when absolute clarity is useful.
 
-Do not run the old `~/.claude-to-im` daemon for QQ unless the user explicitly asks for the official QQ Bot OpenAPI bridge. This machine's QQ workflow is NapCat + OneBot + Codex Remote Contact.
+Do not run the old `~/.claude-to-im` daemon for QQ unless the user explicitly asks for the official QQ Bot OpenAPI bridge. This machine's QQ workflow is NapCat + OneBot + Codex QQ Bot.
 
 ## Local Dashboard
 
@@ -311,7 +311,7 @@ Do not run the old `~/.claude-to-im` daemon for QQ unless the user explicitly as
 
 ## QQ In-Chat Commands
 
-The Codex Remote Contact backend also handles QQ slash commands in whitelisted QQ groups.
+The Codex QQ Bot backend also handles QQ slash commands in whitelisted QQ groups.
 
 Owner-only commands, accepted only from QQ `3784642920`:
 
@@ -380,7 +380,7 @@ Important behavior:
 - Unified-memory writes and Hub state saves are serialized and atomically replaced. A malformed unified-memory file is preserved and reported instead of being silently replaced with an empty store. Recent Codex context discovery retains the newest files by modification time even when session directories are large.
 - OneBot calls use a bounded timeout (`CODEX_REMOTE_CONTACT_ONEBOT_TIMEOUT_MS`, default 10 seconds). When no OneBot token is configured, the webhook is trusted only if both the HTTP Host and the actual peer socket address are loopback; this keeps owner identity working for the local tokenless NapCat client without trusting spoofed remote requests. Hub HTTP bodies must be JSON objects and are capped at 1 MiB; the Hub binds to `127.0.0.1` by default (`CODEX_REMOTE_CONTACT_HOST` and `CODEX_REMOTE_CONTACT_PORT` override it).
 - Structured logs persist `debug` and higher by default, so routine inbound QQ/OneBot diagnostics are stored. New entries use schema v2 ids plus optional trace/span ids. Each QQ reply lifecycle shares one trace across inbound handling, routing, proactive-interest judging, web lookup, Codex generation, sending, and persistence; the final `lifecycle` record reports outcome and per-stage/total durations without copying the reply body. `ncc logs` reads the current and rotated JSONL files, shows full fields by default, and supports `--level`/`--errors`, `--category`, `--trace`, `--group`, `--sender`, `--search`, `--since`, `--until`, `--slow`, `--summary`, and `--json`; use `--compact` for a high-signal view. Human-readable interactive output uses unified Chinese event names and independently color-codes severity, category, stable trace id, outcome/error values, and latency bands; explicit @-Bot messages remain highlighted. `--color` forces ANSI output when stdout is not a TTY and `--plain` disables it. Multiline values are folded for human display, while `--json` retains raw structured fields. Codex child failures persist extracted diagnostic lines rather than copying the complete input prompt. `/api/logs` supports equivalent `level`, `category`, `trace`, `group`, `sender`, `q`, `since`, `until`, and `slow` filters, adds `messageZh` and a concise `errorZh`, returns matched-count and level/category/latency summary fields, and remains verbose unless `verbose=0`. Set `CODEX_REMOTE_CONTACT_LOG_LEVEL=info` to reduce persisted detail. Console output defaults to success/warn/error and can be tuned with `CODEX_REMOTE_CONTACT_LOG_CONSOLE_LEVELS` (or disabled with `CODEX_REMOTE_CONTACT_LOG_CONSOLE=0`).
-- When changing Codex Remote Contact behavior in a way that contradicts or extends this skill, update this `SKILL.md` after finishing the code change so future sessions follow the live behavior.
+- When changing Codex QQ Bot behavior in a way that contradicts or extends this skill, update this `SKILL.md` after finishing the code change so future sessions follow the live behavior.
 
 ## Start Flow
 
@@ -400,7 +400,7 @@ tail -n 160 /tmp/napcat.screen.log
 
 ## NapCat WebUI Token
 
-This section is only about NapCat's own login/backend WebUI on port `6099`. It is distinct from the Codex Remote Contact dashboard on port `3789`.
+This section is only about NapCat's own login/backend WebUI on port `6099`. It is distinct from the Codex QQ Bot dashboard on port `3789`.
 
 When the user asks for the NapCat backend/login token, read it from:
 

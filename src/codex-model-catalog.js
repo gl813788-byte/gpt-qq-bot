@@ -108,7 +108,7 @@ export async function readCodexModels({
     send({
       id: 1,
       method: "initialize",
-      params: { clientInfo: { name: "codex-remote-contact", version: "1.1.1" } }
+      params: { clientInfo: { name: "codex-qq-bot", version: "1.1.1" } }
     });
   });
 }

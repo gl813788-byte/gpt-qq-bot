@@ -109,7 +109,7 @@ export function createQqZoneClient({ callOneBotAction, fetchImpl = fetch, timeou
         headers: {
           cookie: auth.cookies,
           referer: `https://user.qzone.qq.com/${auth.loginUin}/main`,
-          "user-agent": "Mozilla/5.0 (Codex Remote Contact QQ Bot)",
+          "user-agent": "Mozilla/5.0 (Codex QQ Bot)",
           ...(form ? { "content-type": "application/x-www-form-urlencoded; charset=UTF-8" } : {})
         },
         body: form?.toString()

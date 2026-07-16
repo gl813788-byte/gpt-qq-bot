@@ -30,7 +30,7 @@ Without Node.js, run:
 curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
 ```
 
-This Chinese bootstrap resolves the latest formal Release through the GitHub API, downloads the versioned ZIP, validates GitHub's SHA-256 digest and the ZIP structure, and places the project in `/root/Codex-Remote-Contact` or `~/Codex-Remote-Contact`. It never overwrites an existing project or an unrelated non-empty directory. It then enters the repository `ncc`, so the same state machine performs environment checks, dependency installation, `npm run verify`, and guided configuration. `--check` reads release metadata without downloading or writing project files.
+This Chinese bootstrap resolves the latest formal Release through the GitHub API, resumes the versioned ZIP download, validates GitHub's SHA-256 digest and the ZIP structure, and places the project in `/root/Codex-QQ-Bot` or `~/Codex-QQ-Bot`; an existing legacy `Codex-Remote-Contact` directory is reused. Download, verification, extraction, and `ncc` entry setup persist independently, so rerunning the same command resumes at the next stage. It never overwrites an existing project, unrelated non-empty directory, or different global `ncc`. After preparation it explicitly asks the user to run `ncc`, whose state machine performs environment checks, dependency installation, `npm run verify`, and guided configuration. `--check` reads release metadata without downloading or writing project files.
 
 ## Chinese entry for existing source
 
@@ -60,7 +60,7 @@ Goals:
 Execution requirements:
 1. Inspect the OS/architecture, free disk and memory, git, node, npm, zsh, curl, codex, jq, screen/launchctl when applicable, OneBot/NapCat, and ncc. Require Node.js 20+.
 2. Make a short plan and execute it. Ask me only for a QR scan, secret values, elevated/system changes, external-download approval, or a choice that changes the existing deployment strategy.
-3. Clone into a stable path when absent. Use /root/Codex-Remote-Contact for a Linux root environment; otherwise choose a stable path under HOME. For an existing repository, inspect git status --short --branch, remotes, and the current branch first. Never use reset --hard, clean, forced checkout, or overwrite local files.
+3. Clone into a stable path when absent. Use /root/Codex-QQ-Bot for a Linux root environment; otherwise choose a stable path under HOME; reuse an existing legacy /root/Codex-Remote-Contact installation. For an existing repository, inspect git status --short --branch, remotes, and the current branch first. Never use reset --hard, clean, forced checkout, or overwrite local files.
 4. Read the README, docs/DEPLOY_WITH_CODEX*, docs/ARCHITECTURE*, root AGENTS.md, and skills/claude-to-im/SKILL.md when applicable.
 5. Install dependencies and run npm run verify. Explain and fix syntax or test failures; do not skip verification.
 6. Create data/settings.json from config/settings.example.json only when missing. Merge an existing file at field level. Never commit data, runtime, config/local.env, or tokens.
@@ -88,7 +88,7 @@ npm install
 npm run verify
 ```
 
-The `npx`, `pnpm dlx`, and remote `install.sh` entries only obtain a formal ZIP safely and place it in a stable directory before handing off to the Chinese `一键部署.command`. The repository `ncc` owns the first-run state machine: it checks tools, creates missing local files, installs npm dependencies, runs `npm run verify`, and explicitly avoids replacing an unrelated global `ncc`. After success, `ncc` becomes the normal daily control menu.
+The `npx`, `pnpm dlx`, and remote `install.sh` entries resumably obtain a formal ZIP, verify and extract it, and install an `ncc` entry only when no command conflict exists. They then tell the user to run `ncc`. The repository `ncc` owns the first-run state machine: it checks tools, creates missing local files, installs npm dependencies, runs `npm run verify`, and explicitly avoids replacing an unrelated global `ncc`. After success, `ncc` becomes the normal daily control menu.
 
 ### 3. Configure the Hub
 

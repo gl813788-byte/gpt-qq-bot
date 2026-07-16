@@ -1,6 +1,6 @@
 <div align="center">
 
-# Codex Remote Contact
+# Codex QQ Bot
 
 ### Connect local Codex capabilities to QQ
 
@@ -34,9 +34,9 @@ If Node.js is not installed yet, use the lightweight bootstrap command:
 curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
 ```
 
-The Chinese installer resolves the latest GitHub Release, downloads its project ZIP, checks the SHA-256 digest supplied by GitHub, validates the archive structure, and installs it into a stable directory. The default is `/root/Codex-Remote-Contact` for root and `~/Codex-Remote-Contact` for other users. It then enters the repository `ncc`: the first run checks the environment, installs dependencies, verifies the project, and guides configuration; later runs open the normal daily menu.
+The Chinese installer resolves the latest GitHub Release, resumes its project ZIP download, checks the SHA-256 digest supplied by GitHub, validates the archive structure, and installs it into a stable directory. The default is `/root/Codex-QQ-Bot` for root and `~/Codex-QQ-Bot` for other users; an existing legacy `Codex-Remote-Contact` directory is reused. Download, verification, extraction, and `ncc` entry setup persist as separate stages, so rerunning the same command resumes after an interruption. When preparation finishes, run `ncc` as prompted: its first run checks the environment, installs dependencies, verifies the project, and guides configuration; later runs open the normal daily menu.
 
-An existing recognized installation is preserved, including its code, configuration, `data`, and `runtime`, and its current `ncc` is launched. An unrelated occupied directory is never overwritten. Run `npx -y codex-qq-bot --check` for a read-only preflight that downloads or changes no project files. On Windows, run the installer inside WSL.
+An existing recognized installation is preserved, including its code, configuration, `data`, and `runtime`; the installer only checks or repairs its `ncc` entry. An unrelated occupied directory is never overwritten, nor is a different existing global `ncc`; in that conflict case the repository launcher is printed instead. Run `npx -y codex-qq-bot --check` for a read-only preflight that downloads or changes no project files. On Windows, run the installer inside WSL.
 
 ## Alternatively, let Codex deploy it
 
@@ -52,7 +52,7 @@ Goal: connect QQ / OneBot to the current Codex CLI login and start a locally acc
 
 Execute the deployment instead of only giving me a command list. Continue until the result is verifiable:
 1. Inspect the OS, CPU architecture, Git, Node.js, npm, zsh, curl, Codex CLI, any existing OneBot/NapCat installation, and any existing ncc command. Require Node.js 20 or newer.
-2. Clone into a stable directory when the project is absent. Use /root/Codex-Remote-Contact for a Linux root environment; otherwise choose an appropriate user directory. If it already exists, inspect the remote, branch, and worktree first. Never overwrite local changes, configuration, data, or runtime state.
+2. Clone into a stable directory when the project is absent. Use /root/Codex-QQ-Bot for a Linux root environment; otherwise choose an appropriate user directory. Reuse an existing legacy /root/Codex-Remote-Contact installation instead of forcing a migration. Inspect the remote, branch, and worktree first. Never overwrite local changes, configuration, data, or runtime state.
 3. Read README.md, docs/DEPLOY_WITH_CODEX.md, docs/ARCHITECTURE.md, and skills/claude-to-im/SKILL.md when that skill matches the environment.
 4. Install dependencies and run npm run verify. Diagnose and fix failures instead of skipping verification.
 5. Create data/settings.json from config/settings.example.json only when it is missing. Merge only necessary fields into an existing file. Ask me for owner QQ ids, allowed group ids, OneBot address, or secrets only when needed, and never print secrets back in full.
@@ -97,7 +97,7 @@ For Codex CLI, the standard sign-in path is `codex login` followed by the browse
 QQ / NapCat / OneBot
           |
           v
-  Codex Remote Contact Hub -----> local dashboard
+       Codex QQ Bot Hub --------> local dashboard
           |
           +-----> Codex CLI / current login and models
           +-----> QQ memory, persona, interest, and stickers

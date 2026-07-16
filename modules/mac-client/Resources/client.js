@@ -105,7 +105,7 @@ function t(key, values = {}) {
 
 function applyI18n() {
   document.documentElement.lang = app.language === "en" ? "en" : "zh-CN";
-  document.title = app.language === "en" ? "Nexus · Codex Remote Contact" : "Nexus · 通讯中枢";
+  document.title = "Nexus · Codex QQ Bot";
   $$('[data-i18n]').forEach((node) => { node.textContent = t(node.dataset.i18n); });
   $$('[data-i18n-placeholder]').forEach((node) => { node.placeholder = t(node.dataset.i18nPlaceholder); });
   $$('[data-i18n-title]').forEach((node) => { node.title = t(node.dataset.i18nTitle); });

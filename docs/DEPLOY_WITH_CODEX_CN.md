@@ -30,7 +30,7 @@ npx -y codex-qq-bot
 curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
 ```
 
-该中文引导器从 GitHub API 解析最新正式 Release，下载版本化 ZIP，校验 GitHub 返回的 SHA-256 与 ZIP 结构，再把项目放到 `/root/Codex-Remote-Contact` 或 `~/Codex-Remote-Contact`。它不会覆盖已有项目或陌生的非空目录。完成代码准备后会进入仓库版 `ncc`，因此首次环境检测、依赖安装、`npm run verify` 和配置填写仍由同一个 `ncc` 状态机完成。`--check` 只读取版本信息，不下载或写入项目。
+该中文引导器从 GitHub API 解析最新正式 Release，断点续传版本化 ZIP，校验 GitHub 返回的 SHA-256 与 ZIP 结构，再把项目放到 `/root/Codex-QQ-Bot` 或 `~/Codex-QQ-Bot`；已存在的旧版 `Codex-Remote-Contact` 目录继续复用。下载、校验、解压和 `ncc` 入口分别保存完成状态，进程中断后重跑同一命令就从下一阶段继续。它不会覆盖已有项目、陌生的非空目录或其他同名全局 `ncc`。准备完成后会明确提醒运行 `ncc`，首次环境检测、依赖安装、`npm run verify` 和配置填写仍由仓库 `ncc` 状态机完成。`--check` 只读取版本信息，不下载或写入项目。
 
 ## 已有源码时的中文入口
 
@@ -60,7 +60,7 @@ https://github.com/gl813788-byte/codex-qq-bot.git
 执行要求：
 1. 检查系统/架构、可用磁盘与内存，以及 git、node、npm、zsh、curl、codex、jq、screen/launchctl（如果适用）、OneBot/NapCat 和 ncc。Node.js 必须为 20+。
 2. 为部署建立简短计划，然后直接执行。只有扫码、秘密值、系统提权、外部下载授权或会改变既有部署方案的选择才问我。
-3. 项目不存在时克隆到稳定目录。Linux root 默认 /root/Codex-Remote-Contact；普通用户默认使用 HOME 下的稳定目录。项目存在时先检查 git status --short --branch、remote 和当前分支。禁止 reset --hard、clean、强制 checkout 或覆盖本地文件。
+3. 项目不存在时克隆到稳定目录。Linux root 默认 /root/Codex-QQ-Bot；普通用户默认使用 HOME 下的稳定目录；已有旧版 /root/Codex-Remote-Contact 时继续复用。项目存在时先检查 git status --short --branch、remote 和当前分支。禁止 reset --hard、clean、强制 checkout 或覆盖本地文件。
 4. 阅读 README、docs/DEPLOY_WITH_CODEX*、docs/ARCHITECTURE*、根 AGENTS.md 和适用的 skills/claude-to-im/SKILL.md。
 5. 安装依赖并执行 npm run verify。测试或语法失败必须解释并修复；不得跳过。
 6. data/settings.json 缺失时才从 config/settings.example.json 创建。已有 JSON 只做字段级合并。不要提交 data、runtime、config/local.env 或任何 token。
@@ -96,7 +96,7 @@ npm install
 npm run verify
 ```
 
-`npx`、`pnpm dlx` 和远程 `install.sh` 只负责安全取得正式 ZIP 并放到稳定目录，随后交给中文 `一键部署.command`。首次部署状态机在仓库 `ncc` 内：它检查工具、创建缺失的本地文件、安装 npm 依赖并运行 `npm run verify`；发现无关全局 `ncc` 时会明确跳过覆盖。成功后 `ncc` 切换为常规控制菜单。
+`npx`、`pnpm dlx` 和远程 `install.sh` 负责可恢复地取得正式 ZIP、校验、解压并在没有命令冲突时安装 `ncc` 入口，随后提示用户运行 `ncc`。首次部署状态机在仓库 `ncc` 内：它检查工具、创建缺失的本地文件、安装 npm 依赖并运行 `npm run verify`；发现无关全局 `ncc` 时会明确跳过覆盖。成功后 `ncc` 切换为常规控制菜单。
 
 ### 3. 配置 Hub
 

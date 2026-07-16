@@ -3,5 +3,5 @@
   "version": "1.1.0",
   "type": "module",
   "main": "index.mjs",
-  "description": "Loopback-only QQ friend and group verification bridge for Codex Remote Contact"
+  "description": "Loopback-only QQ friend and group verification bridge for Codex QQ Bot"
 }

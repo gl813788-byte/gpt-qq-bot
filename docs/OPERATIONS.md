@@ -4,7 +4,7 @@
 
 For a fresh install, prefer `npx -y codex-qq-bot` (or `pnpm dlx codex-qq-bot`) without opening GitHub, or let Codex execute and validate the [deployment guide](DEPLOY_WITH_CODEX.md). This page covers routine operation after deployment.
 
-The public installer obtains the latest formal ZIP and enters the root-level `一键部署.command`; an extracted source archive can run that file directly. It enters the repository `ncc`, whose first run performs environment checks, dependency installation, verification, and guided configuration. After completion, later `ncc` runs open the normal status, startup, configuration, and logging menu.
+The public installer resumably downloads and extracts the latest formal ZIP, installs an `ncc` entry when there is no same-name command conflict, and then tells the user to run `ncc`; it does not enter the wizard by default. An extracted source archive can run the root-level `一键部署.command` directly. The first repository-`ncc` run performs environment checks, dependency installation, verification, and guided configuration. After completion, later runs open the normal status, startup, configuration, and logging menu.
 
 ```bash
 ./一键部署.command
@@ -22,7 +22,7 @@ Public instructions use `npm run ncc -- ...` so deployment does not overwrite an
 ## Preflight
 
 ```bash
-cd /root/Codex-Remote-Contact
+cd /root/Codex-QQ-Bot
 node --version
 codex --version
 git status --short --branch
