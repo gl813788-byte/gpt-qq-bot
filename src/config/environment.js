@@ -1,5 +1,6 @@
 import { parseAllowedOrigins } from "../http-utils.js";
 import { normalizeSafeFetchMode } from "../safe-fetch.js";
+import { CODEX_TASK_TIMEOUT_DEFAULTS, CODEX_TASK_TYPES } from "../codex-task-timeout.js";
 
 const DEFAULT_QQ_PROACTIVE_JUDGE_MODEL = "nousresearch/hermes-3-llama-3.1-405b:free";
 
@@ -38,6 +39,16 @@ export function createEnvironmentConfig(env = process.env) {
     min: 5_000,
     max: 5 * 60_000
   });
+  const codexTaskTimeouts = {
+    [CODEX_TASK_TYPES.QQ_REPLY]: codexTaskTimeout(env.CODEX_REMOTE_CONTACT_CODEX_REPLY_TIMEOUT_MS, CODEX_TASK_TYPES.QQ_REPLY),
+    [CODEX_TASK_TYPES.QQ_VISION_REPLY]: codexTaskTimeout(env.CODEX_REMOTE_CONTACT_CODEX_VISION_REPLY_TIMEOUT_MS, CODEX_TASK_TYPES.QQ_VISION_REPLY),
+    [CODEX_TASK_TYPES.QQ_CONTEXT_SUMMARY]: codexTaskTimeout(env.CODEX_REMOTE_CONTACT_CODEX_CONTEXT_SUMMARY_TIMEOUT_MS, CODEX_TASK_TYPES.QQ_CONTEXT_SUMMARY),
+    [CODEX_TASK_TYPES.QQ_SELF_PERSONA]: codexTaskTimeout(env.CODEX_REMOTE_CONTACT_CODEX_SELF_PERSONA_TIMEOUT_MS, CODEX_TASK_TYPES.QQ_SELF_PERSONA),
+    [CODEX_TASK_TYPES.QQ_FILE_TASK]: codexTaskTimeout(env.CODEX_REMOTE_CONTACT_CODEX_FILE_TASK_TIMEOUT_MS, CODEX_TASK_TYPES.QQ_FILE_TASK),
+    [CODEX_TASK_TYPES.QQ_IMAGE_GENERATION]: codexTaskTimeout(env.CODEX_REMOTE_CONTACT_CODEX_IMAGE_GENERATION_TIMEOUT_MS, CODEX_TASK_TYPES.QQ_IMAGE_GENERATION, {
+      max: 60 * 60_000
+    })
+  };
   const qqImageMaxBytes = boundedInteger(env.CODEX_REMOTE_CONTACT_QQ_IMAGE_MAX_BYTES, {
     defaultValue: 20 * 1024 * 1024,
     min: 256 * 1024,
@@ -79,6 +90,7 @@ export function createEnvironmentConfig(env = process.env) {
     codexMaxConcurrency,
     codexMaxPending,
     codexQuotaCacheTtlMs,
+    codexTaskTimeouts,
 
     qqEnhancerEnabled: env.CODEX_REMOTE_CONTACT_QQ_ENHANCER !== "0",
     qqMemoryLimit: numberOrDefault(env.CODEX_REMOTE_CONTACT_QQ_MEMORY_LIMIT, 10),
@@ -208,6 +220,14 @@ function boundedNumber(value, { defaultValue, min, max }) {
   const number = Number(value || defaultValue);
   if (!Number.isFinite(number)) return defaultValue;
   return Math.max(min, Math.min(max, number));
+}
+
+function codexTaskTimeout(value, taskType, { max = 30 * 60_000 } = {}) {
+  return boundedInteger(value, {
+    defaultValue: CODEX_TASK_TIMEOUT_DEFAULTS[taskType],
+    min: 10_000,
+    max
+  });
 }
 
 function normalizeBubbleSeparator(value) {

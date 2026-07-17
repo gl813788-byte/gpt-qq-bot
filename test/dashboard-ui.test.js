@@ -174,8 +174,20 @@ test("dashboard exposes local-only token-protected temporary public tunnel contr
     assert.match(html, new RegExp(`id="${id}"`));
   }
   assert.match(javascript, /\/api\/network\/public-tunnel/);
-  assert.match(javascript, /publicTunnelToggle"\)\.disabled = !app\.state \|\| !localBrowser/);
+  assert.match(javascript, /tunnelToggle\.disabled = tunnelBusy \|\| !app\.state \|\| !localBrowser/);
   assert.match(javascript, /copyPublicTunnelToken"\)\.disabled = !tunnelRunning \|\| !network\.apiTokenConfigured \|\| !localBrowser/);
   assert.match(javascript, /publicTunnelEnableMessage/);
   assert.match(css, /\.public-tunnel-card\s*\{/);
+});
+
+test("dashboard preserves local interaction state across polling and page reloads", () => {
+  assert.match(javascript, /sessionStorage\.setItem\(`\$\{STORAGE_PREFIX\}uiState`/);
+  assert.match(javascript, /window\.addEventListener\("pagehide", persistDashboardUiState\)/);
+  assert.match(javascript, /restoreDashboardUiState\(\);/);
+  assert.match(javascript, /dirtyForms: new Set\(restoredUiState\.botSettingsDraft/);
+  assert.match(javascript, /if \(!busy && !dirty && !form\.contains\(document\.activeElement\)\)/);
+  assert.match(javascript, /if \(app\.busyKeys\.has\("groups"\)\) return/);
+  assert.match(javascript, /if \(app\.busyKeys\.has\("memory"\)/);
+  assert.match(javascript, /busyKey: `channel:\$\{channel\}`/);
+  assert.match(css, /\.save-state\.dirty\s*\{/);
 });

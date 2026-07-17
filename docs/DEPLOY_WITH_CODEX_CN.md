@@ -30,7 +30,7 @@ npx -y codex-qq-bot
 curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
 ```
 
-该中文引导器从 GitHub API 解析最新正式 Release，断点续传版本化 ZIP，校验 GitHub 返回的 SHA-256 与 ZIP 结构，再把项目放到 `/root/Codex-QQ-Bot` 或 `~/Codex-QQ-Bot`；已存在的旧版 `Codex-Remote-Contact` 目录继续复用。下载、校验、解压和 `ncc` 入口分别保存完成状态，进程中断后重跑同一命令就从下一阶段继续。它不会覆盖已有项目、陌生的非空目录或其他同名全局 `ncc`。准备完成后会明确提醒运行 `ncc`，首次环境检测、依赖安装、`npm run verify` 和配置填写仍由仓库 `ncc` 状态机完成。`--check` 只读取版本信息，不下载或写入项目。
+该中文引导器从 GitHub API 解析仓库默认分支及其最新提交，断点续传该提交对应的源码 ZIP，校验 ZIP 完整性与目录结构，再把项目放到 `/root/Codex-QQ-Bot` 或 `~/Codex-QQ-Bot`，不再等待正式 Release；已存在的旧版 `Codex-Remote-Contact` 目录继续复用。源码解析、下载、校验、解压和 `ncc` 入口分别保存完成状态，进程中断后重跑同一命令就从下一阶段继续。它不会覆盖已有项目、陌生的非空目录或其他同名全局 `ncc`。准备完成后会明确提醒运行 `ncc`，首次环境检测、依赖安装、`npm run verify` 和配置填写仍由仓库 `ncc` 状态机完成。`--check` 只解析源码提交信息，不下载或写入项目。
 
 ## 已有源码时的中文入口
 
@@ -96,7 +96,7 @@ npm install
 npm run verify
 ```
 
-`npx`、`pnpm dlx` 和远程 `install.sh` 负责可恢复地取得正式 ZIP、校验、解压并在没有命令冲突时安装 `ncc` 入口，随后提示用户运行 `ncc`。首次部署状态机在仓库 `ncc` 内：它检查工具、创建缺失的本地文件、安装 npm 依赖并运行 `npm run verify`；发现无关全局 `ncc` 时会明确跳过覆盖。成功后 `ncc` 切换为常规控制菜单。
+`npx`、`pnpm dlx` 和远程 `install.sh` 会解析默认分支当前最新提交，可恢复地取得该提交对应的源码 ZIP、校验、解压并在没有命令冲突时安装 `ncc` 入口，随后提示用户运行 `ncc`。首次部署状态机在仓库 `ncc` 内：它检查工具、创建缺失的本地文件、安装 npm 依赖并运行 `npm run verify`；发现无关全局 `ncc` 时会明确跳过覆盖。成功后 `ncc` 切换为常规控制菜单。
 
 ### 3. 配置 Hub
 

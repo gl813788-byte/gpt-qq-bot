@@ -34,9 +34,9 @@ pnpm dlx codex-qq-bot
 curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
 ```
 
-中文安装器会自动查询最新 GitHub Release、续传项目 ZIP、核对 GitHub 提供的 SHA-256 摘要、检查压缩包结构并安装到稳定目录。root 用户默认使用 `/root/Codex-QQ-Bot`，其他用户默认使用 `~/Codex-QQ-Bot`；已存在的旧版 `Codex-Remote-Contact` 目录会继续复用。下载、校验、解压和 `ncc` 入口会分别保存进度，中断后重跑同一命令即可继续。准备完成后按提示运行 `ncc`，第一次执行环境检测、依赖安装、项目验证和配置向导，部署完成后再运行就是日常功能菜单。
+中文安装器会读取仓库默认分支，解析其最新提交，续传这个提交对应的源码 ZIP，检查压缩包完整性与目录结构后安装到稳定目录，无需等待 GitHub Release。root 用户默认使用 `/root/Codex-QQ-Bot`，其他用户默认使用 `~/Codex-QQ-Bot`；已存在的旧版 `Codex-Remote-Contact` 目录会继续复用。源码解析、下载、校验、解压和 `ncc` 入口会分别保存进度，中断后重跑同一命令即可继续。准备完成后按提示运行 `ncc`，第一次执行环境检测、依赖安装、项目验证和配置向导，部署完成后再运行就是日常功能菜单。
 
-如果目标目录已经是本项目，安装器会保留其中的代码、配置、`data` 和 `runtime`，只检查或补齐 `ncc` 入口；如果目录中是其他内容，则拒绝覆盖。机器上已有其他同名 `ncc` 时也不会覆盖，而会显示仓库入口。可先运行 `npx -y codex-qq-bot --check` 做纯检查，不会下载或修改项目文件。Windows 请在 WSL 中执行。
+如果目标目录已经是本项目，安装器会保留其中的代码、配置、`data` 和 `runtime`，只检查或补齐 `ncc` 入口；如果目录中是其他内容，则拒绝覆盖。机器上已有其他同名 `ncc` 时也不会覆盖，而会显示仓库入口。可先运行 `npx -y codex-qq-bot --check` 做纯检查：它只解析当前默认分支的最新提交，不会下载或修改项目文件。Windows 请在 WSL 中执行。
 
 ## 也可以直接让 Codex 部署
 

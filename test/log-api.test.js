@@ -13,7 +13,12 @@ test("log API exposes full diagnostics by default and supports compact mode expl
   const logger = createLogger({ filePath, minLevel: "debug", consoleOutput: false });
   logger.debug("QQ message details received", { text: "private message" }, "qq");
   logger.info("OneBot message received", { textLength: 14 }, "onebot");
-  logger.success("Codex CLI finished", { durationMs: 42, stderr: "internal detail" }, "codex");
+  logger.success("Codex CLI finished", {
+    durationMs: 42,
+    taskType: "qq-image-generation",
+    timeoutMs: 600_000,
+    stderr: "internal detail"
+  }, "codex");
   logger.warn("QQ web lookup failed", { error: "timeout", query: "private query" }, "search");
   await logger.flush();
 
@@ -21,7 +26,11 @@ test("log API exposes full diagnostics by default and supports compact mode expl
   assert.deepEqual(compact.entries.map((entry) => entry.message), ["Codex CLI finished", "QQ web lookup failed"]);
   assert.deepEqual(compact.entries.map((entry) => entry.messageZh), ["Codex CLI 执行完成", "QQ 联网搜索失败"]);
   assert.equal(compact.entries[1].errorZh, "timeout");
-  assert.deepEqual(compact.entries[0].details, { durationMs: 42 });
+  assert.deepEqual(compact.entries[0].details, {
+    durationMs: 42,
+    taskType: "qq-image-generation",
+    timeoutMs: 600_000
+  });
 
   const verbose = await buildLogsResponse(filePath, new URLSearchParams());
   assert.equal(verbose.entries.length, 4);

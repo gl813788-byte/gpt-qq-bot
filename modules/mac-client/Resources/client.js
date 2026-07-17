@@ -10,7 +10,7 @@ const translations = {
     heroTitle: "系统运行正常", heroBody: "QQ、OneBot 与 Hub 已连接，Codex 随时可用。", manageChannels: "管理通道", openApi: "查看 API",
     liveChannels: "LIVE CHANNELS", channelControl: "通道控制", viewAll: "查看全部", usageWindow: "Codex 用量", systemPulse: "SYSTEM PULSE", serviceHealth: "系统脉搏", checkNow: "立即检查", recentFlow: "RECENT FLOW", recentActivity: "最近活动", openLogs: "打开日志", todayRuntime: "今日运行", liveNow: "LIVE", last24Hours: "实时采样", stableLatency: "等待首个样本", liveSampleCount: "{count} 个真实样本", liveResponse: "响应 {latencyMs} ms · {online}/{total} 在线", now: "现在", quickEntryKicker: "SHORTCUTS", quickEntry: "快捷入口",
     connectionRules: "CONNECTION RULES", channelsHeading: "管理每一条消息通道", channelsBody: "控制启停、访问范围和可信联系人，所有改动会立即写入本地 Hub。",
-    behaviorLab: "BEHAVIOR LAB", intelligenceHeading: "把 Bot 的习惯和主动性分开看", intelligenceBody: "人设、表达习惯、群聊节奏与主动兴趣各自成区，状态更清楚，也不会挤占通道配置。", openLearningLogs: "查看学习日志", identityLayer: "IDENTITY", expressionLayer: "EXPRESSION", learningLayer: "LEARNING", initiativeLayer: "INITIATIVE", relationshipLayer: "RELATIONSHIP", botControlKicker: "BOT CONTROL", botControlHeading: "功能开关与调试参数", botControlBody: "开关会立即持久化；判定频率、模型和超时用于调试主动兴趣，不影响显式 @ Bot 的正常回复。", settingsSynced: "设置已同步", settingsSaving: "正在保存", settingsSaveFailed: "保存失败", qqEnhancerFeature: "QQ 增强能力", qqEnhancerFeatureHint: "图片上下文、自然表达与扩展行为的总开关。", webLookupFeature: "联网查询", webLookupFeatureHint: "允许 Bot 在需要时调用已配置的搜索服务。", proactiveFeature: "主动兴趣", proactiveFeatureHint: "允许普通群消息、冷群和私聊进入主动判断。", interestJudgeFeature: "兴趣模型判定", interestJudgeFeatureHint: "使用 OpenRouter 模型判断是否值得自然接话。", judgeEveryMessages: "消息间隔", judgeEveryMinutes: "分钟间隔", judgeModel: "判定模型", judgeTimeout: "静默超时（ms）", judgeRecentMessages: "最近上下文", saveBotSettings: "保存 Bot 设置", botSettingsSaved: "Bot 设置已保存", waitingBotSettings: "等待 Bot 设置", diagnosticJudgeProvider: "判定服务：{value}", diagnosticJudgeKeyReady: "OpenRouter Key 已配置", diagnosticJudgeKeyMissing: "OpenRouter Key 未配置", diagnosticSearchProvider: "搜索服务：{value}", diagnosticSafeFetchMode: "安全下载：{value}", safeFetchProxy: "代理兼容", safeFetchStrict: "严格", diagnosticActiveGeneration: "生成中：{value}", diagnosticPendingReplies: "待回复：{value}",
+    behaviorLab: "BEHAVIOR LAB", intelligenceHeading: "把 Bot 的习惯和主动性分开看", intelligenceBody: "人设、表达习惯、群聊节奏与主动兴趣各自成区，状态更清楚，也不会挤占通道配置。", openLearningLogs: "查看学习日志", identityLayer: "IDENTITY", expressionLayer: "EXPRESSION", learningLayer: "LEARNING", initiativeLayer: "INITIATIVE", relationshipLayer: "RELATIONSHIP", botControlKicker: "BOT CONTROL", botControlHeading: "功能开关与调试参数", botControlBody: "开关会立即持久化；判定频率、模型和超时用于调试主动兴趣，不影响显式 @ Bot 的正常回复。", settingsSynced: "设置已同步", settingsUnsaved: "有未保存修改", settingsSaving: "正在保存", settingsSaveFailed: "保存失败", qqEnhancerFeature: "QQ 增强能力", qqEnhancerFeatureHint: "图片上下文、自然表达与扩展行为的总开关。", webLookupFeature: "联网查询", webLookupFeatureHint: "允许 Bot 在需要时调用已配置的搜索服务。", proactiveFeature: "主动兴趣", proactiveFeatureHint: "允许普通群消息、冷群和私聊进入主动判断。", interestJudgeFeature: "兴趣模型判定", interestJudgeFeatureHint: "使用 OpenRouter 模型判断是否值得自然接话。", judgeEveryMessages: "消息间隔", judgeEveryMinutes: "分钟间隔", judgeModel: "判定模型", judgeTimeout: "静默超时（ms）", judgeRecentMessages: "最近上下文", saveBotSettings: "保存 Bot 设置", botSettingsSaved: "Bot 设置已保存", waitingBotSettings: "等待 Bot 设置", diagnosticJudgeProvider: "判定服务：{value}", diagnosticJudgeKeyReady: "OpenRouter Key 已配置", diagnosticJudgeKeyMissing: "OpenRouter Key 未配置", diagnosticSearchProvider: "搜索服务：{value}", diagnosticSafeFetchMode: "安全下载：{value}", safeFetchProxy: "代理兼容", safeFetchStrict: "严格", diagnosticActiveGeneration: "生成中：{value}", diagnosticPendingReplies: "待回复：{value}",
     toggleQq: "启用 QQ 通道", qqAllowlist: "QQ群白名单", qqAllowlistHint: "只有列表内群聊会触发助手。", stickerFrequency: "表情包频率", stickerFrequencyHint: "按群查看最近真人与上线后 Bot 的实际使用率。", humanStickerRate: "真人 {rate}% · {count} 条样本", botStickerRate: "Bot {rate}% · {count} 条新回复", plannedStickerRate: "闲聊计划 {rate}%", noStickerFrequency: "还没有可统计的群聊样本。", selfPersona: "Bot 全局人设", selfPersonaHint: "从各群和私聊的匿名摘要生成；QQ 昵称固定作为名字和兴趣关键词。", selfPersonaCollecting: "正在积累会话与 Bot 回复，达到阈值后自动生成人设。", selfPersonaGenerated: "第 {revision} 版 · {time}", selfPersonaProgress: "真人消息 {human} · Bot 回复 {bot} · 已总结 {summaries}/{scopes} 个会话", selfPersonaPolicy: "会话摘要：初次 {initial} 条，之后 {messages} 条或 {botReplies} 次 Bot 回复，至少间隔 {scopeHours} 小时；全局更新至少间隔 {globalHours} 小时", selfPersonaKeywords: "兴趣关键词", selfPersonaTopics: "加权兴趣", adaptiveLearning: "自动适应", adaptiveLearningHint: "按群学习活跃时段、成员节奏，并按 24 小时时钟复盘真人与 Bot 的风格差异。", adaptiveSamples: "真人 {count} 条 · {members} 位成员", adaptiveHours: "常见活跃时段：{hours}", adaptiveNextReview: "下次复盘检查：{time}", adaptiveColdWaiting: "存在未获回复的 Bot 消息，后续兴趣与间隔已自动降低", adaptiveCollecting: "正在积累上线后的 Bot 回复，样本足够后每 24 小时复盘。", noAdaptiveLearning: "还没有可用的自动学习样本。", coldInterest: "冷群兴趣发言", coldInterestHint: "按最后一条消息计时，结合群节奏选择发一句或保持沉默。", coldInterestPolicy: "开放 {hours} · 基础重试 {retry} 小时 · 未获回复时自动降兴趣并延长间隔", learnedHours: "按各群活跃统计", coldInterestRecent: "最近判断", noColdInterest: "还没有可展示的冷群状态。", noColdInterestDecisions: "还没有实际触发过冷群判断。", privateInterest: "私聊主动兴趣", privateInterestHint: "按互动频率和时间采用短期高、中期低、长期回升的概率，并对连续未回复自动退避。", noPrivateInterest: "还没有可展示的私聊学习状态。", noPrivateInterestDecisions: "还没有实际触发过私聊主动判断。", privateContact: "联系人 {value}", privateRecent: "最近判断", privatePhase: "阶段 {value}", privateProbability: "候选概率 {value}%", privateFrequency: "互动频率 {value}", detailLearnedHours: "开放时段 {value}", detailUnanswered: "连续未回复 {value}", detailInterestMultiplier: "兴趣系数 {value}", detailNextCheck: "下次可判断 {value}", viewDetailedLogs: "查看详细日志", learningHuman: "真人学习参数", learningBot: "Bot 实际参数", learningReview: "风格复盘", learningInterest: "兴趣回复参数", detailSample: "样本 {value}", detailConfidence: "置信度 {value}%", detailTextSample: "文字样本 {value}", detailAverageChars: "平均文字 {value} 字", detailShortRatio: "短消息 {value}%", detailLongRatio: "长消息 {value}%", detailStickerRatio: "表情包 {value}%", detailImageRatio: "图片 {value}%", detailEmojiRatio: "Emoji {value}%", detailReplyRatio: "回复引用 {value}%", detailMentionRatio: "@ 消息 {value}%", detailQuestionRatio: "问句 {value}%", detailBotInteraction: "与 Bot 直接互动 {value}%", detailBurstRatio: "两分钟连发 {value}%", detailInterruptionRate: "插话率 {value}% · {samples} 次活跃衔接", detailGap: "消息间隔中位 {value}", detailActiveDays: "活跃 {value} 天", detailDailyMessages: "活跃日均 {value} 条", detailCurrentHour: "当前时段占比 {value}%", detailFirstSeen: "开始学习 {value}", detailLastHuman: "最后真人消息 {value}", detailBotReplies: "新 Bot 回复 {value}", detailBotChars: "Bot 平均 {value} 字", detailBotSticker: "Bot 表情包 {value}%", detailBotBubbles: "Bot 多气泡 {value}%", detailBotFollowup: "真人接话率 {value}%", detailTrackingStart: "Bot 统计起点 {value}", detailLastBot: "最后 Bot 回复 {value}", detailReviewSamples: "复盘样本 真人 {human} / Bot {bot}", detailLastReview: "上次复盘 {value}", detailNextReview: "下次复盘 {value}", detailOrdinaryInterest: "普通兴趣：{messages} 条或 {minutes} 分钟", detailInterestReason: "间隔依据 {value}", detailColdIdle: "已沉默 {idle} / 需 {required} 小时", detailColdReason: "当前状态 {value}", detailColdThreshold: "计时阈值 {value}", detailColdCheck: "上次判断 {value}", detailColdSent: "上次主动发言 {value}", groupLabel: "群 {value}", groupId: "群 ID", groupIdExample: "例如 123456789", add: "添加",
     selfPersonaGlobalPolicy: "全局人设：首次 {initial} 条总消息和至少 2 个会话；之后新增 {messages} 条真人消息、{botReplies} 次 Bot 回复或 {summaries} 份摘要，至少间隔 {hours} 小时；失败后 {retry} 小时再试",
     qqRecent: "QQ 最近事件",
@@ -36,7 +36,7 @@ const translations = {
     heroTitle: "All systems nominal", heroBody: "QQ, OneBot, and Hub are connected. Codex is ready.", manageChannels: "Manage channels", openApi: "View API",
     liveChannels: "LIVE CHANNELS", channelControl: "Channel control", viewAll: "View all", usageWindow: "Codex usage", systemPulse: "SYSTEM PULSE", serviceHealth: "System pulse", checkNow: "Check now", recentFlow: "RECENT FLOW", recentActivity: "Recent activity", openLogs: "Open logs", todayRuntime: "Today", liveNow: "LIVE", last24Hours: "Live samples", stableLatency: "Waiting for first sample", liveSampleCount: "{count} real samples", liveResponse: "Response {latencyMs} ms · {online}/{total} online", now: "Now", quickEntryKicker: "SHORTCUTS", quickEntry: "Quick access",
     connectionRules: "CONNECTION RULES", channelsHeading: "Manage every message channel", channelsBody: "Control availability, access scope, and trusted contacts. Changes are written to the local Hub immediately.",
-    behaviorLab: "BEHAVIOR LAB", intelligenceHeading: "See Bot habits and initiative separately", intelligenceBody: "Persona, expression, group rhythm, and proactive interest each have their own space without crowding channel controls.", openLearningLogs: "Open learning logs", identityLayer: "IDENTITY", expressionLayer: "EXPRESSION", learningLayer: "LEARNING", initiativeLayer: "INITIATIVE", relationshipLayer: "RELATIONSHIP", botControlKicker: "BOT CONTROL", botControlHeading: "Feature switches and debug tuning", botControlBody: "Switches persist immediately. Judge cadence, model, and timeout tune proactive interest without affecting explicit @Bot replies.", settingsSynced: "Settings synced", settingsSaving: "Saving", settingsSaveFailed: "Save failed", qqEnhancerFeature: "QQ enhancement", qqEnhancerFeatureHint: "Master switch for image context, natural expression, and extended behavior.", webLookupFeature: "Web lookup", webLookupFeatureHint: "Allows the Bot to use configured search services when needed.", proactiveFeature: "Proactive interest", proactiveFeatureHint: "Allows ordinary group, cold-group, and private proactive candidates.", interestJudgeFeature: "Interest model judge", interestJudgeFeatureHint: "Uses an OpenRouter model to decide whether joining naturally adds value.", judgeEveryMessages: "Message interval", judgeEveryMinutes: "Minute interval", judgeModel: "Judge model", judgeTimeout: "Idle timeout (ms)", judgeRecentMessages: "Recent context", saveBotSettings: "Save Bot settings", botSettingsSaved: "Bot settings saved", waitingBotSettings: "Waiting for Bot settings", diagnosticJudgeProvider: "Judge: {value}", diagnosticJudgeKeyReady: "OpenRouter key configured", diagnosticJudgeKeyMissing: "OpenRouter key missing", diagnosticSearchProvider: "Search: {value}", diagnosticSafeFetchMode: "Safe downloads: {value}", safeFetchProxy: "proxy-compatible", safeFetchStrict: "strict", diagnosticActiveGeneration: "Generating: {value}", diagnosticPendingReplies: "Pending replies: {value}",
+    behaviorLab: "BEHAVIOR LAB", intelligenceHeading: "See Bot habits and initiative separately", intelligenceBody: "Persona, expression, group rhythm, and proactive interest each have their own space without crowding channel controls.", openLearningLogs: "Open learning logs", identityLayer: "IDENTITY", expressionLayer: "EXPRESSION", learningLayer: "LEARNING", initiativeLayer: "INITIATIVE", relationshipLayer: "RELATIONSHIP", botControlKicker: "BOT CONTROL", botControlHeading: "Feature switches and debug tuning", botControlBody: "Switches persist immediately. Judge cadence, model, and timeout tune proactive interest without affecting explicit @Bot replies.", settingsSynced: "Settings synced", settingsUnsaved: "Unsaved changes", settingsSaving: "Saving", settingsSaveFailed: "Save failed", qqEnhancerFeature: "QQ enhancement", qqEnhancerFeatureHint: "Master switch for image context, natural expression, and extended behavior.", webLookupFeature: "Web lookup", webLookupFeatureHint: "Allows the Bot to use configured search services when needed.", proactiveFeature: "Proactive interest", proactiveFeatureHint: "Allows ordinary group, cold-group, and private proactive candidates.", interestJudgeFeature: "Interest model judge", interestJudgeFeatureHint: "Uses an OpenRouter model to decide whether joining naturally adds value.", judgeEveryMessages: "Message interval", judgeEveryMinutes: "Minute interval", judgeModel: "Judge model", judgeTimeout: "Idle timeout (ms)", judgeRecentMessages: "Recent context", saveBotSettings: "Save Bot settings", botSettingsSaved: "Bot settings saved", waitingBotSettings: "Waiting for Bot settings", diagnosticJudgeProvider: "Judge: {value}", diagnosticJudgeKeyReady: "OpenRouter key configured", diagnosticJudgeKeyMissing: "OpenRouter key missing", diagnosticSearchProvider: "Search: {value}", diagnosticSafeFetchMode: "Safe downloads: {value}", safeFetchProxy: "proxy-compatible", safeFetchStrict: "strict", diagnosticActiveGeneration: "Generating: {value}", diagnosticPendingReplies: "Pending replies: {value}",
     toggleQq: "Enable QQ channel", qqAllowlist: "QQ group allowlist", qqAllowlistHint: "Only listed groups can trigger the assistant.", stickerFrequency: "Sticker frequency", stickerFrequencyHint: "Compare recent human usage with Bot replies sent after this rollout.", humanStickerRate: "Humans {rate}% · {count} samples", botStickerRate: "Bot {rate}% · {count} new replies", plannedStickerRate: "Casual target {rate}%", noStickerFrequency: "No group samples are available yet.", selfPersona: "Global Bot persona", selfPersonaHint: "Generated from anonymous group and private summaries; the QQ nickname stays fixed as the name and an interest keyword.", selfPersonaCollecting: "Collecting conversations and Bot replies; the persona will be generated after the threshold is reached.", selfPersonaGenerated: "Revision {revision} · {time}", selfPersonaProgress: "{human} human messages · {bot} Bot replies · {summaries}/{scopes} scopes summarized", selfPersonaPolicy: "Scope summary: first at {initial} messages, then every {messages} messages or {botReplies} Bot replies with a {scopeHours}h minimum; global updates have a {globalHours}h minimum", selfPersonaKeywords: "Interest keywords", selfPersonaTopics: "Weighted interests", adaptiveLearning: "Adaptive learning", adaptiveLearningHint: "Learns group timing and member rhythm, then reviews human-versus-Bot style on a 24-hour clock.", adaptiveSamples: "{count} human messages · {members} members", adaptiveHours: "Common active hours: {hours}", adaptiveNextReview: "Next review check: {time}", adaptiveColdWaiting: "Unanswered Bot messages are reducing interest and lengthening the next interval", adaptiveCollecting: "Collecting new Bot replies; review runs every 24 hours when samples are sufficient.", noAdaptiveLearning: "No adaptive-learning samples yet.", coldInterest: "Cold-group interest", coldInterestHint: "Times from the latest message and uses group rhythm to speak once or stay silent.", coldInterestPolicy: "Open {hours} · base retry {retry}h · unanswered outreach lowers interest and lengthens the interval", learnedHours: "learned per group", coldInterestRecent: "Recent decisions", noColdInterest: "No cold-group status is available yet.", noColdInterestDecisions: "No cold-group candidate has run yet.", privateInterest: "Private proactive interest", privateInterestHint: "Uses interaction frequency and a short-high, middle-low, long-rising timing curve, with unanswered-message backoff.", noPrivateInterest: "No private-chat learning status is available yet.", noPrivateInterestDecisions: "No private proactive candidate has run yet.", privateContact: "Contact {value}", privateRecent: "Recent decisions", privatePhase: "Phase {value}", privateProbability: "Candidate probability {value}%", privateFrequency: "Frequency {value}", detailLearnedHours: "Open hours {value}", detailUnanswered: "Unanswered streak {value}", detailInterestMultiplier: "Interest multiplier {value}", detailNextCheck: "Next eligible check {value}", viewDetailedLogs: "View detailed logs", learningHuman: "Human learning signals", learningBot: "Bot actual signals", learningReview: "Style review", learningInterest: "Interest reply signals", detailSample: "Samples {value}", detailConfidence: "Confidence {value}%", detailTextSample: "Text samples {value}", detailAverageChars: "Average text {value} chars", detailShortRatio: "Short messages {value}%", detailLongRatio: "Long messages {value}%", detailStickerRatio: "Stickers {value}%", detailImageRatio: "Images {value}%", detailEmojiRatio: "Emoji {value}%", detailReplyRatio: "Replies {value}%", detailMentionRatio: "Mentions {value}%", detailQuestionRatio: "Questions {value}%", detailBotInteraction: "Direct Bot interaction {value}%", detailBurstRatio: "Two-minute bursts {value}%", detailInterruptionRate: "Interjection rate {value}% · {samples} active transitions", detailGap: "Median gap {value}", detailActiveDays: "Active {value} days", detailDailyMessages: "{value} per active day", detailCurrentHour: "Current-hour share {value}%", detailFirstSeen: "Learning since {value}", detailLastHuman: "Latest human message {value}", detailBotReplies: "New Bot replies {value}", detailBotChars: "Bot average {value} chars", detailBotSticker: "Bot stickers {value}%", detailBotBubbles: "Bot multi-bubble {value}%", detailBotFollowup: "Human follow-up {value}%", detailTrackingStart: "Bot tracking since {value}", detailLastBot: "Latest Bot reply {value}", detailReviewSamples: "Review samples human {human} / Bot {bot}", detailLastReview: "Last review {value}", detailNextReview: "Next review {value}", detailOrdinaryInterest: "Ordinary interest: {messages} messages or {minutes} minutes", detailInterestReason: "Cadence basis {value}", detailColdIdle: "Idle {idle} / required {required}h", detailColdReason: "Current state {value}", detailColdThreshold: "Time threshold {value}", detailColdCheck: "Last check {value}", detailColdSent: "Last outreach {value}", groupLabel: "Group {value}", groupId: "Group ID", groupIdExample: "e.g. 123456789", add: "Add",
     selfPersonaGlobalPolicy: "Global persona: first at {initial} total messages across at least 2 scopes; then after {messages} human messages, {botReplies} Bot replies, or {summaries} summaries with a {hours}h minimum; failures retry after {retry}h",
     qqRecent: "Recent QQ events",
@@ -57,34 +57,42 @@ const translations = {
   }
 };
 
-const app = {
-  view: validViews.has(location.hash.slice(1)) ? location.hash.slice(1) : "overview",
-  language: localStorage.getItem(`${STORAGE_PREFIX}language`) === "en" ? "en" : "zh",
-  theme: ["system", "light", "dark"].includes(localStorage.getItem(`${STORAGE_PREFIX}theme`)) ? localStorage.getItem(`${STORAGE_PREFIX}theme`) : "light",
-  autoRefresh: localStorage.getItem(`${STORAGE_PREFIX}autoRefresh`) !== "0",
-  refreshSeconds: [5, 10, 30, 60].includes(Number(localStorage.getItem(`${STORAGE_PREFIX}refreshSeconds`))) ? Number(localStorage.getItem(`${STORAGE_PREFIX}refreshSeconds`)) : 5,
-  liveLogs: true,
-  logFollow: true,
-  lastLogSignature: "",
-  state: null,
-  maintenance: null,
-  memory: null,
-  logs: null,
-  activeMemoryTab: "unified",
-  memoryQuery: "",
-  openMemoryGroups: new Set(),
-  controllers: new Map(),
-  busyKeys: new Set(),
-  apiToken: sessionStorage.getItem(`${STORAGE_PREFIX}apiToken`) || "",
-  authPromptPromise: null,
-  lastFetch: { state: 0, maintenance: 0, memory: 0, logs: 0 },
-  logCategories: new Set(),
-  selectedLog: null,
-  commandIndex: 0,
-  lastSyncAt: 0,
-  connectionOk: false,
-  runtimeSamples: loadRuntimeSamples()
-};
+const app = (() => {
+  const restoredUiState = loadDashboardUiState();
+  return {
+    view: validViews.has(location.hash.slice(1)) ? location.hash.slice(1) : "overview",
+    language: localStorage.getItem(`${STORAGE_PREFIX}language`) === "en" ? "en" : "zh",
+    theme: ["system", "light", "dark"].includes(localStorage.getItem(`${STORAGE_PREFIX}theme`)) ? localStorage.getItem(`${STORAGE_PREFIX}theme`) : "light",
+    autoRefresh: localStorage.getItem(`${STORAGE_PREFIX}autoRefresh`) !== "0",
+    refreshSeconds: [5, 10, 30, 60].includes(Number(localStorage.getItem(`${STORAGE_PREFIX}refreshSeconds`))) ? Number(localStorage.getItem(`${STORAGE_PREFIX}refreshSeconds`)) : 5,
+    liveLogs: restoredUiState.liveLogs !== false,
+    logFollow: restoredUiState.logFollow !== false,
+    lastLogSignature: "",
+    state: null,
+    maintenance: null,
+    memory: null,
+    logs: null,
+    activeMemoryTab: restoredUiState.activeMemoryTab === "qq" ? "qq" : "unified",
+    memoryQuery: restoredUiState.memoryQuery || "",
+    openMemoryGroups: new Set(restoredUiState.openMemoryGroups || []),
+    controllers: new Map(),
+    busyKeys: new Set(),
+    dirtyForms: new Set(restoredUiState.botSettingsDraft ? ["botSettingsForm"] : []),
+    groupDraft: restoredUiState.groupDraft || "",
+    botSettingsDraft: restoredUiState.botSettingsDraft || null,
+    logFilters: restoredUiState.logFilters || {},
+    logScrollTop: restoredUiState.logScrollTop || 0,
+    apiToken: sessionStorage.getItem(`${STORAGE_PREFIX}apiToken`) || "",
+    authPromptPromise: null,
+    lastFetch: { state: 0, maintenance: 0, memory: 0, logs: 0 },
+    logCategories: new Set(),
+    selectedLog: null,
+    commandIndex: 0,
+    lastSyncAt: 0,
+    connectionOk: false,
+    runtimeSamples: loadRuntimeSamples()
+  };
+})();
 
 function loadRuntimeSamples() {
   try {
@@ -93,6 +101,149 @@ function loadRuntimeSamples() {
   } catch {
     return [];
   }
+}
+
+function loadDashboardUiState() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(`${STORAGE_PREFIX}uiState`) || "{}");
+    if (!parsed || typeof parsed !== "object") return {};
+    const logFilters = parsed.logFilters && typeof parsed.logFilters === "object" ? parsed.logFilters : {};
+    const botSettingsDraft = parsed.botSettingsDirty === true
+      ? normalizeBotSettingsDraft(parsed.botSettingsDraft)
+      : null;
+    return {
+      liveLogs: parsed.liveLogs !== false,
+      logFollow: parsed.logFollow !== false,
+      activeMemoryTab: parsed.activeMemoryTab === "qq" ? "qq" : "unified",
+      memoryQuery: boundedUiText(parsed.memoryQuery, 200),
+      openMemoryGroups: Array.isArray(parsed.openMemoryGroups)
+        ? parsed.openMemoryGroups.map((value) => boundedUiText(value, 160)).filter(Boolean).slice(0, 200)
+        : [],
+      groupDraft: /^\d{0,20}$/.test(String(parsed.groupDraft || "")) ? String(parsed.groupDraft || "") : "",
+      botSettingsDraft,
+      logFilters: {
+        level: ["", "error", "warn", "success", "info", "debug"].includes(logFilters.level) ? logFilters.level : "",
+        category: boundedUiText(logFilters.category, 80),
+        query: boundedUiText(logFilters.query, 240),
+        slow: ["", "500", "1000", "3000", "10000"].includes(String(logFilters.slow || "")) ? String(logFilters.slow || "") : "",
+        limit: ["100", "250", "500", "1000"].includes(String(logFilters.limit || "")) ? String(logFilters.limit || "") : "250"
+      },
+      logScrollTop: Number.isFinite(Number(parsed.logScrollTop)) ? Math.max(0, Number(parsed.logScrollTop)) : 0
+    };
+  } catch {
+    return {};
+  }
+}
+
+function boundedUiText(value, maxLength) {
+  return String(value || "").slice(0, maxLength);
+}
+
+function normalizeBotSettingsDraft(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    enhancerEnabled: Boolean(value.enhancerEnabled),
+    webLookupEnabled: Boolean(value.webLookupEnabled),
+    proactiveEnabled: Boolean(value.proactiveEnabled),
+    judgeEnabled: Boolean(value.judgeEnabled),
+    judgeEveryMessages: boundedUiText(value.judgeEveryMessages, 8),
+    judgeEveryMinutes: boundedUiText(value.judgeEveryMinutes, 8),
+    judgeModel: boundedUiText(value.judgeModel, 200),
+    judgeTimeoutMs: boundedUiText(value.judgeTimeoutMs, 8),
+    judgeMaxRecentMessages: boundedUiText(value.judgeMaxRecentMessages, 8)
+  };
+}
+
+function collectBotSettingsDraft() {
+  return {
+    enhancerEnabled: $("#botEnhancerToggle").checked,
+    webLookupEnabled: $("#botWebLookupToggle").checked,
+    proactiveEnabled: $("#botProactiveToggle").checked,
+    judgeEnabled: $("#botJudgeToggle").checked,
+    judgeEveryMessages: $("#botJudgeMessages").value,
+    judgeEveryMinutes: $("#botJudgeMinutes").value,
+    judgeModel: $("#botJudgeModel").value,
+    judgeTimeoutMs: $("#botJudgeTimeout").value,
+    judgeMaxRecentMessages: $("#botJudgeRecent").value
+  };
+}
+
+function applyBotSettingsDraft(draft) {
+  if (!draft) return;
+  $("#botEnhancerToggle").checked = draft.enhancerEnabled;
+  $("#botWebLookupToggle").checked = draft.webLookupEnabled;
+  $("#botProactiveToggle").checked = draft.proactiveEnabled;
+  $("#botJudgeToggle").checked = draft.judgeEnabled;
+  $("#botJudgeMessages").value = draft.judgeEveryMessages;
+  $("#botJudgeMinutes").value = draft.judgeEveryMinutes;
+  $("#botJudgeModel").value = draft.judgeModel;
+  $("#botJudgeTimeout").value = draft.judgeTimeoutMs;
+  $("#botJudgeRecent").value = draft.judgeMaxRecentMessages;
+}
+
+function readLogFilters() {
+  return {
+    level: $("#logLevel")?.value || "",
+    category: $("#logCategory")?.value || "",
+    query: $("#logQuery")?.value || "",
+    slow: $("#logSlow")?.value || "",
+    limit: $("#logLimit")?.value || "250"
+  };
+}
+
+function persistDashboardUiState() {
+  try {
+    rememberOpenMemoryGroups();
+    app.groupDraft = $("#groupInput")?.value || "";
+    app.logFilters = readLogFilters();
+    app.logScrollTop = $("#logStream")?.scrollTop || 0;
+    if (app.dirtyForms.has("botSettingsForm")) app.botSettingsDraft = collectBotSettingsDraft();
+    sessionStorage.setItem(`${STORAGE_PREFIX}uiState`, JSON.stringify({
+      version: 1,
+      liveLogs: app.liveLogs,
+      logFollow: app.logFollow,
+      activeMemoryTab: app.activeMemoryTab,
+      memoryQuery: app.memoryQuery,
+      openMemoryGroups: [...app.openMemoryGroups],
+      groupDraft: app.groupDraft,
+      botSettingsDirty: app.dirtyForms.has("botSettingsForm"),
+      botSettingsDraft: app.dirtyForms.has("botSettingsForm") ? app.botSettingsDraft : null,
+      logFilters: app.logFilters,
+      logScrollTop: app.logScrollTop
+    }));
+  } catch {
+    // Private browsing or a storage quota must not interrupt dashboard operations.
+  }
+}
+
+function restoreDashboardUiState() {
+  $("#groupInput").value = app.groupDraft;
+  $("#memorySearch").value = app.memoryQuery;
+  $("#liveLogsToggle").checked = app.liveLogs;
+  $("#logFollowToggle").checked = app.logFollow;
+  $("#logLevel").value = app.logFilters.level || "";
+  $("#logQuery").value = app.logFilters.query || "";
+  $("#logSlow").value = app.logFilters.slow || "";
+  $("#logLimit").value = app.logFilters.limit || "250";
+  if (app.logFilters.category) {
+    app.logCategories.add(app.logFilters.category);
+    updateLogCategories({});
+    $("#logCategory").value = app.logFilters.category;
+  }
+  applyBotSettingsDraft(app.botSettingsDraft);
+}
+
+function markBotSettingsDirty() {
+  app.dirtyForms.add("botSettingsForm");
+  app.botSettingsDraft = collectBotSettingsDraft();
+  setBotControlStatus("dirty", "settingsUnsaved");
+  persistDashboardUiState();
+}
+
+function clearBotSettingsDraft() {
+  app.dirtyForms.delete("botSettingsForm");
+  app.botSettingsDraft = null;
+  persistDashboardUiState();
 }
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -344,7 +495,10 @@ function renderAll() {
 function renderState() {
   if (!app.state) return;
   const state = app.state;
-  $("#qqToggle").checked = Boolean(state.channels?.qq);
+  const qqToggle = $("#qqToggle");
+  const qqBusy = app.busyKeys.has("channel:qq");
+  if (!qqBusy && document.activeElement !== qqToggle) qqToggle.checked = Boolean(state.channels?.qq);
+  qqToggle.disabled = qqBusy;
   renderOverviewStats();
   renderOverviewBrief();
   renderServiceTopology();
@@ -613,13 +767,15 @@ function renderBotControls() {
   const form = $("#botSettingsForm");
   const settings = app.state?.qq?.botSettings;
   const hasSettings = Boolean(settings);
-  $$('input, button', form).forEach((control) => { control.disabled = !hasSettings; });
+  const busy = app.busyKeys.has("bot-settings");
+  const dirty = app.dirtyForms.has("botSettingsForm");
+  $$('input, button', form).forEach((control) => { control.disabled = !hasSettings || busy; });
   if (!settings) {
     $("#botDiagnostics").innerHTML = `<span class="diagnostic-chip warn">${escapeHtml(t("waitingBotSettings"))}</span>`;
     return;
   }
 
-  if (!form.contains(document.activeElement)) {
+  if (!busy && !dirty && !form.contains(document.activeElement)) {
     $("#botEnhancerToggle").checked = settings.enhancerEnabled;
     $("#botWebLookupToggle").checked = settings.webLookupEnabled;
     $("#botProactiveToggle").checked = settings.proactiveEnabled;
@@ -630,6 +786,7 @@ function renderBotControls() {
     $("#botJudgeTimeout").value = settings.judgeTimeoutMs;
     $("#botJudgeRecent").value = settings.judgeMaxRecentMessages;
   }
+  if (dirty && !busy) setBotControlStatus("dirty", "settingsUnsaved");
 
   const activeGenerations = sumValues(app.state?.qq?.activeGenerationCounts);
   const pendingReplies = sumValues(app.state?.qq?.pendingReplyCounts);
@@ -669,6 +826,9 @@ async function saveBotSettings(control) {
   const form = $("#botSettingsForm");
   if (!form.reportValidity()) return false;
   const controls = $$('input, button', form);
+  app.busyKeys.add("bot-settings");
+  app.botSettingsDraft = collectBotSettingsDraft();
+  persistDashboardUiState();
   controls.forEach((item) => { item.disabled = true; });
   setBotControlStatus("saving", "settingsSaving");
   try {
@@ -677,19 +837,23 @@ async function saveBotSettings(control) {
       body: JSON.stringify(collectBotSettings())
     }, { key: "bot-settings" });
     app.lastFetch.state = Date.now();
+    clearBotSettingsDraft();
     setBotControlStatus("ok", "settingsSynced");
     renderState();
     showToast(t("botSettingsSaved"), "success");
     return true;
   } catch (error) {
+    app.dirtyForms.add("botSettingsForm");
+    app.botSettingsDraft = collectBotSettingsDraft();
+    persistDashboardUiState();
     setBotControlStatus("error", "settingsSaveFailed");
     document.activeElement?.blur?.();
-    renderBotControls();
     showToast(error.message, "error");
     if (control) control.focus();
     return false;
   } finally {
-    controls.forEach((item) => { item.disabled = false; });
+    app.busyKeys.delete("bot-settings");
+    controls.forEach((item) => { item.disabled = !Boolean(app.state?.qq?.botSettings); });
   }
 }
 
@@ -912,6 +1076,7 @@ function formatRate(value) {
 }
 
 function renderGroups(groups) {
+  if (app.busyKeys.has("groups")) return;
   $("#groupCount").textContent = String(groups.length);
   $("#groupList").innerHTML = groups.length ? groups.map((id) => `<span class="token-item"><code>${escapeHtml(id)}</code><button type="button" data-remove-group="${escapeHtml(id)}" aria-label="${escapeHtml(t("removeGroupTitle"))}">×</button></span>`).join("") : `<p class="token-empty">${escapeHtml(t("noGroups"))}</p>`;
 }
@@ -943,6 +1108,7 @@ function renderRecentTimeline() {
 
 function renderMemory() {
   if (!app.memory) return;
+  if (app.busyKeys.has("memory") && $("#memoryView").childElementCount > 0) return;
   rememberOpenMemoryGroups();
   $$('[data-memory-tab]').forEach((button) => {
     const active = button.dataset.memoryTab === app.activeMemoryTab;
@@ -1091,10 +1257,13 @@ function renderLogs({ preserveFocus = false } = {}) {
   if (signature === app.lastLogSignature && $("#logStream").childElementCount > 0) return;
   app.lastLogSignature = signature;
   const stream = $("#logStream");
-  const previousScrollTop = stream.scrollTop;
+  const previousScrollTop = stream.childElementCount > 0 ? stream.scrollTop : app.logScrollTop;
   stream.innerHTML = entries.length ? entries.map((entry, index) => renderLogEntry(entry, index)).join("") : emptyState(t("noLogs"));
   if (app.logFollow) stream.scrollTop = stream.scrollHeight;
-  else stream.scrollTop = previousScrollTop;
+  else {
+    stream.scrollTop = previousScrollTop;
+    app.logScrollTop = stream.scrollTop;
+  }
 }
 
 function renderLogEntry(entry, index) {
@@ -1171,12 +1340,13 @@ function compactUiText(value, maxLength = 180) {
 
 function updateLogCategories(categories) {
   const select = $("#logCategory");
-  const current = select.value;
+  const current = select.value || app.logFilters.category || "";
   for (const name of Object.keys(categories)) app.logCategories.add(name);
   if (current) app.logCategories.add(current);
   const names = [...app.logCategories].sort();
   select.innerHTML = `<option value="">${escapeHtml(t("allCategories"))}</option>${names.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(formatLogCategory(name))}${categories[name] == null ? "" : ` (${escapeHtml(categories[name])})`}</option>`).join("")}`;
   if (names.includes(current)) select.value = current;
+  app.logFilters.category = select.value;
 }
 
 function getLogDuration(entry) {
@@ -1195,8 +1365,10 @@ function renderSettings() {
   const state = app.state || {};
   const network = state.network || {};
   const lanEnabled = Boolean(network.allowLanAccess);
-  $("#lanAccessToggle").checked = lanEnabled;
-  $("#lanAccessToggle").disabled = !app.state || network.editable === false;
+  const lanToggle = $("#lanAccessToggle");
+  const lanBusy = app.busyKeys.has("network:lan");
+  if (!lanBusy && document.activeElement !== lanToggle) lanToggle.checked = lanEnabled;
+  lanToggle.disabled = lanBusy || !app.state || network.editable === false;
   $("#lanAccessHint").textContent = network.editable === false ? t("lanManagedByEnvironment") : t("lanAccessHint");
   const lanUrls = Array.isArray(network.lanUrls) ? network.lanUrls : [];
   $("#lanAccessUrls").textContent = lanEnabled
@@ -1207,8 +1379,10 @@ function renderSettings() {
   const localBrowser = isLoopbackBrowser();
   const tunnelEnabled = Boolean(publicTunnel.enabled);
   const tunnelRunning = Boolean(publicTunnel.running && publicTunnel.publicUrl);
-  $("#publicTunnelToggle").checked = tunnelEnabled;
-  $("#publicTunnelToggle").disabled = !app.state || !localBrowser || Boolean(publicTunnel.starting);
+  const tunnelToggle = $("#publicTunnelToggle");
+  const tunnelBusy = app.busyKeys.has("network:tunnel");
+  if (!tunnelBusy && document.activeElement !== tunnelToggle) tunnelToggle.checked = tunnelEnabled;
+  tunnelToggle.disabled = tunnelBusy || !app.state || !localBrowser || Boolean(publicTunnel.starting);
   $("#publicTunnelHint").textContent = !localBrowser
     ? t("publicTunnelRemoteManaged")
     : publicTunnel.lastError
@@ -1231,7 +1405,8 @@ function renderSettings() {
   ].map(([value, label]) => `<div class="runtime-fact"><strong>${escapeHtml(value)}</strong><span>${escapeHtml(label)}</span></div>`).join("");
 }
 
-async function mutate(action, { control, success = t("saved") } = {}) {
+async function mutate(action, { control, success = t("saved"), busyKey = "" } = {}) {
+  if (busyKey) app.busyKeys.add(busyKey);
   if (control) control.disabled = true;
   try {
     const result = await action();
@@ -1241,6 +1416,7 @@ async function mutate(action, { control, success = t("saved") } = {}) {
     showToast(error.message, "error");
     throw error;
   } finally {
+    if (busyKey) app.busyKeys.delete(busyKey);
     if (control) control.disabled = false;
   }
 }
@@ -1248,7 +1424,7 @@ async function mutate(action, { control, success = t("saved") } = {}) {
 async function setChannel(channel, enabled, control) {
   const previous = !enabled;
   try {
-    await mutate(() => api("/api/channel", { method: "POST", body: JSON.stringify({ channel, enabled }) }), { control, success: t("channelUpdated") });
+    await mutate(() => api("/api/channel", { method: "POST", body: JSON.stringify({ channel, enabled }) }), { control, success: t("channelUpdated"), busyKey: `channel:${channel}` });
     await refreshState({ quiet: true });
   } catch {
     control.checked = previous;
@@ -1265,7 +1441,7 @@ async function setLanAccess(enabled, control) {
     const nextState = await mutate(() => api("/api/network/lan-access", {
       method: "POST",
       body: JSON.stringify({ enabled })
-    }), { control, success: t("lanAccessUpdated") });
+    }), { control, success: t("lanAccessUpdated"), busyKey: "network:lan" });
     app.state = nextState;
     app.lastFetch.state = Date.now();
     renderState();
@@ -1284,7 +1460,7 @@ async function setPublicTunnel(enabled, control) {
     const nextState = await mutate(() => api("/api/network/public-tunnel", {
       method: "POST",
       body: JSON.stringify({ enabled })
-    }), { control, success: t("publicTunnelUpdated") });
+    }), { control, success: t("publicTunnelUpdated"), busyKey: "network:tunnel" });
     app.state = nextState;
     app.lastFetch.state = Date.now();
     renderState();
@@ -1295,7 +1471,7 @@ async function setPublicTunnel(enabled, control) {
 }
 
 async function saveGroups(groups, control) {
-  await mutate(() => api("/api/qq/groups", { method: "POST", body: JSON.stringify({ allowedGroups: groups }) }), { control });
+  await mutate(() => api("/api/qq/groups", { method: "POST", body: JSON.stringify({ allowedGroups: groups }) }), { control, busyKey: "groups" });
   await refreshState({ quiet: true });
 }
 
@@ -1468,6 +1644,7 @@ document.addEventListener("click", async (event) => {
     $("#logLevel").value = "";
     $("#logSlow").value = "";
     $("#logQuery").value = featureLogs.dataset.logQuery || "";
+    persistDashboardUiState();
     await refreshLogs().catch(() => undefined);
     return;
   }
@@ -1486,7 +1663,7 @@ document.addEventListener("click", async (event) => {
     event.preventDefault();
     const title = clear.dataset.memoryTitle || clear.dataset.memoryId || clear.dataset.clearMemory;
     if (await confirmAction(t("clearMemoryTitle"), t("clearMemoryMessage", { value: title }))) {
-      await mutate(() => api("/api/memory/clear", { method: "POST", body: JSON.stringify({ scope: clear.dataset.clearMemory, id: clear.dataset.memoryId || "" }) }), { control: clear, success: t("memoryCleared") }).catch(() => undefined);
+      await mutate(() => api("/api/memory/clear", { method: "POST", body: JSON.stringify({ scope: clear.dataset.clearMemory, id: clear.dataset.memoryId || "" }) }), { control: clear, success: t("memoryCleared"), busyKey: "memory" }).catch(() => undefined);
       await refreshMemory({ quiet: true });
     }
     return;
@@ -1535,7 +1712,11 @@ $("#refreshLogs").addEventListener("click", () => refreshLogs().catch(() => unde
 $("#qqToggle").addEventListener("change", (event) => setChannel("qq", event.target.checked, event.target));
 $("#lanAccessToggle").addEventListener("change", (event) => { void setLanAccess(event.target.checked, event.target); });
 $("#publicTunnelToggle").addEventListener("change", (event) => { void setPublicTunnel(event.target.checked, event.target); });
-$("#groupInput").addEventListener("input", (event) => event.target.removeAttribute("aria-invalid"));
+$("#groupInput").addEventListener("input", (event) => {
+  event.target.removeAttribute("aria-invalid");
+  app.groupDraft = event.target.value;
+  persistDashboardUiState();
+});
 
 $("#addGroupForm").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1544,9 +1725,14 @@ $("#addGroupForm").addEventListener("submit", async (event) => {
   if (!/^\d{4,20}$/.test(value)) { input.setAttribute("aria-invalid", "true"); showToast(t("groupInvalid"), "error"); input.focus(); return; }
   input.removeAttribute("aria-invalid");
   const groups = [...new Set([...(app.state?.qq?.allowedGroups || []), value])];
-  await saveGroups(groups, event.submitter).then(() => { input.value = ""; }).catch(() => undefined);
+  await saveGroups(groups, event.submitter).then(() => {
+    input.value = "";
+    app.groupDraft = "";
+    persistDashboardUiState();
+  }).catch(() => undefined);
 });
 
+$("#botSettingsForm").addEventListener("input", markBotSettingsDirty);
 $("#botSettingsForm").addEventListener("submit", async (event) => {
   event.preventDefault();
   await saveBotSettings(event.submitter);
@@ -1563,6 +1749,7 @@ $("#memoryTabs").addEventListener("click", (event) => {
   const tab = event.target.closest("[data-memory-tab]");
   if (!tab) return;
   app.activeMemoryTab = tab.dataset.memoryTab;
+  persistDashboardUiState();
   renderMemory();
 });
 $("#memoryTabs").addEventListener("keydown", (event) => {
@@ -1577,6 +1764,7 @@ $("#memoryTabs").addEventListener("keydown", (event) => {
 let memorySearchTimer = null;
 $("#memorySearch").addEventListener("input", (event) => {
   app.memoryQuery = event.target.value;
+  persistDashboardUiState();
   clearTimeout(memorySearchTimer);
   memorySearchTimer = setTimeout(renderMemory, 100);
 });
@@ -1584,28 +1772,50 @@ $("#memoryView").addEventListener("change", async (event) => {
   const input = event.target.closest("[data-unified-setting]");
   if (!input || !app.memory?.unified) return;
   const settings = { ...app.memory.unified.settings, [input.dataset.unifiedSetting]: input.checked };
-  await mutate(() => api("/api/unified-memory/settings", { method: "POST", body: JSON.stringify(settings) }), { control: input }).catch(() => { input.checked = !input.checked; });
+  await mutate(() => api("/api/unified-memory/settings", { method: "POST", body: JSON.stringify(settings) }), { control: input, busyKey: "memory" }).catch(() => { input.checked = !input.checked; });
   await refreshMemory({ quiet: true });
 });
+$("#memoryView").addEventListener("toggle", () => {
+  rememberOpenMemoryGroups();
+  persistDashboardUiState();
+}, true);
 
-$("#logFilterForm").addEventListener("submit", async (event) => { event.preventDefault(); if (await refreshLogs()) showToast(t("filterApplied"), "success"); });
-$("#clearLogFilters").addEventListener("click", () => { $("#logFilterForm").reset(); refreshLogs().catch(() => undefined); });
+const rememberLogFilters = () => {
+  app.logFilters = readLogFilters();
+  persistDashboardUiState();
+};
+$("#logFilterForm").addEventListener("input", rememberLogFilters);
+$("#logFilterForm").addEventListener("change", rememberLogFilters);
+$("#logFilterForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  rememberLogFilters();
+  if (await refreshLogs()) showToast(t("filterApplied"), "success");
+});
+$("#clearLogFilters").addEventListener("click", () => {
+  $("#logFilterForm").reset();
+  rememberLogFilters();
+  refreshLogs().catch(() => undefined);
+});
 $("#liveLogsToggle").addEventListener("change", (event) => {
   app.liveLogs = event.target.checked;
+  persistDashboardUiState();
   setLiveLogState(app.liveLogs ? "active" : "paused");
   if (app.liveLogs) void refreshLogs({ quiet: true });
 });
 $("#logFollowToggle").addEventListener("change", (event) => {
   app.logFollow = event.target.checked;
+  persistDashboardUiState();
   if (app.logFollow) $("#logStream").scrollTop = $("#logStream").scrollHeight;
 });
 $("#logLimit").addEventListener("change", () => { app.lastLogSignature = ""; void refreshLogs({ quiet: true }); });
 $("#logStream").addEventListener("scroll", (event) => {
-  if (!app.logFollow) return;
   const stream = event.currentTarget;
+  app.logScrollTop = stream.scrollTop;
+  if (!app.logFollow) return;
   if (stream.scrollHeight - stream.scrollTop - stream.clientHeight > 120) {
     app.logFollow = false;
     $("#logFollowToggle").checked = false;
+    persistDashboardUiState();
   }
 });
 
@@ -1682,6 +1892,7 @@ async function copyText(value, success = t("copied")) {
 }
 
 window.addEventListener("hashchange", () => setView(location.hash.slice(1), { updateHash: false }));
+window.addEventListener("pagehide", persistDashboardUiState);
 document.addEventListener("visibilitychange", () => { if (!document.hidden && app.autoRefresh) void refreshView({ quiet: true }); });
 
 setInterval(() => {
@@ -1695,7 +1906,9 @@ setInterval(() => {
   if (app.view === "memory" && !app.controllers.has("memory") && now - app.lastFetch.memory >= base) void refreshMemory({ quiet: true }).catch(() => undefined);
 }, 1_000);
 
+restoreDashboardUiState();
 setTheme(app.theme);
 applyI18n();
+if (app.dirtyForms.has("botSettingsForm")) setBotControlStatus("dirty", "settingsUnsaved");
 renderInitialShell();
 setView(app.view, { updateHash: true, quiet: false });

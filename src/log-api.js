@@ -66,9 +66,9 @@ function isVisibleByDefault(entry, { verbose, level, category, hasAdvancedFilter
 function compactEntry(entry) {
   const details = {};
   const allowedKeys = new Set([
-    "durationMs", "totalDurationMs", "rememberDurationMs", "decisionDurationMs", "generationDurationMs", "sendDurationMs", "memoryDurationMs",
+    "durationMs", "totalDurationMs", "rememberDurationMs", "decisionDurationMs", "generationDurationMs", "sendDurationMs", "memoryDurationMs", "timeoutMs",
     "resultCount", "status", "outcome", "code", "error", "reason", "decisionReason", "url", "diagnostic", "diagnosticOmittedLines",
-    "groupId", "senderId", "messageId", "messageType", "proactive", "triggerMode", "queuedCount", "bubbleCount", "replyChars", "sendStatus"
+    "groupId", "senderId", "messageId", "messageType", "proactive", "triggerMode", "taskType", "queuedCount", "bubbleCount", "replyChars", "sendStatus"
   ]);
   for (const [key, value] of Object.entries(entry.details || {})) {
     if (!allowedKeys.has(key)) continue;

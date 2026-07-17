@@ -43,11 +43,13 @@ test("remote and npm installers expose a Chinese no-GitHub-web entry", async () 
     assert.match(help.stdout, /pnpm dlx codex-qq-bot/);
     assert.match(help.stdout, /不需要打开 GitHub 网页/);
     assert.match(help.stdout, /中文首次部署/);
+    assert.match(help.stdout, /默认分支的最新提交/);
+    assert.doesNotMatch(help.stdout, /最新 GitHub Release/);
   }
 
   const packageMetadata = JSON.parse(await readFile(packagePath, "utf8"));
   assert.equal(packageMetadata.name, "codex-qq-bot");
-  assert.equal(packageMetadata.version, "1.1.7-1");
+  assert.equal(packageMetadata.version, "1.1.7-2");
   const installerSource = await readFile(remoteInstallerPath, "utf8");
   assert.match(installerSource, /\/root\/Codex-QQ-Bot/);
   assert.match(installerSource, /Codex-Remote-Contact/);
@@ -55,7 +57,7 @@ test("remote and npm installers expose a Chinese no-GitHub-web entry", async () 
   assert.match(installerSource, /下一步请运行/);
 });
 
-test("remote installer validates and extracts a local release without launching", async (t) => {
+test("remote installer validates and extracts a local source archive without launching", async (t) => {
   const zip = spawnSync("zip", ["-v"], { encoding: "utf8" });
   if (zip.error?.code === "ENOENT") {
     t.skip("zip command is unavailable");
@@ -167,6 +169,61 @@ test("remote installer validates and extracts a local release without launching"
     assert.notEqual(refused.status, 0);
     assert.match(refused.stderr, /拒绝覆盖/);
     assert.equal(await readFile(marker, "utf8"), "保留\n");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+test("remote installer resolves and extracts the default branch head instead of a Release", async (t) => {
+  const zip = spawnSync("zip", ["-v"], { encoding: "utf8" });
+  if (zip.error?.code === "ENOENT") {
+    t.skip("zip command is unavailable");
+    return;
+  }
+
+  const home = await mkdtemp(join(tmpdir(), "codex-qq-bot-head-install-"));
+  try {
+    const revision = "1234567890abcdef1234567890abcdef12345678";
+    const metadataDir = join(home, "metadata");
+    const archiveDir = join(home, "archives");
+    const fixtureRoot = join(home, "fixture", `codex-qq-bot-${revision}`);
+    await mkdir(join(fixtureRoot, "scripts"), { recursive: true });
+    await mkdir(metadataDir);
+    await mkdir(archiveDir);
+    await writeFile(join(metadataDir, "repository.json"), '{"default_branch":"main"}\n');
+    await writeFile(join(metadataDir, "commit.json"), JSON.stringify({ sha: revision }));
+    await writeFile(join(fixtureRoot, "package.json"), '{"name":"latest-head-fixture"}\n');
+    await writeFile(join(fixtureRoot, "一键部署.command"), "#!/usr/bin/env bash\nexit 0\n");
+    await writeFile(join(fixtureRoot, "scripts", "ncc.command"), "#!/usr/bin/env zsh\nexit 0\n");
+    await writeFile(join(fixtureRoot, "scripts", "deploy.command"), "#!/usr/bin/env zsh\nexit 0\n");
+    const archive = join(archiveDir, `${revision}.zip`);
+    const packed = spawnSync("zip", ["-qr", archive, `codex-qq-bot-${revision}`], {
+      cwd: join(home, "fixture"),
+      encoding: "utf8"
+    });
+    assert.equal(packed.status, 0, packed.stderr);
+
+    const target = join(home, "installed");
+    const nccBin = join(home, "bin", "ncc");
+    await mkdir(join(home, "bin"));
+    const installed = spawnSync("bash", [remoteInstallerPath, "--install-dir", target], {
+      cwd: projectDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CODEX_QQ_BOT_REPOSITORY_API_URL: `file://${join(metadataDir, "repository.json")}`,
+        CODEX_QQ_BOT_COMMIT_API_URL: `file://${join(metadataDir, "commit.json")}`,
+        CODEX_QQ_BOT_ARCHIVE_BASE_URL: `file://${archiveDir}`,
+        CODEX_QQ_BOT_INSTALL_STATE_DIR: join(home, "state"),
+        CODEX_QQ_BOT_NCC_BIN: nccBin
+      }
+    });
+    assert.equal(installed.status, 0, installed.stderr);
+    assert.match(installed.stdout, /正在查询仓库默认分支/);
+    assert.match(installed.stdout, /目标源码：main@1234567890ab/);
+    assert.doesNotMatch(installed.stdout, /Release/);
+    assert.equal(JSON.parse(await readFile(join(target, "package.json"), "utf8")).name, "latest-head-fixture");
+    await access(nccBin, constants.X_OK);
   } finally {
     await rm(home, { recursive: true, force: true });
   }

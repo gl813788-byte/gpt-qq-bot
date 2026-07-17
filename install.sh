@@ -3,7 +3,10 @@
 set -Eeuo pipefail
 
 REPOSITORY="${CODEX_QQ_BOT_REPOSITORY:-gl813788-byte/codex-qq-bot}"
-RELEASE_API_URL="${CODEX_QQ_BOT_RELEASE_API_URL:-https://api.github.com/repos/${REPOSITORY}/releases/latest}"
+REPOSITORY_API_URL="${CODEX_QQ_BOT_REPOSITORY_API_URL:-https://api.github.com/repos/${REPOSITORY}}"
+COMMIT_API_URL="${CODEX_QQ_BOT_COMMIT_API_URL:-}"
+ARCHIVE_BASE_URL="${CODEX_QQ_BOT_ARCHIVE_BASE_URL:-https://github.com/${REPOSITORY}/archive}"
+SOURCE_BRANCH="${CODEX_QQ_BOT_SOURCE_BRANCH:-}"
 INSTALL_DIR="${CODEX_QQ_BOT_INSTALL_DIR:-}"
 ARCHIVE_FILE="${CODEX_QQ_BOT_ARCHIVE_FILE:-}"
 STATE_ROOT="${CODEX_QQ_BOT_INSTALL_STATE_DIR:-}"
@@ -38,9 +41,10 @@ Codex QQ Bot 中文安装器
 未安装 Node.js 时可使用：
   curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
 
-安装器会自动获取最新 GitHub Release ZIP，并按“下载、校验、解压、安装 ncc 入口”
-分阶段保存进度。中断后重新运行同一命令，会复用已经完成的阶段。下载准备完成后，
-请运行 ncc 继续中文首次部署；整个过程不需要打开 GitHub 网页。
+安装器会读取 GitHub 默认分支的最新提交并下载对应源码 ZIP，不必等待 Release。
+它按“解析提交、下载、校验、解压、安装 ncc 入口”分阶段保存进度；中断后重新运行
+同一命令会复用已经完成的阶段。下载准备完成后，请运行 ncc 继续中文首次部署；
+整个过程不需要打开 GitHub 网页。
 
 选项：
   --check                 只检查最新版本和下载地址，不安装
@@ -54,6 +58,7 @@ Codex QQ Bot 中文安装器
   CODEX_QQ_BOT_INSTALL_DIR        默认安装目录
   CODEX_QQ_BOT_INSTALL_STATE_DIR  断点续装缓存目录
   CODEX_QQ_BOT_NCC_BIN            自定义 ncc 入口路径
+  CODEX_QQ_BOT_SOURCE_BRANCH      指定源码分支；默认读取仓库默认分支
 EOF
 }
 
@@ -160,67 +165,107 @@ cleanup_check() {
 }
 trap cleanup_check EXIT
 
-RELEASE_TAG=""
+SOURCE_REVISION=""
+SOURCE_LABEL=""
 ASSET_NAME=""
 ASSET_URL=""
 EXPECTED_SHA256=""
 
-parse_release_metadata() {
-  local metadata_file="$1"
-  RELEASE_TAG=""
+read_default_branch() {
+  local repository_file="$1"
+  if command -v node >/dev/null 2>&1; then
+    node - "$repository_file" <<'NODE'
+const fs = require("node:fs");
+const repository = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+if (typeof repository.default_branch !== "string" || !repository.default_branch) process.exit(2);
+process.stdout.write(repository.default_branch);
+NODE
+  else
+    sed -n 's/^[[:space:]]*"default_branch":[[:space:]]*"\([^"]*\)".*/\1/p' "$repository_file" | head -n 1
+  fi
+}
+
+read_commit_revision() {
+  local commit_file="$1"
+  if command -v node >/dev/null 2>&1; then
+    node - "$commit_file" <<'NODE'
+const fs = require("node:fs");
+const commit = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+if (typeof commit.sha !== "string" || !/^[0-9a-f]{40}$/i.test(commit.sha)) process.exit(2);
+process.stdout.write(commit.sha.toLowerCase());
+NODE
+  else
+    sed -n 's/^[[:space:]]*"sha":[[:space:]]*"\([0-9a-fA-F]\{40\}\)".*/\1/p' "$commit_file" | head -n 1 | tr '[:upper:]' '[:lower:]'
+  fi
+}
+
+parse_source_metadata() {
+  local repository_file="$1"
+  local commit_file="$2"
+  local configured_branch="$3"
+  SOURCE_REVISION=""
+  SOURCE_LABEL=""
   ASSET_NAME=""
   ASSET_URL=""
   EXPECTED_SHA256=""
 
-  if command -v node >/dev/null 2>&1; then
-    local parsed
-    parsed="$(node - "$metadata_file" <<'NODE'
-const fs = require("node:fs");
-const release = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
-const asset = (release.assets || []).find((item) => /^codex-qq-bot-v[^/]+\.zip$/.test(item.name || ""));
-if (!asset?.browser_download_url) process.exit(2);
-const digest = String(asset.digest || "").replace(/^sha256:/i, "");
-process.stdout.write([release.tag_name || "", asset.name, asset.browser_download_url, digest].join("\t"));
-NODE
-    )" || return 1
-    IFS=$'\t' read -r RELEASE_TAG ASSET_NAME ASSET_URL EXPECTED_SHA256 <<<"$parsed"
+  if [ -n "$configured_branch" ]; then
+    SOURCE_BRANCH="$configured_branch"
   else
-    RELEASE_TAG="$(sed -n 's/^[[:space:]]*"tag_name":[[:space:]]*"\([^"]*\)".*/\1/p' "$metadata_file" | head -n 1)"
-    local parsed
-    parsed="$(awk '
-      /^[[:space:]]*"name":[[:space:]]*"codex-qq-bot-v[^\"]*\.zip"/ {
-        active=1; name=$0; sub(/^.*"name":[[:space:]]*"/, "", name); sub(/".*$/, "", name)
-      }
-      active && /"digest":[[:space:]]*"sha256:/ {
-        digest=$0; sub(/^.*"digest":[[:space:]]*"sha256:/, "", digest); sub(/".*$/, "", digest)
-      }
-      active && /"browser_download_url":[[:space:]]*"/ {
-        url=$0; sub(/^.*"browser_download_url":[[:space:]]*"/, "", url); sub(/".*$/, "", url)
-        print name "\t" url "\t" digest; exit
-      }
-    ' "$metadata_file")"
-    IFS=$'\t' read -r ASSET_NAME ASSET_URL EXPECTED_SHA256 <<<"$parsed"
+    SOURCE_BRANCH="$(read_default_branch "$repository_file")" || return 1
   fi
+  case "$SOURCE_BRANCH" in
+    ""|*[!A-Za-z0-9._/-]*) return 1 ;;
+  esac
+  SOURCE_REVISION="$(read_commit_revision "$commit_file")" || return 1
+  [ -n "$SOURCE_REVISION" ] || return 1
+  local short_revision="${SOURCE_REVISION:0:12}"
+  SOURCE_LABEL="${SOURCE_BRANCH}@${short_revision}"
+  ASSET_NAME="codex-qq-bot-${short_revision}.zip"
+  ASSET_URL="${ARCHIVE_BASE_URL%/}/${SOURCE_REVISION}.zip"
 
-  [ -n "$RELEASE_TAG" ] && [ -n "$ASSET_NAME" ] && [ -n "$ASSET_URL" ]
+  [ -n "$SOURCE_LABEL" ] && [ -n "$ASSET_NAME" ] && [ -n "$ASSET_URL" ]
 }
 
-resolve_latest_release() {
-  local metadata_file="$1"
+resolve_latest_source() {
+  local metadata_dir="$1"
+  local repository_file="$metadata_dir/repository.json"
+  local commit_file="$metadata_dir/commit.json"
+  local configured_branch="$SOURCE_BRANCH"
+  mkdir -p "$metadata_dir"
   ensure_command curl curl
-  if [ -f "$metadata_file" ] && parse_release_metadata "$metadata_file"; then
-    log "发现未完成安装的版本信息，将从上次进度继续：$RELEASE_TAG"
+  if [ -f "$repository_file" ] && [ -f "$commit_file" ] && parse_source_metadata "$repository_file" "$commit_file" "$configured_branch"; then
+    log "发现未完成安装的源码信息，将从上次进度继续：$SOURCE_LABEL"
     return 0
   fi
 
-  local metadata_tmp="${metadata_file}.part"
-  log "正在查询最新正式版本……"
+  local repository_tmp="${repository_file}.part"
+  local commit_tmp="${commit_file}.part"
+  if [ -z "$configured_branch" ]; then
+    log "正在查询仓库默认分支……"
+    curl -fsSL \
+      -H "Accept: application/vnd.github+json" \
+      -H "X-GitHub-Api-Version: 2022-11-28" \
+      "$REPOSITORY_API_URL" -o "$repository_tmp" || die "无法读取仓库信息，请检查网络后重试。"
+    SOURCE_BRANCH="$(read_default_branch "$repository_tmp")" || die "仓库信息中没有有效的默认分支。"
+  else
+    SOURCE_BRANCH="$configured_branch"
+    printf '{"default_branch":"%s"}\n' "$SOURCE_BRANCH" > "$repository_tmp"
+  fi
+  case "$SOURCE_BRANCH" in
+    ""|*[!A-Za-z0-9._/-]*) die "源码分支名称无效。" ;;
+  esac
+
+  local effective_commit_api="$COMMIT_API_URL"
+  [ -n "$effective_commit_api" ] || effective_commit_api="${REPOSITORY_API_URL%/}/commits/${SOURCE_BRANCH}"
+  log "正在解析 ${SOURCE_BRANCH} 分支的最新提交……"
   curl -fsSL \
     -H "Accept: application/vnd.github+json" \
     -H "X-GitHub-Api-Version: 2022-11-28" \
-    "$RELEASE_API_URL" -o "$metadata_tmp" || die "无法读取最新 Release 信息，请检查网络后重试。"
-  parse_release_metadata "$metadata_tmp" || die "最新 Release 中没有找到项目 ZIP。"
-  mv "$metadata_tmp" "$metadata_file"
+    "$effective_commit_api" -o "$commit_tmp" || die "无法读取最新提交信息，请检查网络后重试。"
+  parse_source_metadata "$repository_tmp" "$commit_tmp" "$configured_branch" || die "最新提交信息无效。"
+  mv "$repository_tmp" "$repository_file"
+  mv "$commit_tmp" "$commit_file"
 }
 
 calculate_sha256() {
@@ -407,11 +452,12 @@ if [ "$CHECK_ONLY" = "1" ]; then
     printf '目标目录：%s\n' "$INSTALL_DIR"
   else
     CHECK_WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/codex-qq-bot-check.XXXXXX")"
-    resolve_latest_release "$CHECK_WORK_DIR/release.json"
-    log "最新版本：${RELEASE_TAG}"
+    resolve_latest_source "$CHECK_WORK_DIR/source"
+    log "最新源码：${SOURCE_LABEL}"
+    printf '源码提交：%s\n' "$SOURCE_REVISION"
     printf '安装包：%s\n' "$ASSET_NAME"
+    printf '下载地址：%s\n' "$ASSET_URL"
     printf '目标目录：%s\n' "$INSTALL_DIR"
-    [ -z "$EXPECTED_SHA256" ] || printf 'SHA-256：%s\n' "$EXPECTED_SHA256"
   fi
   log "检查完成，没有下载或修改任何项目文件。"
   exit 0
@@ -439,12 +485,12 @@ mkdir -p "$parent_dir" "$STATE_ROOT"
 
 if [ -n "$ARCHIVE_FILE" ]; then
   [ -f "$ARCHIVE_FILE" ] || die "找不到本地 ZIP：$ARCHIVE_FILE"
-  RELEASE_TAG="local"
+  SOURCE_LABEL="local"
   ASSET_NAME="$(basename "$ARCHIVE_FILE")"
   ASSET_URL=""
 else
-  resolve_latest_release "$STATE_ROOT/release.json"
-  log "目标版本：${RELEASE_TAG}"
+  resolve_latest_source "$STATE_ROOT/source"
+  log "目标源码：${SOURCE_LABEL}"
 fi
 
 safe_asset_name="$(printf '%s' "$ASSET_NAME" | tr -c 'A-Za-z0-9._-' '_')"
@@ -464,13 +510,19 @@ elif [ -n "$ARCHIVE_FILE" ]; then
   mv "$partial_archive" "$downloaded_archive"
 else
   partial_is_complete=0
-  if [ -f "$partial_archive" ] && [ -n "$EXPECTED_SHA256" ]; then
-    partial_sha256="$(calculate_sha256 "$partial_archive" 2>/dev/null || true)"
-    partial_sha256="$(printf '%s' "$partial_sha256" | tr '[:upper:]' '[:lower:]')"
-    expected_partial_sha256="$(printf '%s' "$EXPECTED_SHA256" | tr '[:upper:]' '[:lower:]')"
-    if [ -n "$partial_sha256" ] && [ "$partial_sha256" = "$expected_partial_sha256" ]; then
+  if [ -f "$partial_archive" ]; then
+    if [ -n "$EXPECTED_SHA256" ]; then
+      partial_sha256="$(calculate_sha256 "$partial_archive" 2>/dev/null || true)"
+      partial_sha256="$(printf '%s' "$partial_sha256" | tr '[:upper:]' '[:lower:]')"
+      expected_partial_sha256="$(printf '%s' "$EXPECTED_SHA256" | tr '[:upper:]' '[:lower:]')"
+      if [ -n "$partial_sha256" ] && [ "$partial_sha256" = "$expected_partial_sha256" ]; then
+        partial_is_complete=1
+      fi
+    elif unzip -tq "$partial_archive" >/dev/null 2>&1; then
       partial_is_complete=1
-      log "发现已经下载完整的临时文件，将直接进入校验阶段。"
+    fi
+    if [ "$partial_is_complete" = "1" ]; then
+      log "发现已经下载完整的临时 ZIP，将直接进入校验阶段。"
       mv "$partial_archive" "$downloaded_archive"
     fi
   fi

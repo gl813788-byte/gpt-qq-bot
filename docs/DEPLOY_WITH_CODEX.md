@@ -30,7 +30,7 @@ Without Node.js, run:
 curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
 ```
 
-This Chinese bootstrap resolves the latest formal Release through the GitHub API, resumes the versioned ZIP download, validates GitHub's SHA-256 digest and the ZIP structure, and places the project in `/root/Codex-QQ-Bot` or `~/Codex-QQ-Bot`; an existing legacy `Codex-Remote-Contact` directory is reused. Download, verification, extraction, and `ncc` entry setup persist independently, so rerunning the same command resumes at the next stage. It never overwrites an existing project, unrelated non-empty directory, or different global `ncc`. After preparation it explicitly asks the user to run `ncc`, whose state machine performs environment checks, dependency installation, `npm run verify`, and guided configuration. `--check` reads release metadata without downloading or writing project files.
+This Chinese bootstrap uses the GitHub API to resolve the repository default branch and its exact latest commit, resumes that commit-pinned source ZIP download, validates the ZIP integrity and structure, and places the project in `/root/Codex-QQ-Bot` or `~/Codex-QQ-Bot`; it does not wait for a formal Release, and an existing legacy `Codex-Remote-Contact` directory is reused. Source resolution, download, verification, extraction, and `ncc` entry setup persist independently, so rerunning the same command resumes at the next stage. It never overwrites an existing project, unrelated non-empty directory, or different global `ncc`. After preparation it explicitly asks the user to run `ncc`, whose state machine performs environment checks, dependency installation, `npm run verify`, and guided configuration. `--check` resolves source metadata without downloading or writing project files.
 
 ## Chinese entry for existing source
 
@@ -88,7 +88,7 @@ npm install
 npm run verify
 ```
 
-The `npx`, `pnpm dlx`, and remote `install.sh` entries resumably obtain a formal ZIP, verify and extract it, and install an `ncc` entry only when no command conflict exists. They then tell the user to run `ncc`. The repository `ncc` owns the first-run state machine: it checks tools, creates missing local files, installs npm dependencies, runs `npm run verify`, and explicitly avoids replacing an unrelated global `ncc`. After success, `ncc` becomes the normal daily control menu.
+The `npx`, `pnpm dlx`, and remote `install.sh` entries resolve the default branch's current head, resumably obtain its commit-pinned source ZIP, verify and extract it, and install an `ncc` entry only when no command conflict exists. They then tell the user to run `ncc`. The repository `ncc` owns the first-run state machine: it checks tools, creates missing local files, installs npm dependencies, runs `npm run verify`, and explicitly avoids replacing an unrelated global `ncc`. After success, `ncc` becomes the normal daily control menu.
 
 ### 3. Configure the Hub
 

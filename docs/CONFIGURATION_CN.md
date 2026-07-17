@@ -125,6 +125,14 @@ npm run ncc -- setup
 | `CODEX_REMOTE_CONTACT_CODEX_MAX_CONCURRENCY` | `2` | Codex 同时运行数，范围 1–8 |
 | `CODEX_REMOTE_CONTACT_CODEX_MAX_PENDING` | `32` | 等待队列，范围 0–256 |
 | `CODEX_REMOTE_CONTACT_QUOTA_CACHE_TTL_MS` | `30000` | 额度信息缓存时间 |
+| `CODEX_REMOTE_CONTACT_CODEX_REPLY_TIMEOUT_MS` | `120000` | 普通文字回复单轮时限 |
+| `CODEX_REMOTE_CONTACT_CODEX_VISION_REPLY_TIMEOUT_MS` | `180000` | 带图片理解的回复单轮时限 |
+| `CODEX_REMOTE_CONTACT_CODEX_CONTEXT_SUMMARY_TIMEOUT_MS` | `90000` | `/总结聊天记录` 时限 |
+| `CODEX_REMOTE_CONTACT_CODEX_SELF_PERSONA_TIMEOUT_MS` | `90000` | 自我人格摘要/刷新时限 |
+| `CODEX_REMOTE_CONTACT_CODEX_FILE_TASK_TIMEOUT_MS` | `300000` | 主人本机文件任务时限 |
+| `CODEX_REMOTE_CONTACT_CODEX_IMAGE_GENERATION_TIMEOUT_MS` | `600000` | 图片生成时限；允许配置到 60 分钟 |
+
+Hub 会先识别 Codex 任务类型，再选择对应时限；画图不再和普通回复共用同一个硬编码截止时间。以上值的单位都是毫秒，默认允许范围为 10 秒到 30 分钟，图片生成单独允许到 60 分钟。`/详细配置`、`/api/maintenance` 和 Codex 结构化日志会显示当前策略或本次任务实际采用的类型与时限。
 
 ### OneBot
 

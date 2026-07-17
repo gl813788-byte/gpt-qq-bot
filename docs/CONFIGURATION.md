@@ -123,6 +123,14 @@ A non-loopback listener requires explicit remote allowance and a token. Wildcard
 | `CODEX_REMOTE_CONTACT_CODEX_MAX_CONCURRENCY` | `2` | Active jobs, bounded 1–8 |
 | `CODEX_REMOTE_CONTACT_CODEX_MAX_PENDING` | `32` | Pending jobs, bounded 0–256 |
 | `CODEX_REMOTE_CONTACT_QUOTA_CACHE_TTL_MS` | `30000` | Quota cache lifetime |
+| `CODEX_REMOTE_CONTACT_CODEX_REPLY_TIMEOUT_MS` | `120000` | Per-round limit for ordinary text replies |
+| `CODEX_REMOTE_CONTACT_CODEX_VISION_REPLY_TIMEOUT_MS` | `180000` | Per-round limit for replies that inspect images |
+| `CODEX_REMOTE_CONTACT_CODEX_CONTEXT_SUMMARY_TIMEOUT_MS` | `90000` | Limit for `/总结聊天记录` |
+| `CODEX_REMOTE_CONTACT_CODEX_SELF_PERSONA_TIMEOUT_MS` | `90000` | Self-persona summary/regeneration limit |
+| `CODEX_REMOTE_CONTACT_CODEX_FILE_TASK_TIMEOUT_MS` | `300000` | Owner local-file task limit |
+| `CODEX_REMOTE_CONTACT_CODEX_IMAGE_GENERATION_TIMEOUT_MS` | `600000` | Image-generation limit; configurable up to 60 minutes |
+
+The Hub classifies each Codex task before selecting its deadline, so image generation no longer shares a hard-coded limit with ordinary replies. Values are milliseconds. The normal accepted range is 10 seconds to 30 minutes, while image generation permits up to 60 minutes. `/详细配置`, `/api/maintenance`, and structured Codex logs expose the configured policy or the task type and limit selected for a run.
 
 ### OneBot
 

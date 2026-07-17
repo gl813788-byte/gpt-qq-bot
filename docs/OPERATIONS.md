@@ -4,7 +4,7 @@
 
 For a fresh install, prefer `npx -y codex-qq-bot` (or `pnpm dlx codex-qq-bot`) without opening GitHub, or let Codex execute and validate the [deployment guide](DEPLOY_WITH_CODEX.md). This page covers routine operation after deployment.
 
-The public installer resumably downloads and extracts the latest formal ZIP, installs an `ncc` entry when there is no same-name command conflict, and then tells the user to run `ncc`; it does not enter the wizard by default. An extracted source archive can run the root-level `一键部署.command` directly. The first repository-`ncc` run performs environment checks, dependency installation, verification, and guided configuration. After completion, later runs open the normal status, startup, configuration, and logging menu.
+The public installer resolves the latest commit on the repository's default branch, resumably downloads and extracts that commit-pinned source ZIP, installs an `ncc` entry when there is no same-name command conflict, and then tells the user to run `ncc`; it does not enter the wizard by default. An extracted source archive can run the root-level `一键部署.command` directly. The first repository-`ncc` run performs environment checks, dependency installation, verification, and guided configuration. After completion, later runs open the normal status, startup, configuration, and logging menu.
 
 ```bash
 ./一键部署.command
@@ -122,6 +122,8 @@ curl -fsS 'http://127.0.0.1:3789/api/logs?category=interest&group=GROUP_ID' | jq
 Useful categories include `system`, `web`, `onebot`, `qq`, `codex`, `search`, `interest`, `learning`, `memory` and `lifecycle`. Start with a trace to follow one reply through routing, judging, search, Codex and delivery.
 
 The dashboard separates Overview, Channels, Intelligence, Memory, Live Logs and Settings instead of stacking every feature on one page. Channels only manages connections, allowlists and contacts. Intelligence displays and persistently controls the Bot enhancer, web lookup, proactive interest and judge tuning, with safe diagnostics for OpenRouter, search provider, safe-download mode, active generations and pending replies. Behavior state uses independent desktop columns so a tall persona card does not leave a large hole in the other column, then returns to a natural single-column order on narrow screens.
+
+The polling renderer separates server state from local interaction state. It does not replace active switches, an in-flight group/memory/network operation, or a dirty Bot-settings form with a stale poll response. Reload recovery is session-scoped to the same browser tab and covers Bot-setting and group-input drafts, memory browsing context, and log controls/position; it does not synchronize drafts between tabs. Failed Bot-setting saves retain the draft for retry, while successful saves clear it.
 
 The browser Live Logs view fetches complete structured entries every second, keeps chronological order and follows the latest row by default. Level, category, trace, error, outcome and latency have distinct colors, and every `details` field is visible inline. Operators can pause live refresh, turn off follow mode, change the row limit, filter entries and click a row for raw JSON. Requests pause while the page is hidden.
 

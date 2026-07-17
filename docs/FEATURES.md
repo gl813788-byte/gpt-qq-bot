@@ -30,6 +30,8 @@ A simple conversation can finish in one round. Missing history, web facts, memor
 
 Codex defaults to two active child processes and 32 pending jobs. Each group or private scope has one complete reply lifecycle; later messages queue into a combined follow-up. `/stop` and `/新对话` cancel active work and clear that scope's queue.
 
+Codex deadlines are selected by task type instead of sharing one constant. Defaults are two minutes for ordinary replies, three minutes for vision replies, 90 seconds for context summaries, 90 seconds for self-persona work, five minutes for owner file tasks, and ten minutes for image generation. Each class has an independent environment override. Runtime state and logs report the selected task type and deadline, while `/stop` can still terminate work early.
+
 ## Context and memory
 
 | Layer | Content | Storage |
@@ -92,6 +94,8 @@ Inspect the effective provider, attempts and recent errors through `/api/mainten
 ## Dashboard, API and logs
 
 The local dashboard exposes service/channel state, allowlists, models, memory, adaptive learning, proactive interest, maintenance, structured log filters, language, theme and responsive layouts. Its persistent LAN switch creates a management token; the token can only be retrieved from a loopback-loaded dashboard. A separate, default-off Cloudflare Quick Tunnel switch can create a temporary HTTPS address without rebinding the Hub away from loopback. Remote management APIs still require the same token, while tunnel start/stop and token-copy controls remain local-only.
+
+Automatic polling keeps server-backed readouts current without overwriting a control that is being changed or unsaved Bot settings. The current browser tab keeps Bot-setting drafts, the group-ID draft, memory tab/search/expanded groups, and log filters/pause/follow/scroll context in session storage, then restores them after a full page reload. A successful save clears its draft and the returned server state remains authoritative.
 
 Core read endpoints:
 

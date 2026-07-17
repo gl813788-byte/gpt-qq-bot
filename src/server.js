@@ -27,6 +27,7 @@ import { defaultQqPublicCommands, qqCommandCatalog } from "./qq-command-catalog.
 import { createConcurrencyLimiter } from "./concurrency-limiter.js";
 import { createCodexModelCatalog, findCodexModel } from "./codex-model-catalog.js";
 import { buildCodexChildEnv } from "./codex-child-env.js";
+import { CODEX_TASK_TYPES, getCodexTaskTimeoutMs } from "./codex-task-timeout.js";
 import { resolveAllowedQqMarkerPath, resolveQqMarkerPath } from "./qq-output-policy.js";
 import { createQqZoneClient } from "./qq-qzone.js";
 import { createQqRequestStore, formatQqRequestEntry } from "./qq-request-store.js";
@@ -195,6 +196,7 @@ const {
   codexMaxConcurrency,
   codexMaxPending,
   codexQuotaCacheTtlMs,
+  codexTaskTimeouts,
   qqEnhancerEnabled,
   qqMemoryLimit,
   qqGroupMemoryLimit,
@@ -1367,7 +1369,8 @@ async function runQqSelfPersonaModelPrompt(prompt, label) {
   ];
   await runCodexCli(args, prompt, {
     cwd: codexWorkspaceDir,
-    timeout: 90_000,
+    taskType: CODEX_TASK_TYPES.QQ_SELF_PERSONA,
+    timeout: getCodexTaskTimeoutMs(codexTaskTimeouts, CODEX_TASK_TYPES.QQ_SELF_PERSONA),
     env: {
       ...process.env,
       CODEX_REMOTE_CONTACT_QQ_SELF_PERSONA_MODE: "1"
@@ -1757,6 +1760,7 @@ async function buildMaintenanceStatus({ force = false } = {}) {
       ...codexMaintenance,
       pathExists: codexPathOk,
       queue: codexRunLimiter.snapshot(),
+      taskTimeoutsMs: { ...codexTaskTimeouts },
       quota
     },
     channels: { qq: state.channels.qq },
@@ -1777,7 +1781,9 @@ async function buildMaintenanceStatus({ force = false } = {}) {
           groupId: state.qq.activeGeneration.groupId,
           senderId: state.qq.activeGeneration.senderId,
           startedAt: state.qq.activeGeneration.startedAt,
-          mode: state.qq.activeGeneration.mode
+          mode: state.qq.activeGeneration.mode,
+          taskType: state.qq.activeGeneration.taskType,
+          timeoutMs: state.qq.activeGeneration.timeoutMs
         }
         : null,
       activeGenerations: Object.keys(state.qq.activeGenerations).length,
@@ -3892,6 +3898,7 @@ function buildQqOwnerConfigDetail() {
     `主动判定模型：${state.qq.proactive.judge.model}，Key：${state.qq.proactive.judge.apiKeyConfigured ? "已配置" : "未配置"}，Token 静默超时 ${state.qq.proactive.judge.timeoutMs}ms`,
     `联网查询：${state.qq.webLookup.enabled ? "开启" : "关闭"}`,
     `主人文件/图片任务：${qqOwnerFileImageTasksEnabled ? "开启" : "关闭"}`,
+    `任务时限：普通回复 ${formatCodexTaskTimeout(codexTaskTimeouts[CODEX_TASK_TYPES.QQ_REPLY])}，看图回复 ${formatCodexTaskTimeout(codexTaskTimeouts[CODEX_TASK_TYPES.QQ_VISION_REPLY])}，总结 ${formatCodexTaskTimeout(codexTaskTimeouts[CODEX_TASK_TYPES.QQ_CONTEXT_SUMMARY])}，人格刷新 ${formatCodexTaskTimeout(codexTaskTimeouts[CODEX_TASK_TYPES.QQ_SELF_PERSONA])}，文件任务 ${formatCodexTaskTimeout(codexTaskTimeouts[CODEX_TASK_TYPES.QQ_FILE_TASK])}，画图 ${formatCodexTaskTimeout(codexTaskTimeouts[CODEX_TASK_TYPES.QQ_IMAGE_GENERATION])}`,
     `公共长期记忆：${state.qq.publicMemory.entries.length} / ${state.qq.publicMemory.maxEntries}`,
     `记忆群数：${Object.keys(state.qq.memory.entries).length}`,
     `最近消息群数：${Object.keys(state.qq.memory.recentMessages).length}`,
@@ -5110,6 +5117,10 @@ function formatQqDurationSeconds(seconds) {
   return `${seconds} 秒`;
 }
 
+function formatCodexTaskTimeout(timeoutMs) {
+  return formatQqDurationSeconds(Math.max(1, Math.ceil(Number(timeoutMs) / 1000)));
+}
+
 function resolveQqBanDurationUnitMs(unit) {
   if (/^(s|sec|secs|second|seconds|秒)$/.test(unit)) return 1000;
   if (/^(m|min|mins|minute|minutes|分钟|分)$/.test(unit)) return 60 * 1000;
@@ -5522,9 +5533,13 @@ async function buildModelReply(event, { replyScope = null } = {}) {
       ...currentImagePaths.flatMap((imagePath) => ["--image", imagePath]),
       "-"
     ];
+    const taskType = currentImagePaths.length > 0
+      ? CODEX_TASK_TYPES.QQ_VISION_REPLY
+      : CODEX_TASK_TYPES.QQ_REPLY;
     await runCodexCli(args, prompt, {
       cwd: codexWorkspaceDir,
-      timeout: 120000,
+      taskType,
+      timeout: getCodexTaskTimeoutMs(codexTaskTimeouts, taskType),
       env: {
         ...process.env,
         CODEX_REMOTE_CONTACT_QQ_MODE: "1"
@@ -5735,7 +5750,8 @@ async function buildQqContextSummary(event, commandText = "") {
   ];
   await runCodexCli(args, prompt, {
     cwd: codexWorkspaceDir,
-    timeout: 90000,
+    taskType: CODEX_TASK_TYPES.QQ_CONTEXT_SUMMARY,
+    timeout: getCodexTaskTimeoutMs(codexTaskTimeouts, CODEX_TASK_TYPES.QQ_CONTEXT_SUMMARY),
     env: {
       ...process.env,
       CODEX_REMOTE_CONTACT_QQ_CONTEXT_SUMMARY: "1"
@@ -5798,6 +5814,9 @@ async function buildQqOwnerFileImageReply(event, { replyScope = null } = {}) {
   const text = stripMentionText(event.text);
   const isOwnerTask = Boolean(event.isOwner);
   const isImageGeneration = isQqImageOutputRequest(text);
+  const taskType = isImageGeneration
+    ? CODEX_TASK_TYPES.QQ_IMAGE_GENERATION
+    : CODEX_TASK_TYPES.QQ_FILE_TASK;
   const id = crypto.randomUUID();
   const outputPath = join(codexTmpDir, `${id}.qq-owner-file-image.txt`);
   const taskStartedAt = Date.now();
@@ -5873,7 +5892,8 @@ async function buildQqOwnerFileImageReply(event, { replyScope = null } = {}) {
     assertQqReplyScopeActive(replyScope);
     await runCodexCli(args, prompt, {
       cwd: projectDir,
-      timeout: 5 * 60 * 1000,
+      taskType,
+      timeout: getCodexTaskTimeoutMs(codexTaskTimeouts, taskType),
       env: {
         ...process.env,
         CODEX_REMOTE_CONTACT_QQ_OWNER_FILE_IMAGE_MODE: "1",
@@ -5897,7 +5917,8 @@ async function buildQqOwnerFileImageReply(event, { replyScope = null } = {}) {
       assertQqReplyScopeActive(replyScope);
       await runCodexCli(retryArgs, retryPrompt, {
         cwd: projectDir,
-        timeout: 5 * 60 * 1000,
+        taskType,
+        timeout: getCodexTaskTimeoutMs(codexTaskTimeouts, taskType),
         env: {
           ...process.env,
           CODEX_REMOTE_CONTACT_QQ_OWNER_FILE_IMAGE_MODE: "1",
@@ -7459,7 +7480,9 @@ function trackQqGeneration(child, options = {}) {
     groupId: options.qqEvent?.groupId || null,
     senderId: options.qqEvent?.senderId || null,
     startedAt: new Date().toISOString(),
-    mode
+    mode,
+    taskType: options.taskType || CODEX_TASK_TYPES.QQ_REPLY,
+    timeoutMs: options.timeout
   };
   state.qq.activeGeneration = generation;
   if (scopeId) state.qq.activeGenerations[scopeId] = generation;
@@ -7558,6 +7581,8 @@ function runCodexCliProcess(args, input, options) {
       logger.error("Codex CLI timed out", {
         cwd: options.cwd,
         durationMs: state.maintenance.codex.lastDurationMs,
+        taskType: options.taskType || null,
+        timeoutMs: options.timeout,
         qqGenerationId,
         groupId: options.qqEvent?.groupId || null,
         senderId: options.qqEvent?.senderId || null
@@ -7586,6 +7611,8 @@ function runCodexCliProcess(args, input, options) {
       logger.error("Codex CLI failed to start", {
         cwd: options.cwd,
         durationMs: state.maintenance.codex.lastDurationMs,
+        taskType: options.taskType || null,
+        timeoutMs: options.timeout,
         qqGenerationId,
         groupId: options.qqEvent?.groupId || null,
         senderId: options.qqEvent?.senderId || null,
@@ -7617,6 +7644,8 @@ function runCodexCliProcess(args, input, options) {
         logger.success("Codex CLI finished", {
           cwd: options.cwd,
           durationMs: state.maintenance.codex.lastDurationMs,
+          taskType: options.taskType || null,
+          timeoutMs: options.timeout,
           qqGenerationId,
           groupId: options.qqEvent?.groupId || null,
           senderId: options.qqEvent?.senderId || null,
@@ -7634,6 +7663,8 @@ function runCodexCliProcess(args, input, options) {
         logger.warn("QQ Codex generation stopped", {
           cwd: options.cwd,
           durationMs: state.maintenance.codex.lastDurationMs,
+          taskType: options.taskType || null,
+          timeoutMs: options.timeout,
           qqGenerationId,
           groupId: options.qqEvent?.groupId || null,
           senderId: options.qqEvent?.senderId || null
@@ -7651,6 +7682,8 @@ function runCodexCliProcess(args, input, options) {
           cwd: options.cwd,
           code,
           durationMs: state.maintenance.codex.lastDurationMs,
+          taskType: options.taskType || null,
+          timeoutMs: options.timeout,
           qqGenerationId,
           groupId: options.qqEvent?.groupId || null,
           senderId: options.qqEvent?.senderId || null,
