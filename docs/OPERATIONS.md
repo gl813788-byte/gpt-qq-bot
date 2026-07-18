@@ -2,7 +2,7 @@
 
 [简体中文](OPERATIONS_CN.md) | English
 
-For a fresh install or installer update, prefer `npx -y --prefer-online codex-qq-bot@latest` (or `pnpm dlx codex-qq-bot@latest`) so npm checks the online `latest` tag instead of reusing an old npx package, or let Codex execute and validate the [deployment guide](DEPLOY_WITH_CODEX.md). This page covers routine operation after deployment.
+For a fresh install or installer update, prefer `npx -y "codex-qq-bot@$(npm view codex-qq-bot@latest version --prefer-online)"` (or the same exact-version pattern with `pnpm dlx`) so npm resolves the registry version first instead of reusing an old `_npx` executable, or let Codex execute and validate the [deployment guide](DEPLOY_WITH_CODEX.md). This page covers routine operation after deployment.
 
 The public installer refreshes the latest commit on the repository's default branch every time and reuses only valid stages for the same commit. A damaged ZIP is quarantined and fetched again, and extraction starts in a clean temporary directory. A prior archive install without Git is replaced with prepared new source while carrying forward `data`, `runtime`, local configuration, and extra files; the full old directory remains under the install cache's `backups/`, while Git worktrees are not overwritten. The installer creates an `ncc` entry when there is no same-name command conflict and then tells the user to run `ncc`; it does not enter the wizard by default. An extracted source archive can run the root-level `一键部署.command` directly. The first repository-`ncc` run performs environment checks, dependency installation, verification, and guided configuration. After completion, later runs open the normal status, startup, configuration, and logging menu.
 

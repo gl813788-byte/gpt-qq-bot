@@ -23,9 +23,9 @@
 已安装 Node.js 时，直接运行下面任意一条；不需要打开 GitHub、手动下载或解压：
 
 ```bash
-npx -y --prefer-online codex-qq-bot@latest
+npx -y "codex-qq-bot@$(npm view codex-qq-bot@latest version --prefer-online)"
 # 或者
-pnpm dlx codex-qq-bot@latest
+pnpm dlx "codex-qq-bot@$(npm view codex-qq-bot@latest version --prefer-online)"
 ```
 
 如果还没有 Node.js，可以使用轻量引导命令：
@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/ins
 
 中文安装器每次都会刷新仓库默认分支的最新提交，再续传或下载该提交对应的源码 ZIP，检查压缩包完整性与目录结构后安装到稳定目录，无需等待 GitHub Release。同一提交会复用已完成阶段；损坏的下载缓存会被隔离并自动完整重下，解压总是在干净临时目录中完成。root 用户默认使用 `/root/Codex-QQ-Bot`，其他用户默认使用 `~/Codex-QQ-Bot`；已存在的旧版 `Codex-Remote-Contact` 目录会继续复用。准备完成后按提示运行 `ncc`，第一次执行环境检测、依赖安装、项目验证和配置向导，部署完成后再运行就是日常功能菜单。
 
-如果目标目录是以前由安装器下载的无 Git 项目，新版本会在暂存目录准备升级，保留 `data`、`runtime`、本地配置与额外文件，再切换到最新源码，并把升级前目录完整保存在安装缓存的 `backups/` 中；相同源码不会重复升级。目标是 Git 工作区时不会覆盖分支或本地修改；目录无法识别时也会拒绝覆盖。机器上已有其他同名全局 `ncc` 时不会覆盖，而会显示仓库入口。可先运行 `npx -y --prefer-online codex-qq-bot@latest --check` 做纯检查：它只解析当前默认分支的最新提交，不会下载或修改项目文件。Windows 请在 WSL 中执行。
+如果目标目录是以前由安装器下载的无 Git 项目，新版本会在暂存目录准备升级，保留 `data`、`runtime`、本地配置与额外文件，再切换到最新源码，并把升级前目录完整保存在安装缓存的 `backups/` 中；相同源码不会重复升级。目标是 Git 工作区时不会覆盖分支或本地修改；目录无法识别时也会拒绝覆盖。机器上已有其他同名全局 `ncc` 时不会覆盖，而会显示仓库入口。命令先用 `npm view` 取得 registry 当前精确版本，再让 npx 执行这个不可变版本，可避开旧的 `_npx` 可执行缓存。纯检查可在命令末尾添加 `--check`：它只解析当前默认分支的最新提交，不会下载或修改项目文件。Windows 请在 WSL 中执行。
 
 ## 也可以直接让 Codex 部署
 

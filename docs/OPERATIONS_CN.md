@@ -2,7 +2,7 @@
 
 简体中文 | [English](OPERATIONS.md)
 
-全新安装或更新安装器首选 `npx -y --prefer-online codex-qq-bot@latest`（或 `pnpm dlx codex-qq-bot@latest`），明确要求 npm 在线检查 `latest`，避免复用旧的 npx 包；也可以让 Codex 按[部署指南](DEPLOY_WITH_CODEX_CN.md)执行并验收。本页用于部署后的日常运行与定位问题。
+全新安装或更新安装器首选 `npx -y "codex-qq-bot@$(npm view codex-qq-bot@latest version --prefer-online)"`（或同样精确版本的 `pnpm dlx`），先在线取得 registry 精确版本再执行，避免 `_npx` 复用旧包；也可以让 Codex 按[部署指南](DEPLOY_WITH_CODEX_CN.md)执行并验收。本页用于部署后的日常运行与定位问题。
 
 公共安装器每次刷新默认分支的最新提交，同一提交复用有效缓存；损坏 ZIP 会隔离并重下，解压会从干净临时目录开始。以前由安装器下载的无 Git 项目会在保留 `data`、`runtime`、本地配置和额外文件后切换到新源码，并在安装缓存 `backups/` 中留下完整旧目录；Git 工作区不会自动覆盖。在没有同名命令冲突时安装器会安装 `ncc` 入口，然后提醒运行 `ncc`；它不再等待 GitHub Release，也默认不会直接进入向导。已解压源码包时可运行根目录 `一键部署.command`。首次运行仓库版 `ncc` 会自动检测环境、安装依赖、运行验证并引导填写配置；完成后再运行就直接显示状态、启动、配置和日志等日常功能。
 

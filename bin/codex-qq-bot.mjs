@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 if (process.platform === "win32") {
-  console.error("[Codex QQ Bot 安装器] Windows 请先打开 WSL，再运行 npx -y --prefer-online codex-qq-bot@latest。");
+  console.error('[Codex QQ Bot 安装器] Windows 请先打开 WSL，再运行 npx -y "codex-qq-bot@$(npm view codex-qq-bot@latest version --prefer-online)"。');
   process.exit(1);
 }
 

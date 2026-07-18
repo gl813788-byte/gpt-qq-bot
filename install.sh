@@ -38,8 +38,8 @@ usage() {
 Codex QQ Bot 中文安装器
 
 推荐命令：
-  npx -y --prefer-online codex-qq-bot@latest
-  pnpm dlx codex-qq-bot@latest
+  npx -y "codex-qq-bot@$(npm view codex-qq-bot@latest version --prefer-online)"
+  pnpm dlx "codex-qq-bot@$(npm view codex-qq-bot@latest version --prefer-online)"
 
 未安装 Node.js 时可使用：
   curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash

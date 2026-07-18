@@ -20,8 +20,8 @@
 已经安装 Node.js 时运行：
 
 ```bash
-npx -y --prefer-online codex-qq-bot@latest
-# 或 pnpm dlx codex-qq-bot@latest
+npx -y "codex-qq-bot@$(npm view codex-qq-bot@latest version --prefer-online)"
+# 或 pnpm dlx "codex-qq-bot@$(npm view codex-qq-bot@latest version --prefer-online)"
 ```
 
 没有 Node.js 时运行：
@@ -30,7 +30,7 @@ npx -y --prefer-online codex-qq-bot@latest
 curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
 ```
 
-该中文引导器每次从 GitHub API 刷新仓库默认分支及其最新提交，断点续传该提交对应的源码 ZIP，校验 ZIP 完整性与目录结构，再把项目放到 `/root/Codex-QQ-Bot` 或 `~/Codex-QQ-Bot`，不再等待正式 Release；已存在的旧版 `Codex-Remote-Contact` 目录继续复用。同一提交复用已完成阶段；损坏下载会隔离并完整重下，解压使用干净临时目录。以前由安装器下载的无 Git 项目会保留 `data`、`runtime`、本地配置和额外文件后升级，旧目录完整保存到安装缓存的 `backups/`；Git 工作区、陌生非空目录和其他同名全局 `ncc` 都不会被覆盖。准备完成后会明确提醒运行 `ncc`，首次环境检测、依赖安装、`npm run verify` 和配置填写仍由仓库 `ncc` 状态机完成。`--check` 只解析源码提交信息，不下载或写入项目。
+命令先通过 `npm view` 在线取得 registry 当前精确版本，再让 npx/pnpm 执行这个不可变版本，避免 `_npx` 仍启动旧包。该中文引导器每次从 GitHub API 刷新仓库默认分支及其最新提交，断点续传该提交对应的源码 ZIP，校验 ZIP 完整性与目录结构，再把项目放到 `/root/Codex-QQ-Bot` 或 `~/Codex-QQ-Bot`，不再等待正式 Release；已存在的旧版 `Codex-Remote-Contact` 目录继续复用。同一提交复用已完成阶段；损坏下载会隔离并完整重下，解压使用干净临时目录。以前由安装器下载的无 Git 项目会保留 `data`、`runtime`、本地配置和额外文件后升级，旧目录完整保存到安装缓存的 `backups/`；Git 工作区、陌生非空目录和其他同名全局 `ncc` 都不会被覆盖。准备完成后会明确提醒运行 `ncc`，首次环境检测、依赖安装、`npm run verify` 和配置填写仍由仓库 `ncc` 状态机完成。`--check` 只解析源码提交信息，不下载或写入项目。
 
 ## 已有源码时的中文入口
 

@@ -39,8 +39,8 @@ test("remote and npm installers expose a Chinese no-GitHub-web entry", async () 
   ]) {
     const help = spawnSync(command, args, { cwd: projectDir, encoding: "utf8" });
     assert.equal(help.status, 0, help.stderr);
-    assert.match(help.stdout, /npx -y --prefer-online codex-qq-bot@latest/);
-    assert.match(help.stdout, /pnpm dlx codex-qq-bot@latest/);
+    assert.match(help.stdout, /npx -y .*npm view codex-qq-bot@latest version --prefer-online/);
+    assert.match(help.stdout, /pnpm dlx .*npm view codex-qq-bot@latest version --prefer-online/);
     assert.match(help.stdout, /不需要打开 GitHub 网页/);
     assert.match(help.stdout, /中文首次部署/);
     assert.match(help.stdout, /默认分支的最新提交/);
@@ -49,7 +49,7 @@ test("remote and npm installers expose a Chinese no-GitHub-web entry", async () 
 
   const packageMetadata = JSON.parse(await readFile(packagePath, "utf8"));
   assert.equal(packageMetadata.name, "codex-qq-bot");
-  assert.equal(packageMetadata.version, "1.1.8");
+  assert.equal(packageMetadata.version, "1.1.7-3");
   const installerSource = await readFile(remoteInstallerPath, "utf8");
   assert.match(installerSource, /\/root\/Codex-QQ-Bot/);
   assert.match(installerSource, /Codex-Remote-Contact/);

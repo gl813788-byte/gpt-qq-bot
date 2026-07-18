@@ -23,9 +23,9 @@
 If Node.js is installed, run either command below. There is no need to open GitHub, download an archive, or extract it manually:
 
 ```bash
-npx -y --prefer-online codex-qq-bot@latest
+npx -y "codex-qq-bot@$(npm view codex-qq-bot@latest version --prefer-online)"
 # or
-pnpm dlx codex-qq-bot@latest
+pnpm dlx "codex-qq-bot@$(npm view codex-qq-bot@latest version --prefer-online)"
 ```
 
 If Node.js is not installed yet, use the lightweight bootstrap command:
@@ -36,7 +36,7 @@ curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/ins
 
 The Chinese installer refreshes the repository default branch and exact latest commit on every run, resumes or downloads that commit's source ZIP, validates it, and installs it into a stable directory without waiting for a GitHub Release. Completed stages for the same commit are reused; damaged cached downloads are quarantined and fetched again, and extraction always uses a clean temporary directory. The default is `/root/Codex-QQ-Bot` for root and `~/Codex-QQ-Bot` for other users; an existing legacy `Codex-Remote-Contact` directory is reused. When preparation finishes, run `ncc` as prompted: its first run checks the environment, installs dependencies, verifies the project, and guides configuration; later runs open the normal daily menu.
 
-A prior archive installation without Git is upgraded through a prepared replacement that carries forward `data`, `runtime`, local configuration, and extra files, then retains the complete pre-upgrade directory under the install cache's `backups/` directory. Identical source is not reinstalled. A Git worktree and an unrelated occupied directory are never overwritten, nor is a different existing global `ncc`; in that conflict case the repository launcher is printed instead. Run `npx -y --prefer-online codex-qq-bot@latest --check` for a read-only preflight that resolves the current default-branch commit without downloading or changing project files. On Windows, run the installer inside WSL.
+A prior archive installation without Git is upgraded through a prepared replacement that carries forward `data`, `runtime`, local configuration, and extra files, then retains the complete pre-upgrade directory under the install cache's `backups/` directory. Identical source is not reinstalled. A Git worktree and an unrelated occupied directory are never overwritten, nor is a different existing global `ncc`; in that conflict case the repository launcher is printed instead. The command resolves the registry's exact current version with `npm view` before asking npx to execute that immutable version, bypassing a stale `_npx` executable cache. Add `--check` to the end for a read-only preflight that resolves the current default-branch commit without downloading or changing project files. On Windows, run the installer inside WSL.
 
 ## Alternatively, let Codex deploy it
 
