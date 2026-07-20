@@ -1,4 +1,5 @@
 import { createEmptyQqConversationMemory } from "../qq-conversation-memory.js";
+import { createEmptyQqKnowledgeBase } from "../qq-knowledge-base.js";
 import { createEmptyQqPeriodicRuntime } from "../qq-periodic-runtime.js";
 import { createEmptyQqSelfPersona } from "../qq-self-persona.js";
 
@@ -67,13 +68,15 @@ export function createInitialState({
         perGroupLimit: config.qqMemoryLimit,
         groupRecentLimit: config.qqGroupMemoryLimit,
         entries: createRecord(),
-        recentMessages: createRecord()
+        recentMessages: createRecord(),
+        shortTermNotes: createRecord()
       },
       publicMemory: {
         enabled: true,
         maxEntries: 120,
         entries: []
       },
+      knowledgeBase: createEmptyQqKnowledgeBase(),
       personas: {
         groups: createRecord()
       },

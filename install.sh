@@ -152,6 +152,50 @@ install_system_package() {
   fi
 }
 
+ensure_downloader() {
+  if command -v curl >/dev/null 2>&1 || command -v wget >/dev/null 2>&1; then
+    return 0
+  fi
+  log "缺少下载工具，正在尝试自动安装 curl。"
+  install_system_package curl || die "系统既没有 curl/wget，也无法通过包管理器安装 curl。"
+  command -v curl >/dev/null 2>&1 || die "curl 安装后仍不在 PATH 中。"
+}
+
+download_file() {
+  local url="$1"
+  local destination="$2"
+  local resume="${3:-0}"
+  ensure_downloader
+  if command -v curl >/dev/null 2>&1; then
+    if [ "$resume" = "1" ]; then
+      curl -fL --retry 3 --retry-delay 1 --continue-at - "$url" -o "$destination"
+    else
+      curl -fL --retry 3 --retry-delay 1 "$url" -o "$destination"
+    fi
+  elif [ "$resume" = "1" ]; then
+    wget -c --tries=3 -O "$destination" "$url"
+  else
+    wget --tries=3 -O "$destination" "$url"
+  fi
+}
+
+download_json() {
+  local url="$1"
+  local destination="$2"
+  ensure_downloader
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSL \
+      -H "Accept: application/vnd.github+json" \
+      -H "X-GitHub-Api-Version: 2022-11-28" \
+      "$url" -o "$destination"
+  else
+    wget -q \
+      --header="Accept: application/vnd.github+json" \
+      --header="X-GitHub-Api-Version: 2022-11-28" \
+      -O "$destination" "$url"
+  fi
+}
+
 ensure_command() {
   local command_name="$1"
   local package_name="$2"
@@ -237,7 +281,7 @@ resolve_latest_source() {
   local configured_branch="$SOURCE_BRANCH"
   local cached_source_available=0
   mkdir -p "$metadata_dir"
-  ensure_command curl curl
+  ensure_downloader
 
   if [ -f "$repository_file" ] && [ -f "$commit_file" ] && parse_source_metadata "$repository_file" "$commit_file" "$configured_branch"; then
     cached_source_available=1
@@ -248,10 +292,7 @@ resolve_latest_source() {
   local commit_tmp="${commit_file}.part"
   if [ -z "$configured_branch" ]; then
     log "正在查询仓库默认分支……"
-    if ! curl -fsSL \
-      -H "Accept: application/vnd.github+json" \
-      -H "X-GitHub-Api-Version: 2022-11-28" \
-      "$REPOSITORY_API_URL" -o "$repository_tmp"; then
+    if ! download_json "$REPOSITORY_API_URL" "$repository_tmp"; then
       if [ "$cached_source_available" = "1" ] && parse_source_metadata "$repository_file" "$commit_file" "$configured_branch"; then
         warn "无法刷新仓库信息，将使用已缓存且已验证的源码进度：$SOURCE_LABEL"
         return 0
@@ -276,10 +317,7 @@ resolve_latest_source() {
   local effective_commit_api="$COMMIT_API_URL"
   [ -n "$effective_commit_api" ] || effective_commit_api="${REPOSITORY_API_URL%/}/commits/${SOURCE_BRANCH}"
   log "正在解析 ${SOURCE_BRANCH} 分支的最新提交……"
-  if ! curl -fsSL \
-    -H "Accept: application/vnd.github+json" \
-    -H "X-GitHub-Api-Version: 2022-11-28" \
-    "$effective_commit_api" -o "$commit_tmp"; then
+  if ! download_json "$effective_commit_api" "$commit_tmp"; then
     if [ "$cached_source_available" = "1" ] && parse_source_metadata "$repository_file" "$commit_file" "$configured_branch"; then
       warn "无法刷新最新提交，将使用已缓存且已验证的源码进度：$SOURCE_LABEL"
       return 0
@@ -301,11 +339,22 @@ calculate_sha256() {
   local file="$1"
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$file" | awk '{print $1}'
+  elif command -v gsha256sum >/dev/null 2>&1; then
+    gsha256sum "$file" | awk '{print $1}'
   elif command -v shasum >/dev/null 2>&1; then
     shasum -a 256 "$file" | awk '{print $1}'
   else
     return 1
   fi
+}
+
+ensure_sha256_tool() {
+  if command -v sha256sum >/dev/null 2>&1 || command -v gsha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; then
+    return 0
+  fi
+  log "缺少 SHA-256 校验工具，正在尝试自动安装 coreutils。"
+  install_system_package coreutils || die "无法安装 SHA-256 校验工具。"
+  calculate_sha256 "$0" >/dev/null 2>&1 || die "coreutils 安装后仍没有可用的 SHA-256 工具。"
 }
 
 archive_is_verified() {
@@ -374,7 +423,30 @@ existing_project_is_valid() {
   [ -d "$INSTALL_DIR" ] &&
     [ -f "$INSTALL_DIR/package.json" ] &&
     [ -f "$INSTALL_DIR/scripts/ncc.command" ] &&
-    [ -f "$INSTALL_DIR/一键部署.command" ]
+    [ -f "$INSTALL_DIR/scripts/deploy.command" ]
+}
+
+ensure_source_launcher() {
+  local source_dir="$1"
+  local launcher="$source_dir/一键部署.command"
+  [ -f "$launcher" ] && return 0
+  [ -f "$source_dir/scripts/ncc.command" ] || return 1
+  [ -f "$source_dir/scripts/deploy.command" ] || return 1
+  warn "源码 ZIP 缺少中文一键部署入口，正在根据核心部署脚本自动重建。"
+  {
+    printf '#!/usr/bin/env bash\n'
+    printf 'set -Eeuo pipefail\n'
+    printf 'PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"\n'
+    printf 'if [ -f "$PROJECT_DIR/scripts/bootstrap-environment.sh" ]; then\n'
+    printf '  bash "$PROJECT_DIR/scripts/bootstrap-environment.sh" --base-only\n'
+    printf 'elif ! command -v zsh >/dev/null 2>&1; then\n'
+    printf '  printf "缺少 zsh，请先安装 zsh 后重新运行。\\n" >&2\n'
+    printf '  exit 1\n'
+    printf 'fi\n'
+    printf 'exec zsh "$PROJECT_DIR/scripts/ncc.command" "$@"\n'
+  } > "$launcher"
+  chmod 755 "$launcher"
+  log "中文一键部署入口已恢复：$launcher"
 }
 
 installed_source_marker_path() {
@@ -615,6 +687,7 @@ if [ "$CHECK_ONLY" = "1" ]; then
 fi
 
 if existing_project_is_valid; then
+  ensure_source_launcher "$INSTALL_DIR" || die "现有项目缺少可恢复的部署入口。"
   EXISTING_INSTALL=1
   log "发现已有项目，将检查默认分支最新源码：$INSTALL_DIR"
   if [ -e "$INSTALL_DIR/.git" ]; then
@@ -689,28 +762,29 @@ else
     :
   elif [ -f "$partial_archive" ]; then
     log "发现未完成的下载，正在从现有文件续传：$partial_archive"
-    if ! curl -fL --retry 3 --retry-delay 1 --continue-at - "$ASSET_URL" -o "$partial_archive"; then
+    if ! download_file "$ASSET_URL" "$partial_archive" 1; then
       quarantine_cached_file "$partial_archive" "服务端未能继续上次下载，将自动改为完整重下"
-      curl -fL --retry 3 --retry-delay 1 "$ASSET_URL" -o "$partial_archive" || die "完整重下仍然失败；已保留失败文件供排查。"
+      download_file "$ASSET_URL" "$partial_archive" || die "完整重下仍然失败；已保留失败文件供排查。"
     elif ! archive_is_structurally_valid "$partial_archive"; then
       quarantine_cached_file "$partial_archive" "续传后的 ZIP 仍不完整，将自动改为完整重下"
-      curl -fL --retry 3 --retry-delay 1 "$ASSET_URL" -o "$partial_archive" || die "完整重下仍然失败；已保留失败文件供排查。"
+      download_file "$ASSET_URL" "$partial_archive" || die "完整重下仍然失败；已保留失败文件供排查。"
     fi
     mv "$partial_archive" "$downloaded_archive"
   else
     log "正在下载 ${ASSET_NAME}……"
-    curl -fL --retry 3 --retry-delay 1 "$ASSET_URL" -o "$partial_archive" || die "下载中断，已保留进度；重新运行同一命令即可续传。"
+    download_file "$ASSET_URL" "$partial_archive" || die "下载中断，已保留进度；重新运行同一命令即可续传。"
     mv "$partial_archive" "$downloaded_archive"
   fi
 fi
 
 if [ -z "$ARCHIVE_FILE" ] && ! archive_is_structurally_valid "$downloaded_archive"; then
   quarantine_cached_file "$downloaded_archive" "下载完成的 ZIP 无法通过完整性检查，将自动完整重下"
-  curl -fL --retry 3 --retry-delay 1 "$ASSET_URL" -o "$partial_archive" || die "完整重下仍然失败；已保留失败文件供排查。"
+  download_file "$ASSET_URL" "$partial_archive" || die "完整重下仍然失败；已保留失败文件供排查。"
   mv "$partial_archive" "$downloaded_archive"
 fi
 
 maybe_stop_after download
+ensure_sha256_tool
 verify_archive "$downloaded_archive" "$verified_marker"
 maybe_stop_after verify
 archive_sha256="$(sed -n '1p' "$verified_marker")"
@@ -745,7 +819,8 @@ fi
 
 [ -f "$source_dir/package.json" ] || die "ZIP 缺少 package.json。"
 [ -f "$source_dir/scripts/ncc.command" ] || die "ZIP 缺少仓库 ncc。"
-[ -f "$source_dir/一键部署.command" ] || die "ZIP 缺少中文一键部署入口。"
+[ -f "$source_dir/scripts/deploy.command" ] || die "ZIP 缺少首次部署脚本。"
+ensure_source_launcher "$source_dir" || die "ZIP 缺少中文一键部署入口，且核心部署脚本不足以自动恢复。"
 maybe_stop_after extract
 
 if [ "$EXISTING_INSTALL" = "1" ]; then

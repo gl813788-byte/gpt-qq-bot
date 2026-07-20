@@ -36,6 +36,7 @@ data/qq-memory.json
 data/qq-personas.json
 data/qq-self-persona.json
 data/qq-public-memory.json
+data/qq-knowledge-base.json
 data/qq-conversation-memory.json
 data/qq-requests.json
 data/qq-sticker-inventory.json

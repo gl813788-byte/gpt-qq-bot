@@ -91,7 +91,7 @@ test("plans reactions, short answers and tasks with different behavior budgets",
   assert.ok(answerPlan.maxChars < taskPlan.maxChars);
 });
 
-test("plans cold-group interest as one optional short message", () => {
+test("cold-group interest keeps normal reply freedom for model-led research and topic opening", () => {
   const style = analyzeQqHumanChatStyle([{ senderId: "1", text: "这个挺好玩" }]);
   const plan = buildQqHumanBehaviorPlan({
     groupId: "g",
@@ -100,9 +100,10 @@ test("plans cold-group interest as one optional short message", () => {
     qqColdProactive: true
   }, {}, style, { text: "" });
   assert.equal(plan.mode, "cold_proactive");
-  assert.equal(plan.maxSentences, 1);
-  assert.equal(plan.preferMultiBubble, false);
-  assert.equal(plan.preferSticker, false);
+  assert.equal(plan.compact, false);
+  assert.equal(plan.openEnded, true);
+  assert.equal(plan.maxSentences, 3);
+  assert.match(plan.goal, /自由检索、探索/);
 });
 
 test("treats playful social requests as compact chat instead of a formal task report", () => {
@@ -196,6 +197,8 @@ test("formats anonymous evidence and recognizes proactive silence", () => {
   assert.match(context, /2 条短气泡/);
   assert.match(context, /表情包规划/);
   assert.match(context, /单独一行写 ---/);
+  assert.match(context, /兴趣模型已经批准的执行轮/);
+  assert.match(context, /不要再次判断是否发言/);
   assert.match(context, /\[\[qq_silent\]\]/);
   assert.equal(isQqSilentReply("[[qq_silent]]\n[[qq_memory:{\"recentTopic\":\"闲聊\"}]]"), true);
 });

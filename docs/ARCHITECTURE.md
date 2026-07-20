@@ -31,6 +31,12 @@ environment + runtime paths
 | `src/channels/qq/` | Single QQ and OneBot message transport boundary | parsing or validating incoming QQ events |
 | `src/config/` | Environment normalization and runtime defaults | adding an environment variable or changing a deployment default |
 | `src/qq-enhancer/` | Optional QQ reply behavior | changing context images, proactive interest or reply style |
+| `src/qq-main-prompt.js` | Main-model prompt boundary | changing role, execution order, approved proactive tasks or the need-based tool directory |
+| `src/qq-proactive-pipeline.js` | Two-model proactive-chat contract | interest approvals and mandatory main-model validation for ordinary interjections, cold topic/chatter, and private outreach |
+| `src/qq-message-run-compaction.js` | Model-context repeat-run compaction | semantic identity, count merging, and Chinese count annotations for adjacent duplicate messages |
+| `src/qq-knowledge-base.js` | QQ long-term knowledge domain | changing title/scope policy, slang matching, frequency evidence, deletion review state or its repository |
+| `src/dashboard-knowledge-base.js` | Dashboard knowledge-management boundary | validating exact scoped upserts/deletes, stale conflicts, and frequency-evidence preservation |
+| `src/qq-knowledge-review.js` | Complex knowledge-review prompt boundary | bounded interest triage, full-evidence main review, and strict result parsing |
 | `src/unified-memory/` | Cross-channel memory | changing recall, storage or prompt formatting |
 | `src/*.js` | Existing domain and infrastructure modules | changing the named capability while it is migrated incrementally |
 | `modules/` | Platform clients and optional integrations | changing shared UI, launchers or the QQ social bridge |
@@ -71,8 +77,9 @@ process environment / config/local.env
 - **HTTP:** the dashboard and management API expose public state, maintenance status and logs. Non-loopback access is rejected unless remote binding and authentication are explicitly configured.
 - **OneBot:** webhook payloads are authenticated or restricted to loopback, size-limited, normalized and deduplicated before QQ policy runs.
 - **Codex:** child processes receive a controlled environment, concurrency limits and QQ model settings.
-- **Storage:** settings, memory and social state are local files. Load/save behavior should move behind repositories as it is extracted.
-- **Recurring work:** `src/wall-clock-scheduler.js` only wakes domain checks. Due times stay in the domain stores; the ordinary-interest cycle is persisted in `data/qq-memory.json`, while adaptive/persona clocks remain in their persona files. Startup and channel restoration run one immediate catch-up pass, and completed work establishes the next clock anchor.
+- **Model responsibilities:** the OpenRouter interest model is the lightweight background-decision and miscellaneous-triage plane. It handles only bounded triggers, classification, risk labels, and simple review. Proactive gates use higher temperature for human-like variation; consistency-sensitive triage uses lower temperature. The main Codex model owns conversation, summaries, and complex reasoning: context, tool research, topic selection, conversation/impression/persona summaries, knowledge extraction, and final replies. Ordinary proactive replies, cold-group turns, and private outreach take their final start decision from the interest model, so the main model does not approve them again; long-evidence or complex background work uses interest triage followed by main-model final review.
+- **Storage:** settings, memory and social state are local files. `qq-knowledge-base` already uses a repository for safe loading and atomic writes; malformed input preserves the original file and enables read-only protection. Other load/save paths should move behind repositories incrementally.
+- **Recurring work:** `src/wall-clock-scheduler.js` only wakes domain checks. Due times stay in domain stores: ordinary-interest cycles and short-term memory use `data/qq-memory.json`, knowledge-frequency review uses `data/qq-knowledge-base.json`, and adaptive/persona clocks remain in their persona files. Startup and channel restoration run one immediate catch-up pass, and completed work establishes the next clock anchor. Low-frequency knowledge review first uses the `qq-enhancer` structured channel for bounded interest triage, then starts the main Codex model for full-evidence final review.
 
 ## Adding a feature
 

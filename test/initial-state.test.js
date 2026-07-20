@@ -24,6 +24,9 @@ test("creates isolated application state from normalized configuration", () => {
   assert.equal(first.qq.enhancer.enabled, false);
   assert.equal(first.qq.proactive.enabled, false);
   assert.equal(first.qq.memory.perGroupLimit, 25);
+  assert.equal(Object.getPrototypeOf(first.qq.memory.shortTermNotes), null);
+  assert.equal(first.qq.knowledgeBase.version, 1);
+  assert.deepEqual(first.qq.knowledgeBase.entries, []);
   assert.deepEqual(first.channels, { qq: false });
   assert.deepEqual(first.network, { allowLanAccess: false, publicTunnelEnabled: false });
   assert.equal("imessage" in first, false);
@@ -33,7 +36,9 @@ test("creates isolated application state from normalized configuration", () => {
 
   first.qq.allowedGroups.push("123456");
   first.qq.memory.entries.group = ["message"];
+  first.qq.knowledgeBase.entries.push({ title: "测试" });
   assert.deepEqual(second.qq.allowedGroups, []);
   assert.equal(second.qq.memory.entries.group, undefined);
+  assert.deepEqual(second.qq.knowledgeBase.entries, []);
   assert.equal(Object.getPrototypeOf(first.qq.memory.entries), null);
 });

@@ -41,7 +41,9 @@ chmod +x 一键部署.command
 ./一键部署.command
 ```
 
-The launcher enters the repository `ncc`. On its first run, the Chinese wizard performs environment checks, missing-tool/dependency installation, full verification, and guided configuration. It records completion in `config/local.env`, so later `ncc` runs open the normal control menu. The first-run flow preserves existing `data/settings.json` and `config/local.env`, and skips shortcut replacement when it finds an unrelated global `ncc`. QQ/NapCat binaries are not bundled, so QR login and platform-specific OneBot installation remain host-specific.
+The launcher enters the repository `ncc`. On first run, `scripts/bootstrap-environment.sh` fills base commands through brew, apt-get, dnf, yum, or pacman, installs a checksum-verified official Node.js v22 binary when Node 20+ is absent, and installs Codex CLI. apt-get/dnf Linux also invokes NapCat's official rootless Shell installer by default to provide LinuxQQ, NapCat, Xvfb, and runtime libraries. It then installs project dependencies, runs full verification, and guides configuration. The flow preserves existing `data/settings.json`, `config/local.env`, and unrelated global `ncc` commands. The user must still complete the QQ QR scan.
+
+The outer `install.sh` does not require Node, Git, or zsh. It can use curl or wget and installs missing unzip/SHA-256 tooling. If a ZIP contains the core scripts but its Chinese launcher is absent or was mishandled by an extractor, the installer reconstructs `一键部署.command` instead of aborting.
 
 ## Full deployment prompt
 

@@ -102,20 +102,20 @@ test("dashboard realtime visuals are driven by API samples instead of fixed demo
   assert.match(javascript, /Math\.round\(\(samples\[0\]\.at \+ latest\.at\) \/ 2\)/);
   assert.match(javascript, /function renderServiceTopology\(\)/);
   assert.match(javascript, /sessionStorage\.setItem\(`\$\{STORAGE_PREFIX\}runtimeSamples`/);
-  assert.match(javascript, /app\.view === "memory"[^\n]+refreshMemory/);
+  assert.match(javascript, /\["memory", "knowledge"\]\.includes\(app\.view\)[^\n]+refreshMemory/);
   assert.match(javascript, /\["overview", "channels", "intelligence", "settings"\][^\n]+refreshMaintenance/);
   assert.match(css, /\.topology-node\.ok i/);
   assert.match(css, /\.topology-node\.bad i/);
 });
 
-test("dashboard keeps real channel, memory, log, and network controls in the redesigned workspaces", () => {
-  for (const className of ["event-table-head", "memory-shell", "log-filters", "settings-grid"]) {
+test("dashboard keeps real channel, memory, knowledge, log, and network controls in the redesigned workspaces", () => {
+  for (const className of ["event-table-head", "memory-shell", "knowledge-shell", "log-filters", "settings-grid"]) {
     assert.match(html, new RegExp(`class="[^"]*${className}`));
   }
   assert.match(javascript, /class="connection-row/);
   assert.match(javascript, /memory-browser/);
   assert.match(javascript, /class="event-row"/);
-  for (const id of ["qqToggle", "addGroupForm", "botSettingsForm", "memorySearch", "logFilterForm", "lanAccessToggle", "publicTunnelToggle"]) {
+  for (const id of ["qqToggle", "addGroupForm", "botSettingsForm", "memorySearch", "knowledgeSearch", "knowledgeEditorForm", "logFilterForm", "lanAccessToggle", "publicTunnelToggle"]) {
     assert.match(html, new RegExp(`id="${id}"`));
   }
 });
@@ -152,8 +152,25 @@ test("dashboard keeps one QQ channel separate from Bot intelligence controls", (
   assert.match(intelligenceView, /class="behavior-column behavior-column-main"/);
   assert.match(intelligenceView, /class="behavior-column behavior-column-side"/);
   assert.match(javascript, /network\?\.safeFetchMode/);
-  assert.match(javascript, /validViews = new Set\(\["overview", "channels", "intelligence", "memory", "activity", "settings"\]\)/);
+  assert.match(javascript, /validViews = new Set\(\["overview", "channels", "intelligence", "memory", "knowledge", "activity", "settings"\]\)/);
   assert.match(javascript, /\/api\/qq\/bot-settings/);
+});
+
+test("dashboard knowledge workspace renders real scoped data and uses the protected mutation API", () => {
+  const knowledgeStart = html.indexOf('id="view-knowledge"');
+  const activityStart = html.indexOf('id="view-activity"');
+  assert.ok(knowledgeStart >= 0 && activityStart > knowledgeStart);
+  const knowledgeView = html.slice(knowledgeStart, activityStart);
+  for (const id of ["knowledgeMetrics", "knowledgeIndex", "knowledgeList", "knowledgeInspector", "knowledgeKindFilter", "knowledgeScopeFilter"]) {
+    assert.match(knowledgeView, new RegExp(`id="${id}"`));
+  }
+  assert.match(javascript, /app\.memory\?\.qq\?\.knowledgeBase/);
+  assert.match(javascript, /function renderKnowledge\(\)/);
+  assert.match(javascript, /function renderKnowledgeEvidence\(occurrence\)/);
+  assert.match(javascript, /\/api\/qq\/knowledge/);
+  assert.match(javascript, /entryId,\s*variantId/);
+  assert.doesNotMatch(knowledgeView, /示例黑话|Example slang/);
+  assert.match(css, /\.knowledge-workspace\s*\{[^}]*grid-template-columns:/);
 });
 
 test("dashboard live log view requests verbose entries and renders every detail inline", () => {
@@ -163,7 +180,8 @@ test("dashboard live log view requests verbose entries and renders every detail 
   assert.match(javascript, /verbose:\s*"1"/);
   assert.match(javascript, /app\.view === "activity" && app\.liveLogs &&[^\n]+now - app\.lastFetch\.logs >= 1_000/);
   assert.match(javascript, /function renderLogDetails\(entry\)/);
-  assert.match(javascript, /Object\.entries\(entry\.details \|\| \{\}\)/);
+  assert.match(javascript, /app\.language === "en" \? entry\.details : \(entry\.detailsZh \|\| entry\.details\)/);
+  assert.match(javascript, /Object\.entries\(localizedDetails \|\| \{\}\)/);
   assert.match(css, /\.live-log-state\.active\s*\{/);
   assert.match(css, /\.log-detail-grid\s*\{/);
   assert.match(css, /\.log-detail\.is-error\s*\{/);

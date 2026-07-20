@@ -48,6 +48,17 @@ test("QQ context image collection prefers the newest messages and keeps source m
   assert.equal(images.some((image) => image.file === "current.png"), false);
 });
 
+test("QQ context image mapping retains the compressed repeat count", () => {
+  const images = collectQqContextImages([{
+    messageId: "3",
+    senderLabel: "丙",
+    text: "同一张图",
+    consecutiveRepeatCount: 3,
+    images: [{ file: "same.png" }]
+  }]);
+  assert.equal(images[0].context.text, "同一张图（连续重复 3 条）");
+});
+
 test("explicit bot triggers use a larger complete recent-group window", () => {
   assert.equal(getQqGroupRecentContextLimit(), 12);
   assert.equal(getQqGroupRecentContextLimit({ explicitBotTrigger: true }), 18);

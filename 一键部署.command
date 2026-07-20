@@ -5,6 +5,7 @@ set -o pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")" && pwd)"
 NCC_SCRIPT="$PROJECT_DIR/scripts/ncc.command"
+BOOTSTRAP_SCRIPT="$PROJECT_DIR/scripts/bootstrap-environment.sh"
 
 log() {
   printf '\n[一键部署] %s\n' "$*"
@@ -61,6 +62,11 @@ ensure_zsh() {
 }
 
 [ -f "$NCC_SCRIPT" ] || die "找不到仓库 ncc：$NCC_SCRIPT"
-ensure_zsh
+if [ -f "$BOOTSTRAP_SCRIPT" ]; then
+  log "正在自举首次启动需要的下载、解压和终端工具。"
+  bash "$BOOTSTRAP_SCRIPT" --base-only
+else
+  ensure_zsh
+fi
 log "正在进入 ncc。首次运行会自动部署，完成后再运行就是日常功能菜单。"
 exec zsh "$NCC_SCRIPT" "$@"

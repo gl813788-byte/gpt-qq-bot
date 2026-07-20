@@ -41,7 +41,9 @@ chmod +x 一键部署.command
 ./一键部署.command
 ```
 
-该入口会启动仓库版 `ncc`。首次运行 `ncc` 时，其中文向导会执行环境检测、缺失工具/依赖安装、完整验证和配置填写；成功后在 `config/local.env` 记录完成状态，以后运行直接进入常规功能菜单。首次流程会保留已有 `data/settings.json` 和 `config/local.env`，并在发现不同的全局 `ncc` 时跳过快捷命令覆盖。QQ/NapCat 二进制不包含在仓库中，扫码与特定 OneBot 安装仍需根据机器情况完成。
+该入口会启动仓库版 `ncc`。首次运行时，`scripts/bootstrap-environment.sh` 会通过 brew、apt-get、dnf、yum 或 pacman 补齐基础命令，以校验过摘要的 Node.js 官方 v22 二进制满足 Node 20+，并安装 Codex CLI。apt-get/dnf Linux 还会默认调用 NapCat 官方 Rootless Shell 安装器补齐 LinuxQQ、NapCat、Xvfb 与运行库。随后安装项目依赖、执行完整验证和配置填写；成功后在 `config/local.env` 记录完成状态。首次流程会保留已有 `data/settings.json`、`config/local.env` 与不同的全局 `ncc`。QQ 扫码仍必须由用户本人完成。
+
+最外层 `install.sh` 不依赖 Node、Git 或 zsh，可使用 curl/wget，并会自动安装缺失的 unzip 与 SHA-256 工具。如果 ZIP 的核心脚本完整但中文入口缺失或被解压工具错误处理，它会自动重建 `一键部署.command`，而不是中止部署。
 
 ## 完整部署提示词
 
