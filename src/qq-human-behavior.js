@@ -142,14 +142,20 @@ export function buildQqHumanBehaviorPlan(event = {}, intent = {}, style = {}, { 
   let maxChars = Number(style.casualMax || (privateChat ? 48 : 24));
   let maxSentences = privateChat ? 2 : 1;
   let compact = true;
+  let openEnded = false;
 
-  if (event.qqColdProactive || event.qqPrivateProactive) {
-    mode = event.qqPrivateProactive ? "private_proactive" : "cold_proactive";
-    goal = event.qqPrivateProactive
-      ? "结合这段私聊的频率、最近话题和自己的兴趣自然联系一次；没有具体内容就保持沉默"
-      : "结合最近聊天和自己的兴趣自然发起一句新话题；没有具体内容就保持沉默";
+  if (event.qqPrivateProactive) {
+    mode = "private_proactive";
+    goal = "结合这段私聊的频率、最近话题和自己的兴趣自然联系一次；没有具体内容就保持沉默";
     maxChars = Math.min(Number(style.casualMax || 28), 32);
     maxSentences = 1;
+  } else if (event.qqColdProactive) {
+    mode = "cold_proactive";
+    goal = "知道当前是冷群场景后，根据自己的兴趣自由检索、探索并决定是否自然开启话题";
+    maxChars = Number(style.answerMax || 88);
+    maxSentences = 3;
+    compact = false;
+    openEnded = true;
   } else if (barePing) {
     mode = "ping";
     goal = "短促回应自己在场，必要时只问一句怎么了";
@@ -227,6 +233,7 @@ export function buildQqHumanBehaviorPlan(event = {}, intent = {}, style = {}, { 
     maxChars,
     maxSentences,
     compact,
+    openEnded,
     preferMultiBubble,
     multiBubbleChance,
     maxBubbles: preferMultiBubble ? clamp(Number(style.runP90 || 2), 2, 3) : 1,
@@ -242,18 +249,9 @@ export function formatQqHumanBehaviorContext(style = {}, plan = {}, {
   proactive = false,
   bubbleSeparator = "|||"
 } = {}) {
-  const evidence = style.textSampleSize > 0
-    ? `最近匿名统计了 ${style.textSampleSize} 条真人纯文字：中位数 ${style.medianTextChars} 字，90% 不超过 ${style.p90TextChars} 字，${Math.round(style.shortMessageRatio * 100)}% 不超过 12 字。`
-    : "当前真人样本不足，使用保守的自然聊天基线。";
   const bubbles = plan.preferMultiBubble
     ? `本轮倾向连续发 2 条短气泡（最多 ${plan.maxBubbles || 2} 条）：第一条先接住/给结论，后面只补细节、后劲或接梗；没有自然的第二层意思就仍发 1 条，严禁凑数。`
     : "本轮默认 1 条气泡；确实有自然的补一句时才用 2 条，不把长文机械切碎。";
-  const behaviorEvidence = style.sampleSize > 0
-    ? `真人约 ${style.messagesPerHour || 0} 条/小时；${Math.round((style.multiMessageRunRatio || 0) * 100)}% 的连续发言轮会连发，${Math.round((style.messagesInMultiRunsRatio || 0) * 100)}% 的消息处于连发中；同一人连发间隔中位数约 ${style.sameSpeakerGapMedianSeconds || 0} 秒。`
-    : "暂无足够的频率样本。";
-  const expressionEvidence = style.sampleSize > 0
-    ? `图片 ${Math.round((style.imageMessageRatio || 0) * 100)}%，表情 ${Math.round((style.stickerMessageRatio || 0) * 100)}%，文字 emoji ${Math.round((style.emojiMessageRatio || 0) * 100)}%，引用 ${Math.round((style.replyMessageRatio || 0) * 100)}%，@ ${Math.round((style.mentionMessageRatio || 0) * 100)}%。`
-    : "";
   const emojiInstruction = plan.preferEmoji
     ? `本轮可以自然带 1 个 emoji${plan.emojiPalette?.length ? `，近期群里常见的是 ${plan.emojiPalette.join(" ")}` : ""}；只在语气确实需要时用，不要每条固定挂同一个。`
     : "本轮不必为了像人而强塞文字 emoji。";
@@ -261,12 +259,11 @@ export function formatQqHumanBehaviorContext(style = {}, plan = {}, {
     ? `本轮适合发 1 张语境匹配的表情包；如果可用表情库里有合适项，可以按语境选图文合并、仅表情包或文字与表情包分开发送。不要为了完成指标硬配无关表情。\n${formatQqStickerSendModeInstruction({ bubbleSeparator })}`
     : "本轮默认不发表情包；只有语境非常贴合时才例外使用 1 张。";
   return [
-    "真人化行为规划（根据当前会话真人消息的匿名统计动态生成，不模仿具体个人）：",
-    `- 群聊节奏：${evidence}`,
-    `- 发言行为：${behaviorEvidence}`,
-    expressionEvidence ? `- 互动与表达：${expressionEvidence}` : null,
-    `- 本轮模式：${plan.mode || "casual"}；目标：${plan.goal || "自然承接"}。`,
-    `- 可见正文建议控制在 ${plan.maxChars || 48} 字以内、最多 ${plan.maxSentences || 2} 句；任务正确性、必要解释和安全提示优先于字数。QQ 内部标记、链接和文件路径不计入字数。`,
+    `真人化动态规划（匿名统计样本 ${style.sampleSize || 0} 条；不模仿具体个人）：`,
+    `- 模式：${plan.mode || "casual"}；目标：${plan.goal || "自然承接"}。`,
+    plan.openEnded
+      ? "- 冷群分支不额外设置硬性字数或句数限制；按找到的内容自然组织，但仍要像群聊而不是写报告。"
+      : `- 可见正文建议控制在 ${plan.maxChars || 48} 字以内、最多 ${plan.maxSentences || 2} 句；任务正确性、必要解释和安全提示优先于字数。QQ 内部标记、链接和文件路径不计入字数。`,
     `- ${bubbles}`,
     `- ${emojiInstruction}`,
     `- 表情包规划：${stickerInstruction}`,
@@ -274,7 +271,7 @@ export function formatQqHumanBehaviorContext(style = {}, plan = {}, {
     "- 对方只是在分享、感叹或发图时，先给具体反应；没有求建议就不要自动分析、科普、安慰教程或列能力清单。",
     "- 可以自然用短句、语气词、问号或一个合适表情，但不要强塞网络黑话、错别字、口癖或装作真人。被问身份时仍如实说是 QQ 上的 AI 助手。",
     proactive
-      ? "- 这是兴趣触发。优先判断话题是否符合自己的全局兴趣、是否真有具体想说的内容；如果只能重复、催回复或没有新增价值，只输出 [[qq_silent]]。被 @ 或被回复时不能用这个标记。"
+      ? "- 这是兴趣模型已经批准的执行轮。不要再次判断是否发言；只把批准的语义或主动模式写成自然消息。仅在安全边界或关键事实无法可靠确认时输出 [[qq_silent]]。"
       : null
   ].filter(Boolean).join("\n");
 }

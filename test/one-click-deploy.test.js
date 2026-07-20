@@ -11,17 +11,46 @@ const projectDir = fileURLToPath(new URL("..", import.meta.url));
 const launcherPath = fileURLToPath(new URL("一键部署.command", new URL("..", import.meta.url)));
 const nccPath = fileURLToPath(new URL("scripts/ncc.command", new URL("..", import.meta.url)));
 const deployPath = fileURLToPath(new URL("scripts/deploy.command", new URL("..", import.meta.url)));
+const bootstrapPath = fileURLToPath(new URL("scripts/bootstrap-environment.sh", new URL("..", import.meta.url)));
 const remoteInstallerPath = fileURLToPath(new URL("install.sh", new URL("..", import.meta.url)));
 const npmInstallerPath = fileURLToPath(new URL("bin/codex-qq-bot.mjs", new URL("..", import.meta.url)));
 const packagePath = fileURLToPath(new URL("package.json", new URL("..", import.meta.url)));
 
 test("Chinese one-click deployment entry is executable and has valid Bash syntax", async () => {
   await access(launcherPath, constants.X_OK);
+  await access(bootstrapPath, constants.X_OK);
   const syntax = spawnSync("bash", ["-n", launcherPath], {
     cwd: projectDir,
     encoding: "utf8"
   });
   assert.equal(syntax.status, 0, syntax.stderr);
+  const bootstrapSyntax = spawnSync("bash", ["-n", bootstrapPath], {
+    cwd: projectDir,
+    encoding: "utf8"
+  });
+  assert.equal(bootstrapSyntax.status, 0, bootstrapSyntax.stderr);
+});
+
+test("fresh-machine bootstrap plans every required layer without mutating the host", () => {
+  const result = spawnSync("bash", [bootstrapPath, "--all"], {
+    cwd: projectDir,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      CODEX_QQ_BOT_BOOTSTRAP_DRY_RUN: "1",
+      CODEX_QQ_BOT_BOOTSTRAP_OS: "linux",
+      CODEX_QQ_BOT_BOOTSTRAP_PACKAGE_MANAGER: "apt-get",
+      CODEX_QQ_BOT_BOOTSTRAP_FORCE_MISSING: "curl git unzip zip jq zsh screen tar xz pgrep sha256sum sudo codex",
+      CODEX_QQ_BOT_BOOTSTRAP_FORCE_NODE_INSTALL: "1",
+      CODEX_QQ_BOT_BOOTSTRAP_FORCE_NAPCAT_INSTALL: "1"
+    }
+  });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /apt-get 安装/);
+  assert.match(result.stdout, /Node\.js 官方发行页/);
+  assert.match(result.stdout, /Codex CLI/);
+  assert.match(result.stdout, /NapCat 官方安装器/);
+  assert.match(result.stdout, /LinuxQQ、NapCat 和运行库/);
 });
 
 test("remote and npm installers expose a Chinese no-GitHub-web entry", async () => {
@@ -49,12 +78,61 @@ test("remote and npm installers expose a Chinese no-GitHub-web entry", async () 
 
   const packageMetadata = JSON.parse(await readFile(packagePath, "utf8"));
   assert.equal(packageMetadata.name, "codex-qq-bot");
-  assert.equal(packageMetadata.version, "1.1.7-3");
+  assert.equal(packageMetadata.version, "1.1.8");
   const installerSource = await readFile(remoteInstallerPath, "utf8");
   assert.match(installerSource, /\/root\/Codex-QQ-Bot/);
   assert.match(installerSource, /Codex-Remote-Contact/);
   assert.match(installerSource, /--continue-at -/);
+  assert.match(installerSource, /command -v wget/);
+  assert.match(installerSource, /源码 ZIP 缺少中文一键部署入口/);
   assert.match(installerSource, /下一步请运行/);
+});
+
+test("remote installer repairs a missing Chinese launcher in an otherwise valid ZIP", async (t) => {
+  const zip = spawnSync("zip", ["-v"], { encoding: "utf8" });
+  if (zip.error?.code === "ENOENT") {
+    t.skip("zip command is unavailable");
+    return;
+  }
+
+  const home = await mkdtemp(join(tmpdir(), "codex-qq-bot-repair-launcher-"));
+  try {
+    const fixtureRoot = join(home, "fixture", "codex-qq-bot-without-launcher");
+    await mkdir(join(fixtureRoot, "scripts"), { recursive: true });
+    await writeFile(join(fixtureRoot, "package.json"), '{"name":"repair-fixture"}\n');
+    await writeFile(join(fixtureRoot, "scripts", "ncc.command"), "#!/usr/bin/env zsh\nexit 0\n");
+    await writeFile(join(fixtureRoot, "scripts", "deploy.command"), "#!/usr/bin/env zsh\nexit 0\n");
+    const archive = join(home, "fixture.zip");
+    const packed = spawnSync("zip", ["-qr", archive, "codex-qq-bot-without-launcher"], {
+      cwd: join(home, "fixture"),
+      encoding: "utf8"
+    });
+    assert.equal(packed.status, 0, packed.stderr);
+
+    const target = join(home, "installed");
+    const result = spawnSync("bash", [
+      remoteInstallerPath,
+      "--archive", archive,
+      "--install-dir", target,
+      "--no-launch"
+    ], {
+      cwd: projectDir,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        CODEX_QQ_BOT_INSTALL_STATE_DIR: join(home, "state"),
+        CODEX_QQ_BOT_NCC_BIN: join(home, "bin", "ncc")
+      }
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stderr, /源码 ZIP 缺少中文一键部署入口/);
+    assert.match(result.stdout, /中文一键部署入口已恢复/);
+    const repaired = await readFile(join(target, "一键部署.command"), "utf8");
+    assert.match(repaired, /scripts\/ncc\.command/);
+    await access(join(target, "一键部署.command"), constants.X_OK);
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
 });
 
 test("remote installer validates and extracts a local source archive without launching", async (t) => {

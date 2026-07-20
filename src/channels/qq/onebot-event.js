@@ -40,6 +40,7 @@ export function normalizeOneBotEvent(payload, { extractImageInputs = () => [] } 
     type: payload.message_type === "group" && hasSelfAtSegment ? "group_at" : messageType,
     selfId: normalizeQqIdentifier(payload.self_id),
     groupId: normalizeQqIdentifier(payload.group_id),
+    groupName: compactGroupName(payload.group_name || payload.group?.name),
     senderId: normalizeQqIdentifier(payload.user_id),
     senderName: payload.sender?.card || payload.sender?.nickname || String(payload.user_id || "群友"),
     text: contentContext.displayText || payload.raw_message || textFromSegments,
@@ -109,6 +110,14 @@ export function normalizeOneBotPokeEvent(payload) {
 export function normalizeQqIdentifier(value) {
   const id = String(value ?? "").trim();
   return /^\d{4,20}$/.test(id) ? id : undefined;
+}
+
+function compactGroupName(value) {
+  return String(value || "")
+    .replace(/[\u0000-\u001f\u007f]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 100);
 }
 
 export function stripUntrustedQqLocalImagePaths(event) {

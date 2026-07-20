@@ -14,6 +14,7 @@ resolve_script_path() {
 
 SCRIPT_DIR="$(resolve_script_path "$0")"
 PROJECT_DIR="${GPT_QQ_BOT_HOME:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+export PATH="$HOME/.local/share/codex-qq-bot/node/bin:$HOME/.local/bin:$PATH"
 SETTINGS_FILE="$PROJECT_DIR/data/settings.json"
 LOCAL_ENV_FILE="$PROJECT_DIR/config/local.env"
 DEPLOY_SCRIPT="$PROJECT_DIR/scripts/deploy.command"
@@ -358,8 +359,8 @@ first_run_wizard() {
 Codex QQ Bot 首次部署（ncc）
 
 这是当前安装第一次运行 ncc。接下来会：
-1) 检测系统、Git、curl、zsh、Node.js 20+、npm 和 Codex CLI
-2) 尝试安装缺失工具与 Codex CLI
+1) 检测系统并自动补齐下载、解压、Git、zsh、Node.js 20+、npm 和 Codex CLI
+2) 在受支持的 Linux 上自动安装 NapCat、LinuxQQ、OneBot 运行库
 3) 安装 npm 依赖并运行 npm run verify
 4) 填写 OneBot、主人 QQ、群白名单、助手名称和联网配置
 

@@ -1,3 +1,5 @@
+import { appendQqConsecutiveRepeatSuffix } from "../qq-message-run-compaction.js";
+
 const defaultImageLimit = 4;
 const maxFileLength = 512;
 const maxUrlLength = 4096;
@@ -42,7 +44,7 @@ export function collectQqContextImages(entries = [], {
         ...image,
         context: {
           sender: String(entry.sender || entry.senderLabel || entry.senderName || "群友").slice(0, 80),
-          text: String(entry.text || "").slice(0, 220),
+          text: appendQqConsecutiveRepeatSuffix(String(entry.text || "").slice(0, 220), entry),
           at: entry.at || null,
           messageId: entry.messageId == null ? null : String(entry.messageId).slice(0, 120)
         }

@@ -32,9 +32,11 @@ If Node.js is not installed yet, use the lightweight bootstrap command:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
+# with wget only:
+wget -qO- https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
 ```
 
-The Chinese installer refreshes the repository default branch and exact latest commit on every run, resumes or downloads that commit's source ZIP, validates it, and installs it into a stable directory without waiting for a GitHub Release. Completed stages for the same commit are reused; damaged cached downloads are quarantined and fetched again, and extraction always uses a clean temporary directory. The default is `/root/Codex-QQ-Bot` for root and `~/Codex-QQ-Bot` for other users; an existing legacy `Codex-Remote-Contact` directory is reused. When preparation finishes, run `ncc` as prompted: its first run checks the environment, installs dependencies, verifies the project, and guides configuration; later runs open the normal daily menu.
+The Chinese installer refreshes the repository default branch and exact latest commit on every run, resumes or downloads that commit's source ZIP, validates it, and installs it into a stable directory without waiting for a GitHub Release. The outer download does not require Node.js, npm, Git, or zsh, can use either `curl` or `wget`, and installs missing extraction/checksum tools through the host package manager. If an otherwise valid source ZIP unexpectedly lacks `一键部署.command`, the installer reconstructs that launcher from the core deployment scripts and continues. Completed stages for the same commit are reused; damaged cached downloads are quarantined and fetched again, and extraction always uses a clean temporary directory. The default is `/root/Codex-QQ-Bot` for root and `~/Codex-QQ-Bot` for other users; an existing legacy `Codex-Remote-Contact` directory is reused. When preparation finishes, run `ncc` as prompted: its first run bootstraps the environment, verifies the project, and guides configuration; later runs open the normal daily menu.
 
 A prior archive installation without Git is upgraded through a prepared replacement that carries forward `data`, `runtime`, local configuration, and extra files, then retains the complete pre-upgrade directory under the install cache's `backups/` directory. Identical source is not reinstalled. A Git worktree and an unrelated occupied directory are never overwritten, nor is a different existing global `ncc`; in that conflict case the repository launcher is printed instead. The command resolves the registry's exact current version with `npm view` before asking npx to execute that immutable version, bypassing a stale `_npx` executable cache. Add `--check` to the end for a read-only preflight that resolves the current default-branch commit without downloading or changing project files. On Windows, run the installer inside WSL.
 
@@ -74,18 +76,18 @@ chmod +x 一键部署.command
 ./一键部署.command
 ```
 
-The launcher enters the repository `ncc`, whose menus and prompts are in Chinese. On the first run, `ncc` checks the host and Node.js 20+, can install missing tools and Codex CLI, installs npm dependencies, runs `npm run verify`, and guides owner QQ, allowlist, OneBot, branding, and web-lookup configuration. It then records completion in the local environment file; later `ncc` runs open the normal daily control menu. Existing `data/settings.json`, `config/local.env`, and unrelated global `ncc` commands are preserved.
+The launcher enters the repository `ncc`, whose menus and prompts are in Chinese. On the first run, the bootstrap installs certificates, download/extraction tools, Git, zsh, screen, Node.js 20+, npm, Codex CLI, and project dependencies. Node uses a SHA-256-verified official v22 binary in an isolated user directory, avoiding obsolete distribution packages. On apt-get/dnf Linux (x64/arm64), it also invokes the official NapCat installer for LinuxQQ, NapCat, Xvfb, and runtime libraries by default; existing NapCat/OneBot installations are reused. It then runs `npm run verify` and guides owner QQ, allowlist, OneBot, branding, and web-lookup configuration. Existing `data/settings.json`, `config/local.env`, and unrelated global `ncc` commands are preserved.
 
-QQ/NapCat binaries are not embedded in the launcher. It guides the OneBot configuration, while the initial QQ QR login still requires the user.
+The repository does not redistribute QQ/NapCat binaries; supported Linux hosts retrieve them through NapCat's official installer and Tencent's official download. The initial QQ QR scan still requires the user. macOS, Arch, and custom OneBot hosts retain the compatible manual OneBot path. Set `CODEX_QQ_BOT_INSTALL_NAPCAT=required` to fail early when mandatory automatic NapCat installation is unsupported.
 
 ## What you need
 
 | Requirement | Purpose |
 | --- | --- |
 | Codex | Performs deployment, changes, diagnosis, and model work. Open the project with Codex CLI, the IDE extension, or the desktop app. |
-| Node.js 20+ | Runs the Hub and tests. |
-| zsh | Runs the repository deployment and `ncc` helpers; WSL is recommended on Windows. |
-| QQ plus a OneBot implementation | NapCat is recommended; any compatible OneBot HTTP bridge can work. QQ/NapCat binaries are not distributed here. |
+| Bash plus a supported package manager and administrator access | Starts bootstrap; remaining base tools are installed automatically. WSL is recommended on Windows. |
+| Node.js 20+, zsh, and Codex CLI | Installed automatically by one-click deployment. |
+| QQ plus a OneBot implementation | apt-get/dnf Linux installs official NapCat/LinuxQQ by default; compatible existing OneBot bridges are reused. |
 | Owner QQ id and allowed group ids | Used for authority and group allowlisting; provide them when deployment reaches that step. |
 | About 3GB free memory | Recommended when QQ, OneBot, the Hub, and Codex run together. |
 
@@ -109,10 +111,10 @@ Core capabilities:
 
 - QQ group and private chat with mentions, replies, pokes, images, files, forwarded messages, cards, and multi-bubble output.
 - Agent-style Codex replies that can use bounded chat-history, search, memory, and management tools over multiple rounds.
-- Adaptive social behavior for message length, group rhythm, stickers, and voluntary interest-based replies.
-- Three memory layers: rolling conversation, social impressions/topics, and unified long-term memory, all with bounds and sensitive-data filtering.
+- Adaptive social behavior for message length, group rhythm, stickers, and voluntary replies; a higher-temperature interest model owns ordinary, cold-group and private proactive gates, while the approved main model focuses on chat, topic selection and multi-round research. The interest model is limited to bounded lightweight decisions, classification and triage. Conversation, impression and persona summaries, knowledge extraction, and other long-context or complex work remain main-model tasks; complex background review uses interest triage followed by main-model final review.
+- Layered memory: `/记忆` is current-scope short-term memory cleared by `/新对话`; the titled long-term knowledge base updates older facts and supports scoped slang, frequency tracking and model-approved deletion, alongside social impressions and unified cross-channel memory.
 - QQ administration for model/reasoning choice, allowlists, permissions, bans, moderation, requests, and selected QQ Space actions.
-- Local dashboard for health, maintenance, memory, structured logs, themes, and optional LAN access.
+- Seven-view local dashboard for runtime, channels, behavior, short-term memory, an editable long-term Knowledge workspace, structured logs, themes, and optional LAN access.
 - macOS client and browser dashboard use the same QQ/OneBot Hub and require no Messages database or iMessage automation permissions.
 
 See [Features](docs/FEATURES.md) for complete boundaries.

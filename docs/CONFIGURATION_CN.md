@@ -101,6 +101,20 @@ npm run ncc -- setup
 
 网页端“智能行为”页可持久化修改 `qq.enhancer.enabled`、`qq.webLookup.enabled`、主动兴趣开关、判定开关、消息/分钟间隔、判定模型、静默超时和最近上下文数量。显式 @ Bot 的正常回复不依赖主动兴趣开关。模型切换应使用当前 Codex 登录实际提供的模型列表；不要把历史模型名当成永久可用值。
 
+## 一键部署环境变量
+
+这些变量只控制安装阶段，不会成为 Hub 的运行配置：
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CODEX_QQ_BOT_INSTALL_NAPCAT` | `auto` | `auto` 在 apt-get/dnf Linux 自动安装，`required` 在不受支持平台提前失败，`skip` 复用外部 OneBot |
+| `CODEX_QQ_BOT_NODE_MAJOR` | `22` | 自动安装的 Node.js 官方主版本；最终必须满足 Node 20+ |
+| `CODEX_QQ_BOT_BOOTSTRAP_CACHE_DIR` | `~/.cache/codex-qq-bot/bootstrap` | Node/NapCat 自举下载缓存 |
+| `CODEX_QQ_BOT_MANAGED_NODE_HOME` | `~/.local/share/codex-qq-bot/node` | 项目自管 Node.js 目录 |
+| `CODEX_QQ_BOT_NAPCAT_HOME` | `~/Napcat` | NapCat 官方 Rootless Shell 安装目录 |
+
+`--dry-run` 可在不修改机器的情况下查看冷启动安装计划；`--check` 只报告当前环境。测试专用的 `CODEX_QQ_BOT_BOOTSTRAP_FORCE_*` 变量不属于用户配置接口。
+
 ## 核心环境变量
 
 ### Hub 与安全

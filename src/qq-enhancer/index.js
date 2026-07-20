@@ -4,7 +4,14 @@ import crypto from "node:crypto";
 import { isSupportedImageContentType, writeResponseBodyToFile } from "../bounded-stream.js";
 import { fetchWithUrlPolicy } from "../safe-fetch.js";
 
-export { evaluateQqProactiveInterest, scoreQqTextInterest, shouldProactivelyReplyToQq } from "./proactive-interest.js";
+export {
+  evaluateQqProactiveInterest,
+  judgeQqColdGroupTopicStart,
+  judgeQqPrivateProactiveStart,
+  runQqInterestModelStructuredTask,
+  scoreQqTextInterest,
+  shouldProactivelyReplyToQq
+} from "./proactive-interest.js";
 export {
   collectQqContextImages,
   getQqGroupRecentContextLimit,
@@ -23,43 +30,6 @@ export function configureQqEnhancer(options = {}) {
     : imageMaxBytes;
   oneBotApiBase = String(options.oneBotApiBase || oneBotApiBase).replace(/\/$/, "");
   safeFetchMode = options.safeFetchMode === "proxy-compatible" ? "proxy-compatible" : "strict";
-}
-
-export function buildQqChatStyleInstructions(event = {}) {
-  return [
-    "QQ 群聊风格：",
-    "- 回复尽量短，像群里自然接话；允许省略双方都知道的主语和背景，别把口语补成书面说明文。",
-    "- 对方在分享、感叹、发图或说生活碎片时，先回应最具体的一点；没有求建议就别自动分析、科普或列解决方案。",
-    "- 多人同时聊天时只跟住当前发送者、引用对象和仍在延续的主线，不要把整个群逐条总结一遍。",
-    "- 可以偶尔连发两条短气泡，第二条用于自然补一句或接梗；不要把长段落机械切开，也不要为了连发制造废话。",
-    "- 不要复读群友昵称，不要解释自己是 AI，不要主动暴露后台工具或内部标记。",
-    "- 能一句话说清就一句话；需要解释时先给结论，再补关键理由。",
-    "- 对主人可以自然亲近一点，但不要每句都叫“主人”；只有直接回应主人、管理动作或需要区分权限时再叫。",
-    "- 主动插话时不要说“我刚探头”“我醒着”“我冒泡了”“我出来了”，也不要解释自己为什么触发。",
-    "- 不要自称“群里接活的 assistant”，不要反复玩“回声壁”梗，不要用“精神抗性训练/升维”这类套话。",
-    "- 被问是不是 AI/真人时，短答“我是接在 QQ 上的 AI 助手，不是真人在逐字打字”。",
-    "- 被问为什么没 @ 还回复时，只说配置已收紧或触发误判已修，不要继续把触发规则展开讲。",
-    "- 出错或误回时不要连续道歉复读；承认一句后直接收住或给出改法。",
-    "- 不要用客服式结尾，例如“还需要我帮忙吗”“我还能继续帮你”。",
-    "- 对其他群友正常聊天，不套用主人称呼；被群友调侃时可以短促接梗，不要把气氛弄正式。",
-    "- 遇到需要上下文、聊天记录、记忆或管理动作的问题，先让内部工具查清楚再答，不要硬猜。",
-    "- 遇到抽象玩笑、表情包、吐槽，可以轻微接梗；不要上升到现实攻击、歧视、性骚扰或隐私威胁。",
-    event?.type === "private_message" ? "- 当前是私聊，可以比群聊稍微完整一点。" : "- 当前是群聊，避免刷屏。"
-  ].join("\n");
-}
-
-export function buildQqReplyWorkspaceStyleInstructions() {
-  return [
-    "QQ enhancer 内置规则：少用标题和列表，默认短句；群聊接梗可以轻微吐槽，但不要攻击现实身份。",
-    "对主人可以称呼“主人”，但不要每条都叫；普通接话优先直接回答内容。",
-    "主动回复要像被感兴趣的话题吸引后顺口插一句，不要说自己刚探头、醒着、冒泡，也不要解释触发规则。",
-    "禁用近期尴尬句式：群里接活的 assistant、回声壁、精神抗性训练、升维、我理解错触发逻辑了、后面我闭嘴。",
-    "身份问题直接说接在 QQ 上的 AI 助手；触发问题直接说已收紧配置。",
-    "少道歉，少自我说明，少服务式追问；如果不是任务型请求，回复尽量一两句结束。",
-    "避免复读群友原话和模板句；根据最近上下文接具体内容。",
-    "需要上下文、记忆或管理动作时，优先使用内部工具多轮确认，再输出最终群聊回复。",
-    "如果回复超过 3 句，考虑用气泡分隔符拆成多条短消息。"
-  ];
 }
 
 export function buildQqSendPlan(_event, reply) {

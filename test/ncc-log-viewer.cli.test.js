@@ -54,6 +54,39 @@ test("ncc log viewer is detailed by default and compacts only when requested", a
   assert.doesNotMatch(verbose.stdout, /secret-prompt-body/);
 });
 
+test("ncc log viewer localizes startup learning snapshots and model output fields", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "codex-qq-log-startup-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const filePath = join(directory, "hub.jsonl");
+  const entries = [
+    {
+      ts: "2026-01-01T00:00:00.000Z",
+      level: "debug",
+      category: "learning",
+      message: "QQ adaptive learning group snapshot",
+      details: {
+        groupId: "10001",
+        learning: { sampleSize: 42, averageTextChars: 8.5, activityLevel: "typical" },
+        proactiveIntervals: { judgeEveryMessages: 20, reason: "activity_typical" }
+      }
+    },
+    {
+      ts: "2026-01-01T00:00:01.000Z",
+      level: "debug",
+      category: "codex",
+      message: "Codex model output captured",
+      details: { taskType: "qq-reply", modelOutput: "模型原样输出" }
+    }
+  ];
+  await writeFile(filePath, `${entries.map((entry) => JSON.stringify(entry)).join("\n")}\n`, "utf8");
+
+  const result = await execFileAsync(process.execPath, [viewerPath.pathname, filePath, "--plain", "--verbose"]);
+  assert.match(result.stdout, /自动学习数据: 总样本数: 42，平均文字长度: 8\.5，当前活跃度: 一般/);
+  assert.match(result.stdout, /主动兴趣间隔: 消息间隔: 20，原因: 当前活跃度一般/);
+  assert.match(result.stdout, /Codex 模型输出已记录/);
+  assert.match(result.stdout, /模型具体输出: 模型原样输出/);
+});
+
 test("ncc log viewer highlights at-bot QQ entries separately", async (t) => {
   const directory = await mkdtemp(join(tmpdir(), "codex-qq-log-color-"));
   t.after(() => rm(directory, { recursive: true, force: true }));

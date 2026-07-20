@@ -19,6 +19,12 @@ test("log API exposes full diagnostics by default and supports compact mode expl
     timeoutMs: 600_000,
     stderr: "internal detail"
   }, "codex");
+  logger.debug("Codex model output captured", {
+    taskType: "qq-reply",
+    outputChars: 18,
+    outputTruncated: false,
+    modelOutput: "这是模型的具体输出"
+  }, "codex");
   logger.warn("QQ web lookup failed", { error: "timeout", query: "private query" }, "search");
   await logger.flush();
 
@@ -33,9 +39,13 @@ test("log API exposes full diagnostics by default and supports compact mode expl
   });
 
   const verbose = await buildLogsResponse(filePath, new URLSearchParams());
-  assert.equal(verbose.entries.length, 4);
+  assert.equal(verbose.entries.length, 5);
   assert.equal(verbose.entries[0].details.text, "private message");
   assert.equal(verbose.entries[0].messageZh, "收到 QQ 消息详情");
+  const outputEntry = verbose.entries.find((entry) => entry.message === "Codex model output captured");
+  assert.equal(outputEntry.details.modelOutput, "这是模型的具体输出");
+  assert.equal(outputEntry.detailsZh["模型具体输出"], "这是模型的具体输出");
+  assert.equal(outputEntry.detailsZh["任务类型"], "QQ 文字回复");
 
   const info = await buildLogsResponse(filePath, new URLSearchParams("level=info"));
   assert.deepEqual(info.entries.map((entry) => entry.message), ["OneBot message received"]);

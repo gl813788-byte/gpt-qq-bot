@@ -32,9 +32,11 @@ pnpm dlx "codex-qq-bot@$(npm view codex-qq-bot@latest version --prefer-online)"
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
+# 只有 wget 时也可以：
+wget -qO- https://raw.githubusercontent.com/gl813788-byte/codex-qq-bot/main/install.sh | bash
 ```
 
-中文安装器每次都会刷新仓库默认分支的最新提交，再续传或下载该提交对应的源码 ZIP，检查压缩包完整性与目录结构后安装到稳定目录，无需等待 GitHub Release。同一提交会复用已完成阶段；损坏的下载缓存会被隔离并自动完整重下，解压总是在干净临时目录中完成。root 用户默认使用 `/root/Codex-QQ-Bot`，其他用户默认使用 `~/Codex-QQ-Bot`；已存在的旧版 `Codex-Remote-Contact` 目录会继续复用。准备完成后按提示运行 `ncc`，第一次执行环境检测、依赖安装、项目验证和配置向导，部署完成后再运行就是日常功能菜单。
+中文安装器每次都会刷新仓库默认分支的最新提交，再续传或下载该提交对应的源码 ZIP，检查压缩包完整性与目录结构后安装到稳定目录，无需等待 GitHub Release。最外层下载不要求 Node.js、npm、Git 或 zsh，并可在 `curl` 与 `wget` 之间自动选择；缺少解压或校验工具时会先通过系统包管理器补齐。若一个可识别的源码 ZIP 意外缺少 `一键部署.command`，安装器会根据核心部署脚本自动恢复中文入口并继续。同一提交会复用已完成阶段；损坏的下载缓存会被隔离并自动完整重下，解压总是在干净临时目录中完成。root 用户默认使用 `/root/Codex-QQ-Bot`，其他用户默认使用 `~/Codex-QQ-Bot`；已存在的旧版 `Codex-Remote-Contact` 目录会继续复用。准备完成后按提示运行 `ncc`，第一次执行环境自举、项目验证和配置向导，部署完成后再运行就是日常功能菜单。
 
 如果目标目录是以前由安装器下载的无 Git 项目，新版本会在暂存目录准备升级，保留 `data`、`runtime`、本地配置与额外文件，再切换到最新源码，并把升级前目录完整保存在安装缓存的 `backups/` 中；相同源码不会重复升级。目标是 Git 工作区时不会覆盖分支或本地修改；目录无法识别时也会拒绝覆盖。机器上已有其他同名全局 `ncc` 时不会覆盖，而会显示仓库入口。命令先用 `npm view` 取得 registry 当前精确版本，再让 npx 执行这个不可变版本，可避开旧的 `_npx` 可执行缓存。纯检查可在命令末尾添加 `--check`：它只解析当前默认分支的最新提交，不会下载或修改项目文件。Windows 请在 WSL 中执行。
 
@@ -74,18 +76,18 @@ chmod +x 一键部署.command
 ./一键部署.command
 ```
 
-该文件会进入仓库版 `ncc`，菜单和提示均为中文。第一次运行 `ncc` 时，它会自动执行系统与 Node.js 20+ 检测、缺失工具/Codex CLI 安装、npm 依赖安装、`npm run verify`，然后引导填写主人 QQ、群白名单、OneBot 地址、助手名称与联网配置。成功后会在本地环境文件记录完成状态，以后再运行 `ncc` 就直接进入日常功能菜单。已有 `data/settings.json` 和 `config/local.env` 会被保留，已存在的全局 `ncc` 也不会被覆盖。
+该文件会进入仓库版 `ncc`，菜单和提示均为中文。第一次运行时，自举器会补齐证书、下载/解压工具、Git、zsh、screen、Node.js 20+、npm、Codex CLI 和项目依赖；Node.js 使用校验过 SHA-256 的官方 v22 二进制安装到用户隔离目录，避免旧发行版仓库装出过低版本。在 apt-get/dnf Linux（x64/arm64）上，默认还会调用 NapCat 官方安装器补齐 LinuxQQ、NapCat、Xvfb 和相关运行库；已有 NapCat/OneBot 会复用。随后运行 `npm run verify`，再引导填写主人 QQ、群白名单、OneBot 地址、助手名称与联网配置。已有 `data/settings.json` 和 `config/local.env` 会被保留，已存在的全局 `ncc` 也不会被覆盖。
 
-一键文件不内置 QQ/NapCat 二进制；它会引导填写 OneBot 配置，但首次 QQ 扫码仍需由你完成。
+仓库不重新分发 QQ/NapCat 二进制，而是在受支持的 Linux 上从 NapCat 官方安装器和腾讯官方地址取得所需文件。首次 QQ 扫码仍需由你本人完成。macOS、Arch 或自定义 OneBot 环境会保留兼容 OneBot 配置入口；若要求 NapCat 必须自动安装，可设置 `CODEX_QQ_BOT_INSTALL_NAPCAT=required` 让不受支持的平台提前明确失败。
 
 ## 你只需要准备什么
 
 | 项目 | 用途 |
 | --- | --- |
 | Codex | 负责部署、修改、排障和实际调用模型。可使用 Codex CLI、IDE 或桌面端打开项目。 |
-| Node.js 20+ | 运行 Hub 和测试。 |
-| zsh | 运行仓库自带的部署与 `ncc` 辅助脚本；Windows 推荐使用 WSL。 |
-| QQ + OneBot 实现 | 推荐 NapCat；也可以使用兼容 OneBot HTTP 的实现。仓库不分发 QQ/NapCat 二进制。 |
+| Bash + 可用包管理器和管理员权限 | 启动自举；其余基础工具会自动安装。Windows 推荐使用 WSL。 |
+| Node.js 20+、zsh、Codex CLI | 一键部署会自动补齐，不需要预装。 |
+| QQ + OneBot 实现 | apt-get/dnf Linux 默认自动安装官方 NapCat/LinuxQQ；也可以复用兼容 OneBot。 |
 | 主人 QQ 号与群号 | 用于权限和群白名单；部署到相应步骤时再提供。 |
 | 约 3GB 可用内存 | 同时运行 QQ、OneBot、Hub 和 Codex 时建议保留。 |
 
@@ -109,10 +111,10 @@ QQ / NapCat / OneBot
 
 - QQ 群聊与私聊：@、回复、拍一拍、图片、文件、合并转发、卡片和多气泡消息。
 - Codex Agent：同一条回复可多轮读取聊天记录、搜索、记忆和允许的管理工具。
-- 自适应社交行为：学习群聊节奏、回复长度、表情/贴纸习惯和合适的主动发言时机。
-- 三层记忆：滚动会话、社交印象/话题、统一长期记忆；均有边界与敏感信息过滤。
+- 自适应社交行为：学习群聊节奏、回复长度、表情/贴纸习惯和合适的主动发言时机；较高温度的兴趣模型负责普通群聊、冷群和私聊主动开关，主模型获准后只专注聊天、选题和多轮检索。兴趣模型只承担有界的轻量判定、分类和初筛；聊天总结、印象/人格总结、知识提取及其他长上下文或复杂任务仍由主模型完成，复杂后台审核采用“兴趣模型初筛 → 主模型终审”。
+- 分层记忆：`/记忆` 是随 `/新对话` 清除的短期记忆；知识库是带标题、可更新的长期记忆，支持按群/人物分类黑话、频率统计与模型确认删除；另有社交印象和跨端统一记忆。
 - QQ 管理：模型与思考强度、白名单、权限、ban、群管理、好友/入群申请和 QQ 空间动作。
-- 本地仪表盘：运行状态、维护信息、记忆、结构化日志、主题和可选局域网访问。
+- 本地仪表盘：七个专注视图覆盖运行状态、通道、行为、短期记忆、可编辑长期知识库、结构化日志、主题和可选局域网访问。
 - macOS 客户端与浏览器仪表盘共用同一条 QQ/OneBot Hub 链路，不需要 Messages 数据库或 iMessage 自动化权限。
 
 完整功能边界见 [功能说明](docs/FEATURES_CN.md)。

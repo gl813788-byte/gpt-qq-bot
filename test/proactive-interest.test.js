@@ -1,6 +1,105 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { shouldProactivelyReplyToQq } from "../src/qq-enhancer/proactive-interest.js";
+import {
+  judgeQqColdGroupTopicStart,
+  judgeQqPrivateProactiveStart,
+  runQqInterestModelStructuredTask,
+  shouldProactivelyReplyToQq
+} from "../src/qq-enhancer/proactive-interest.js";
+
+test("cold-group interest model decides only whether to start before the main model researches", async () => {
+  let requestBody = null;
+  const result = await judgeQqColdGroupTopicStart({
+    apiKey: "test-key",
+    baseUrl: "https://openrouter.test/api/v1",
+    model: "test/interest-model",
+    timeoutMs: 1500,
+    selfPersona: { interests: [{ topic: "AI 工具", weight: 90 }] },
+    coldInterest: {
+      idleHours: 6,
+      idleHoursRequired: 4,
+      unansweredBotStreak: 0,
+      interestMultiplier: 1,
+      socialHours: { label: "13:00–03:00" }
+    },
+    recentMessages: [{ sender: "群友", text: "最近在折腾新工具" }],
+    fetch: async (_url, init) => {
+      requestBody = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        choices: [{
+          message: { content: JSON.stringify({ shouldStart: true, mode: "topic", interest: 82, reason: "现在适合启动" }) },
+          finish_reason: "stop"
+        }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.shouldStart, true);
+  assert.equal(requestBody.temperature, 0.8);
+  assert.match(requestBody.messages[0].content, /不能提供具体话题、搜索词、回复草稿或聊天风格/);
+  assert.match(requestBody.messages[0].content, /topic（让主模型按自身兴趣选题/);
+  assert.deepEqual(requestBody.response_format.json_schema.schema.required, ["shouldStart", "mode", "interest", "reason"]);
+});
+
+test("cold-group interest input compresses adjacent duplicate messages from two onward", async () => {
+  let requestBody = null;
+  await judgeQqColdGroupTopicStart({
+    apiKey: "test-key",
+    baseUrl: "https://openrouter.test/api/v1",
+    model: "test/interest-model",
+    timeoutMs: 1500,
+    maxRecentMessages: 2,
+    recentMessages: [
+      { messageId: "1", senderId: "10000", text: "有人吗" },
+      { messageId: "2", senderId: "20000", text: "有人吗" },
+      { messageId: "3", senderId: "30000", text: "有人吗" }
+    ],
+    fetch: async (_url, init) => {
+      requestBody = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        choices: [{
+          message: { content: JSON.stringify({ shouldStart: false, mode: "silent", interest: 10, reason: "继续安静" }) },
+          finish_reason: "stop"
+        }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+
+  const payload = JSON.parse(requestBody.messages[1].content);
+  assert.equal(payload.recentMessages.length, 1);
+  assert.equal(payload.recentMessages[0].sender, "QQ 30000");
+  assert.equal(payload.recentMessages[0].text, "有人吗（连续重复 3 条）");
+});
+
+test("private proactive interest model owns the start decision while the main model owns wording", async () => {
+  let requestBody = null;
+  const result = await judgeQqPrivateProactiveStart({
+    apiKey: "test-key",
+    baseUrl: "https://openrouter.test/api/v1",
+    model: "test/interest-model",
+    timeoutMs: 1500,
+    selfPersona: { interests: [{ topic: "语言", weight: 80 }] },
+    privateInterest: { phase: "long", frequency: "low", idleHours: 30, unansweredBotStreak: 0 },
+    frequencyPrior: { probability: 0.12, roll: 0.09 },
+    recentMessages: [{ senderId: "10000", senderName: "联系人", text: "下次再聊语法" }],
+    fetch: async (_url, init) => {
+      requestBody = JSON.parse(init.body);
+      return new Response(JSON.stringify({
+        choices: [{
+          message: { content: JSON.stringify({ shouldStart: true, interest: 72, reason: "有自然延续点" }) },
+          finish_reason: "stop"
+        }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.value.shouldStart, true);
+  assert.equal(requestBody.temperature, 0.8);
+  assert.match(requestBody.messages[0].content, /不能写具体私聊内容、开场句或风格建议/);
+  const payload = JSON.parse(requestBody.messages[1].content);
+  assert.equal(payload.frequencyPrior.probability, 0.12);
+  assert.equal(payload.frequencyPrior.roll, 0.09);
+});
 
 function sse(data) {
   return `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
@@ -57,20 +156,16 @@ function proactiveState(timeoutMs = 1500, overrides = {}) {
 
 function jsonJudgeResponse({
   shouldReply = true,
-  interest = 88,
-  semanticIntent = "群友希望 Bot 对当前话题作出简短回应"
+  interest = 88
 } = {}) {
   return new Response(JSON.stringify({
     choices: [{
       message: {
-        content: `FINAL_JSON: ${JSON.stringify({
-          analysis: "测试判断",
-          semanticIntent,
+        content: JSON.stringify({
           shouldReply,
           interest,
-          reason: "测试",
-          replyStyle: "简短"
-        })}`
+          reason: "测试"
+        })
       },
       finish_reason: "stop"
     }]
@@ -86,6 +181,57 @@ const event = {
   text: "这个编程工具挺有意思"
 };
 
+test("runs bounded miscellaneous triage through the configured interest model", async () => {
+  let requestBody;
+  const result = await runQqInterestModelStructuredTask({
+    apiKey: "configured-for-test",
+    baseUrl: "https://openrouter.test/api/v1",
+    model: "test/interest-model",
+    taskName: "qq_knowledge_deletion_triage",
+    temperature: 0.15,
+    systemPrompt: "只对低频黑话删除申请做有界初筛，主模型随后终审。",
+    payload: { title: "挖土", retainedOccurrenceCount: 8, occurrenceSample: [{ at: "2025-01-01", text: "继续挖土" }] },
+    responseSchema: {
+      type: "object",
+      properties: {
+        recommendDelete: { type: "boolean" },
+        reason: { type: "string" }
+      },
+      required: ["recommendDelete", "reason"],
+      additionalProperties: false
+    },
+    validate: (value) => typeof value?.recommendDelete === "boolean" && typeof value?.reason === "string",
+    fetch: async (_url, options) => {
+      requestBody = JSON.parse(options.body);
+      return new Response(JSON.stringify({
+        choices: [{
+          message: { content: JSON.stringify({ recommendDelete: false, reason: "含义稳定，应交主模型复核" }) },
+          finish_reason: "stop"
+        }]
+      }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
+    }
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.model, "test/interest-model");
+  assert.deepEqual(result.value, { recommendDelete: false, reason: "含义稳定，应交主模型复核" });
+  assert.equal(requestBody.model, "test/interest-model");
+  assert.equal(requestBody.response_format.json_schema.name, "qq_knowledge_deletion_triage");
+  assert.equal(requestBody.response_format.json_schema.strict, true);
+  assert.equal(requestBody.temperature, 0.15);
+  assert.match(requestBody.messages[0].content, /后台兴趣与杂项判断模型/);
+  assert.match(requestBody.messages[0].content, /不和群友聊天/);
+  assert.match(requestBody.messages[0].content, /【唯一任务】qq_knowledge_deletion_triage/);
+  assert.deepEqual(JSON.parse(requestBody.messages[1].content), {
+    title: "挖土",
+    retainedOccurrenceCount: 8,
+    occurrenceSample: [{ at: "2025-01-01", text: "继续挖土" }]
+  });
+});
+
 test("proactive judge resets its idle timeout while reasoning and content tokens continue", async () => {
   let requestBody;
   const fetch = async (_url, options) => {
@@ -94,7 +240,7 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
       { data: sse({ choices: [{ delta: { reasoning: "分析一" } }] }) },
       { delayMs: 900, data: sse({ choices: [{ delta: { reasoning: "分析二" } }] }) },
       { delayMs: 900, data: sse({ choices: [{ delta: { content: "ANALYSIS: 话题相关，可以自然补充。\nFINAL_JSON: " } }] }) },
-      { delayMs: 900, data: sse({ choices: [{ delta: { content: "{\"analysis\":\"话题相关\",\"semanticIntent\":\"群友希望 Bot 补充编程工具的看法\",\"shouldReply\":true,\"interest\":88,\"reason\":\"相关\",\"replyStyle\":\"简短\"}" }, finish_reason: "stop" }] }) },
+      { delayMs: 900, data: sse({ choices: [{ delta: { content: "{\"shouldReply\":true,\"interest\":88,\"reason\":\"相关\"}" }, finish_reason: "stop" }] }) },
       { data: sse("[DONE]") }
     ], options.signal);
   };
@@ -133,8 +279,10 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
 
   assert.equal(result.ok, true);
   assert.equal(result.modelJudge.interest, 88);
-  assert.equal(result.modelJudge.semanticIntent, "群友希望 Bot 补充编程工具的看法");
-  assert.equal(result.semanticIntent, "群友希望 Bot 补充编程工具的看法");
+  assert.equal(result.autonomous, true);
+  assert.equal(result.proactiveKind, "ordinary_group_reply");
+  assert.equal(result.modelPipeline.interestGate.approved, true);
+  assert.equal(result.modelPipeline.mainContent.role, "conversation_content");
   assert.equal(result.modelJudge.finishReason, "stop");
   assert.deepEqual(result.replyContext, [
     {
@@ -147,21 +295,19 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
   ]);
   assert.ok(result.modelJudge.durationMs >= 2500);
   assert.equal(requestBody.stream, true);
+  assert.equal(requestBody.temperature, 0.65);
   assert.equal(requestBody.max_tokens, 2048);
   assert.deepEqual(requestBody.reasoning, { effort: "none" });
   assert.deepEqual(requestBody.provider, { require_parameters: true });
   assert.equal(requestBody.response_format.type, "json_schema");
   assert.equal(requestBody.response_format.json_schema.strict, true);
   assert.deepEqual(requestBody.response_format.json_schema.schema.required, [
-    "analysis",
-    "semanticIntent",
     "shouldReply",
     "interest",
-    "reason",
-    "replyStyle"
+    "reason"
   ]);
-  assert.match(requestBody.messages[0].content, /只输出一个符合响应 JSON Schema 的 JSON 对象/);
-  assert.match(requestBody.messages[0].content, /先做语义判断/);
+  assert.match(requestBody.messages[0].content, /只返回 JSON Schema 指定的对象/);
+  assert.match(requestBody.messages[0].content, /结合当前消息、引用和最近上下文/);
   const judgeInput = JSON.parse(requestBody.messages[1].content);
   assert.equal(judgeInput.recentMessages[0].sender, "测试群友(QQ 10000)");
   assert.deepEqual(judgeInput.recentMessages[0].mentions, ["被艾特者(QQ 20000)"]);
@@ -169,10 +315,37 @@ test("proactive judge resets its idle timeout while reasoning and content tokens
   assert.equal(judgeInput.groupHumanRhythm.learnedInterruptionSampleSize, 48);
   assert.equal(judgeInput.groupHumanRhythm.learnedInterruptionRate, 0.625);
   assert.equal(judgeInput.groupHumanRhythm.learnedInterruptionWindowSeconds, 120);
-  assert.match(requestBody.messages[0].content, /换人插话率/);
+  assert.match(requestBody.messages[0].content, /群内插话节奏/);
 });
 
-test("proactive judge retries once when structured output omits semantic intent", async () => {
+test("ordinary interest input shows a repeated current message once with its total count", async () => {
+  let requestBody;
+  const repeatedEvent = {
+    ...event,
+    raw: { message_id: "3" },
+    text: "复读内容"
+  };
+  const result = await shouldProactivelyReplyToQq(repeatedEvent, proactiveState(), {
+    openRouterApiKey: "configured-for-test",
+    fetch: async (_url, options) => {
+      requestBody = JSON.parse(options.body);
+      return jsonJudgeResponse({ shouldReply: true, interest: 90 });
+    },
+    recentMessages: [
+      { messageId: "0", senderId: "400", text: "前一段话" },
+      { messageId: "1", senderId: "100", text: "复读内容" },
+      { messageId: "2", senderId: "200", text: "复读内容" },
+      { messageId: "3", senderId: "300", text: "复读内容" }
+    ]
+  });
+
+  const judgeInput = JSON.parse(requestBody.messages[1].content);
+  assert.equal(judgeInput.currentMessage.text, "复读内容（连续重复 3 条）");
+  assert.deepEqual(judgeInput.recentMessages.map((item) => item.text), ["前一段话"]);
+  assert.deepEqual(result.replyContext.map((item) => item.text), ["前一段话"]);
+});
+
+test("proactive judge retries once when structured output omits a required decision field", async () => {
   let fetchCount = 0;
   const requestBodies = [];
   const result = await shouldProactivelyReplyToQq(event, proactiveState(), {
@@ -185,11 +358,8 @@ test("proactive judge retries once when structured output omits semantic intent"
           choices: [{
             message: {
               content: JSON.stringify({
-                analysis: "缺少语义字段",
                 shouldReply: true,
-                interest: 76,
-                reason: "测试",
-                replyStyle: "简短"
+                reason: "测试"
               })
             },
             finish_reason: "stop"
@@ -209,7 +379,6 @@ test("proactive judge retries once when structured output omits semantic intent"
   assert.equal(result.modelJudge.formatRetryCount, 1);
   assert.equal(result.modelJudge.structuredOutput, true);
   assert.equal(result.modelJudge.interest, 76);
-  assert.equal(result.modelJudge.semanticIntent, "群友希望 Bot 对当前话题作出简短回应");
   assert.equal(requestBodies[1].response_format.type, "json_schema");
   assert.match(requestBodies[1].messages[0].content, /唯一一次格式重试/);
 });
@@ -486,8 +655,10 @@ test("persona keyword immediately triggers one contextual judge with all interes
   const input = JSON.parse(requestBody.messages[1].content);
   assert.deepEqual(input.personaKeywordMatch.keywords, ["小星", "编程"]);
   assert.deepEqual(input.combinedInterestSignals.recentContextKeywords, ["部署", "Node"]);
-  assert.equal(input.ruleAssessment.relationshipScore, 28);
-  assert.equal(input.ruleAssessment.personaKeywordScore, 16);
+  assert.match(input.botInterestProfile, /喜欢定位技术问题/);
+  assert.equal(input.relationshipInterest.interestBoost, 28);
+  assert.equal(input.heuristicHints.possibleTopics.includes("AI / Codex / 编程排障"), true);
+  assert.equal(input.ruleAssessment, undefined);
   assert.equal(input.recentMessages.length, 2);
 });
 

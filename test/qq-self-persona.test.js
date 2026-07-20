@@ -4,8 +4,10 @@ import {
   applyGeneratedQqSelfPersona,
   applyQqSelfPersonaScopeSummary,
   buildQqSelfPersonaGenerationPrompt,
+  buildQqSelfPersonaScopeSummaryPrompt,
   createEmptyQqSelfPersona,
   formatQqSelfPersonaContext,
+  formatQqSelfPersonaScopeTopicContext,
   getDueQqSelfPersonaScopes,
   matchQqSelfPersonaInterestKeywords,
   parseQqSelfPersonaJson,
@@ -13,6 +15,52 @@ import {
   shouldRegenerateQqSelfPersona,
   updateQqSelfPersonaAccount
 } from "../src/qq-self-persona.js";
+
+test("scope summaries keep QQ identity only in long-term knowledge extraction", () => {
+  const prompt = buildQqSelfPersonaScopeSummaryPrompt("20001", [{
+    senderId: "10001",
+    senderName: "爱丽丝",
+    text: "今晚挖土，就是继续写代码"
+  }], {
+    botName: "小星",
+    groupName: "施工群",
+    existingKnowledge: "[黑话] 挖土：开始写代码",
+    previousSummary: "这个群长期讨论协作项目与发布安排。",
+    previousTopics: ["协作项目", "发布安排"],
+    currentDate: "2026-07-21"
+  });
+  assert.match(prompt, /speakerQq/);
+  assert.match(prompt, /10001/);
+  assert.match(prompt, /施工群/);
+  assert.match(prompt, /existingKnowledge/);
+  assert.match(prompt, /不要匿名化/);
+  assert.match(prompt, /group-member/);
+  assert.match(prompt, /实际的主要话题/);
+  assert.match(prompt, /不得预设任何固定领域/);
+  assert.match(prompt, /2026-07-21/);
+  assert.match(prompt, /会话待核查/);
+  assert.match(prompt, /稳定标题/);
+  assert.match(prompt, /previousScope 是上轮范围摘要与主要话题/);
+  const payload = JSON.parse(prompt.split("\n").at(-1));
+  assert.equal(payload.previousScope.summary, "这个群长期讨论协作项目与发布安排。");
+  assert.deepEqual(payload.previousScope.topics, ["协作项目", "发布安排"]);
+
+  const privatePrompt = buildQqSelfPersonaScopeSummaryPrompt("private:10001", [], {});
+  assert.match(privatePrompt, /个人黑话用 member/);
+  assert.doesNotMatch(privatePrompt, /群通用解释用 group/);
+});
+
+test("scope summary prompt compresses adjacent repeated chat messages", () => {
+  const prompt = buildQqSelfPersonaScopeSummaryPrompt("20001", [
+    { messageId: "1", senderId: "10001", senderName: "甲", text: "今晚挖土" },
+    { messageId: "2", senderId: "10002", senderName: "乙", text: "今晚挖土" },
+    { messageId: "3", senderId: "10003", senderName: "丙", text: "今晚挖土" }
+  ], { botName: "小星", groupName: "施工群" });
+  const payload = JSON.parse(prompt.split("\n").at(-1));
+  assert.equal(payload.messages.length, 1);
+  assert.equal(payload.messages[0].speakerQq, "10003");
+  assert.equal(payload.messages[0].text, "今晚挖土（连续重复 3 条）");
+});
 
 test("QQ nickname is a fixed interest keyword across generated persona updates", () => {
   let store = updateQqSelfPersonaAccount(createEmptyQqSelfPersona(), {
@@ -32,6 +80,24 @@ test("QQ nickname is a fixed interest keyword across generated persona updates",
   assert.equal(matchQqSelfPersonaInterestKeywords(store, "小星来看看这个编程 bug").nameMatched, true);
   assert.deepEqual(matchQqSelfPersonaInterestKeywords(store, "这个编程 bug").keywords, ["编程"]);
   assert.match(formatQqSelfPersonaContext(store), /完整兴趣描述/);
+});
+
+test("scope topic context gives the main model evolving summary-derived knowledge topics", () => {
+  const startedAt = Date.UTC(2026, 6, 15, 8, 0);
+  let store = recordQqSelfPersonaActivity(createEmptyQqSelfPersona(), "20001", {
+    humanMessages: 80,
+    at: startedAt
+  });
+  store = applyQqSelfPersonaScopeSummary(store, "20001", {
+    summary: "这个群长期交流协作项目的进展和实际经验。",
+    topics: ["协作项目", "实际经验"]
+  }, { at: startedAt });
+  const context = formatQqSelfPersonaScopeTopicContext(store, "20001");
+  assert.match(context, /当前范围的长期摘要/);
+  assert.match(context, /协作项目、实际经验/);
+  assert.match(context, /话题已变化就调整归类/);
+  assert.match(context, /不要预设任何领域/);
+  assert.equal(formatQqSelfPersonaScopeTopicContext(store, "99999"), "");
 });
 
 test("scope summaries are due by bounded message/reply thresholds and feed global generation", () => {

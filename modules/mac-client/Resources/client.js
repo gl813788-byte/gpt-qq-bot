@@ -1,11 +1,11 @@
 const HUB = location.protocol === "http:" || location.protocol === "https:" ? "" : "http://127.0.0.1:3789";
 const STORAGE_PREFIX = "codexRemoteContact.";
-const validViews = new Set(["overview", "channels", "intelligence", "memory", "activity", "settings"]);
+const validViews = new Set(["overview", "channels", "intelligence", "memory", "knowledge", "activity", "settings"]);
 
 const translations = {
   zh: {
-    mainNavigation: "主导航", mobileNavigation: "移动端导航", brandHome: "Nexus 首页", runtimeSummary: "运行摘要", runtimeBrief: "运行建议", skipToContent: "跳到主要内容", openQuickActions: "打开快速操作", quickActions: "快速操作", searchActions: "搜索页面或操作", commandCenter: "COMMAND CENTER", commandHint: "↑↓ 选择 · Enter 执行", navOverview: "总览", navChannels: "通道", navIntelligence: "行为", navIntelligenceShort: "行为", navMemory: "记忆", navActivity: "日志", navActivityShort: "日志", navSettings: "设置",
-    connecting: "正在连接", workspace: "工作台", overviewTitle: "运行总览", channelsTitle: "消息通道", intelligenceTitle: "智能行为", memoryTitle: "记忆中心", activityTitle: "实时日志", settingsTitle: "偏好设置",
+    mainNavigation: "主导航", mobileNavigation: "移动端导航", brandHome: "Nexus 首页", runtimeSummary: "运行摘要", runtimeBrief: "运行建议", skipToContent: "跳到主要内容", openQuickActions: "打开快速操作", quickActions: "快速操作", searchActions: "搜索页面或操作", commandCenter: "COMMAND CENTER", commandHint: "↑↓ 选择 · Enter 执行", navOverview: "总览", navChannels: "通道", navIntelligence: "行为", navIntelligenceShort: "行为", navMemory: "记忆", navKnowledge: "知识", navKnowledgeShort: "知识", navActivity: "日志", navActivityShort: "日志", navSettings: "设置",
+    connecting: "正在连接", workspace: "工作台", overviewTitle: "运行总览", channelsTitle: "消息通道", intelligenceTitle: "智能行为", memoryTitle: "短期记忆", knowledgeTitle: "知识库", activityTitle: "实时日志", settingsTitle: "偏好设置",
     waitingSync: "等待同步", refreshCurrent: "刷新当前页面", toggleTheme: "切换主题", hubUnavailable: "Hub 暂时不可用", offlineHint: "请确认本地服务已启动。", retry: "重试",
     heroTitle: "系统运行正常", heroBody: "QQ、OneBot 与 Hub 已连接，Codex 随时可用。", manageChannels: "管理通道", openApi: "查看 API",
     liveChannels: "LIVE CHANNELS", channelControl: "通道控制", viewAll: "查看全部", usageWindow: "Codex 用量", systemPulse: "SYSTEM PULSE", serviceHealth: "系统脉搏", checkNow: "立即检查", recentFlow: "RECENT FLOW", recentActivity: "最近活动", openLogs: "打开日志", todayRuntime: "今日运行", liveNow: "LIVE", last24Hours: "实时采样", stableLatency: "等待首个样本", liveSampleCount: "{count} 个真实样本", liveResponse: "响应 {latencyMs} ms · {online}/{total} 在线", now: "现在", quickEntryKicker: "SHORTCUTS", quickEntry: "快捷入口",
@@ -15,11 +15,12 @@ const translations = {
     selfPersonaGlobalPolicy: "全局人设：首次 {initial} 条总消息和至少 2 个会话；之后新增 {messages} 条真人消息、{botReplies} 次 Bot 回复或 {summaries} 份摘要，至少间隔 {hours} 小时；失败后 {retry} 小时再试",
     qqRecent: "QQ 最近事件",
     contextVault: "CONTEXT VAULT", memoryHeading: "可见、可控的本地记忆", memoryBody: "浏览统一摘要与 QQ 群聊/私聊上下文，并精确清理不再需要的内容。", refreshMemory: "刷新记忆", memoryType: "记忆类型", unified: "统一记忆", searchMemory: "搜索记忆",
+    knowledgeKicker: "LONG-TERM MEMORY", knowledgeHeading: "长期知识，不断更新", knowledgeBody: "沉淀黑话、群内知识与个人理解；旧内容会被更新，低频黑话则交由模型审查。", newKnowledge: "新建知识", knowledgeTitles: "知识标题", knowledgeVariants: "范围解释", knowledgeSlang: "黑话标题", knowledgeReviews: "审查记录", knowledgeSearch: "搜索标题、含义、群或成员", knowledgeAllKinds: "全部类型", knowledgeAllScopes: "全部范围", knowledgeSortLabel: "排序方式", knowledgeSortUpdated: "最近更新", knowledgeSortFrequency: "出现频率", knowledgeSortTitle: "标题", knowledgeAll: "全部知识", knowledgeNotes: "普通知识", knowledgePendingReview: "待审查", knowledgeGlobal: "全局", knowledgeGroup: "群", knowledgeMember: "成员", knowledgeGroupMember: "群内成员", knowledgeNoEntries: "还没有符合条件的知识。", knowledgeNoSelection: "从中间选择一条知识，查看含义、范围与出现记录。", knowledgeDefinition: "含义与内容", knowledgeScope: "适用范围", knowledgeStatistics: "出现统计", knowledgeHitCount: "累计出现", knowledgeLastSeen: "最近出现", knowledgeAliases: "别名", knowledgeEvidence: "最近语境", knowledgeReviewState: "模型审查", knowledgeReviewHealthy: "当前无需删除审查", knowledgeNeverSeen: "尚未在聊天中命中", editKnowledge: "编辑", deleteKnowledge: "删除", deleteKnowledgeTitle: "删除这条知识", deleteKnowledgeMessage: "确定删除“{value}”在当前范围内的解释吗？其他群或成员的解释不会受影响。", knowledgeDeleted: "知识已删除", knowledgeSaved: "知识已保存", knowledgeEditorKicker: "KNOWLEDGE EDITOR", knowledgeEditorTitleNew: "新建知识", knowledgeEditorTitleEdit: "编辑知识", knowledgeKind: "知识类型", knowledgeKindNote: "知识", knowledgeKindSlang: "黑话", knowledgeTitleField: "标题 / 词语", knowledgeContent: "含义 / 内容", knowledgeAliasesHint: "多个别名用逗号分隔", knowledgeScopeType: "适用范围", knowledgeGroupId: "群 QQ 号", knowledgeGroupName: "群名称", knowledgeUserId: "成员 QQ 号", knowledgeUserName: "成员名称", saveKnowledge: "保存知识", knowledgeVariantCount: "{count} 个范围解释", knowledgeHitValue: "{count} 次", knowledgeOccurrenceMessage: "{sender} · {time}", knowledgeReviewDecision: "{decision} · {time}", knowledgeScopeGlobal: "全部会话", knowledgeScopeGroup: "{name} · 群 {id}", knowledgeScopeMember: "{name} · QQ {id}", knowledgeScopeGroupMember: "{group}（{groupId}）中的 {user}（{userId}）", knowledgeSourceCount: "{count} 条来源", knowledgeUpdated: "更新 {time}", knowledgeEmptyHint: "知识会随总结自动写入，也可以在这里手动添加第一条。", knowledgeCreateFirst: "添加第一条知识", knowledgeResults: "{count} 个标题", knowledgeContextBefore: "上文", knowledgeContextAfter: "下文", knowledgeUnknownName: "未命名",
     observability: "OBSERVABILITY", activityHeading: "把每一次运行看清楚", activityBody: "完整字段实时到达，级别、模块、链路、耗时和错误原因分别着色，定位问题不再依赖翻文件。", liveRefresh: "实时刷新", liveConnected: "实时日志已连接", livePaused: "实时日志已暂停", liveError: "实时日志连接异常", followLatest: "跟随最新", visibleLogCount: "显示条数", liveLogStream: "实时日志", level: "级别", allLevels: "全部级别", category: "模块", allCategories: "全部模块", search: "搜索", logSearchHint: "消息、Trace、群或发送者", slowThreshold: "慢请求", noLimit: "不限", applyFilter: "应用筛选", structuredLogs: "完整实时日志", waitingLogs: "等待日志", resetFilter: "重置", refresh: "刷新",
     preferences: "PREFERENCES", settingsHeading: "让控制台适合你的节奏", settingsBody: "调整外观与刷新偏好，并控制局域网或临时公网访问。", appearance: "外观", appearanceHint: "跟随系统，或固定使用明亮 / 深色主题。", theme: "主题", system: "系统", light: "明亮", dark: "深色", language: "界面语言", languageHint: "完整切换控制台文案和时间显示。", autoRefresh: "自动刷新", autoRefreshHint: "页面隐藏时会自动暂停，减少无意义开销。", refreshInterval: "刷新间隔", hubEndpoint: "Hub 地址", hubEndpointHint: "当前页面连接的 Hub 地址。", lanAccess: "局域网访问", lanAccessHint: "自动忽略代理 / VPN 虚拟网卡，只显示其他设备可达的物理局域网地址；若代理仍拦截，请将该地址设为 DIRECT / 不代理。", lanLocalOnly: "仅本机可访问", lanNoAddress: "已开放，但未找到物理局域网 IPv4 地址，请检查 Wi-Fi / 以太网或代理绕过设置", copyLanToken: "复制访问令牌", lanEnableTitle: "开启局域网访问", lanEnableMessage: "开启后，同一局域网内的设备可以打开控制台。管理 API 仍受访问令牌保护。", lanAccessUpdated: "局域网访问设置已更新", lanTokenCopied: "访问令牌已复制", lanManagedByEnvironment: "监听地址由环境变量管理，无法在网页中修改。", publicTunnel: "内网穿透", publicTunnelHint: "通过 Cloudflare Quick Tunnel 生成临时 HTTPS 地址；远端仍需访问令牌。", publicTunnelRunningHint: "公网地址已就绪。把地址和访问令牌分别安全地发给需要访问的人。", publicTunnelStarting: "正在创建临时公网地址…", publicTunnelOff: "未开启公网访问", publicTunnelUnavailable: "未找到 cloudflared。请先安装并确保它在 Hub 的 PATH 中。", publicTunnelRemoteManaged: "为防止远端扩大访问范围，只能从本机页面开启、关闭和复制令牌。", publicTunnelError: "隧道启动失败：{error}", publicTunnelEnableTitle: "开启内网穿透", publicTunnelEnableMessage: "这会把控制台临时开放到公网。所有远端管理 API 仍需访问令牌，请只把地址和令牌交给可信的人。", publicTunnelUpdated: "内网穿透设置已更新", copyPublicTunnelUrl: "复制公网地址", publicTunnelUrlCopied: "公网地址已复制", copy: "复制", rawState: "原始状态", aboutBody: "QQ / OneBot 与 Codex CLI 的本地优先通讯中枢。",
     confirmAction: "确认操作", cancel: "取消", confirm: "确认", logDetail: "日志详情", close: "关闭", copyJson: "复制 JSON", done: "完成",
     hubOnline: "Hub 在线", hubOffline: "Hub 离线", syncedNow: "刚刚同步", syncedAt: "同步于 {time}", online: "在线", offline: "离线", enabled: "已启用", disabled: "已停用", running: "运行中", idle: "空闲", healthy: "正常", attention: "注意", toHandle: "待处理", staleData: "健康信息已过期：{value}",
-    uptime: "运行时长", serviceOnline: "在线服务", activeTasks: "活动任务", memoryEntries: "记忆条目", active: "活动", pending: "排队", concurrency: "并发上限", groups: "群", contacts: "联系人", systemReady: "一切正常", systemReadyBody: "关键服务运行正常，可以随时接收和处理消息。", systemAttention: "有配置项需要留意", systemAttentionBody: "{count} 个服务当前停用或尚未配置，不影响其余通道运行。", systemCritical: "检测到运行异常", systemCriticalBody: "{count} 个服务需要处理，建议先查看服务健康详情。", healthyServices: "{count} 个服务正常", issuesCount: "{count} 项需处理", inspectHealth: "查看健康详情", noMatchingActions: "没有匹配的操作", actionRefresh: "刷新当前视图", actionRefreshHint: "重新同步当前页面的最新数据", actionHealth: "检查服务健康", actionHealthHint: "立即重新探测本地服务与通道", actionTheme: "切换明暗主题", actionThemeHint: "在明亮与深色外观之间切换", actionApi: "查看原始状态", actionApiHint: "打开 Hub 返回的原始 JSON 状态", actionAddGroup: "添加 QQ 群", actionAddGroupHint: "前往通道页并定位群白名单输入框", actionAddContact: "添加可信联系人", actionAddContactHint: "前往通道页并定位联系人输入框", actionOverviewHint: "查看核心指标、额度与服务健康", actionChannelsHint: "管理通道、白名单和可信联系人", actionIntelligenceHint: "查看人设、表达学习与主动兴趣状态", actionMemoryHint: "搜索和清理本地上下文记忆", actionLogsHint: "查看实时完整日志并追踪运行问题", actionSettingsHint: "调整主题、语言和自动刷新",
+    uptime: "运行时长", serviceOnline: "在线服务", activeTasks: "活动任务", memoryEntries: "记忆条目", active: "活动", pending: "排队", concurrency: "并发上限", groups: "群", contacts: "联系人", systemReady: "一切正常", systemReadyBody: "关键服务运行正常，可以随时接收和处理消息。", systemAttention: "有配置项需要留意", systemAttentionBody: "{count} 个服务当前停用或尚未配置，不影响其余通道运行。", systemCritical: "检测到运行异常", systemCriticalBody: "{count} 个服务需要处理，建议先查看服务健康详情。", healthyServices: "{count} 个服务正常", issuesCount: "{count} 项需处理", inspectHealth: "查看健康详情", noMatchingActions: "没有匹配的操作", actionRefresh: "刷新当前视图", actionRefreshHint: "重新同步当前页面的最新数据", actionHealth: "检查服务健康", actionHealthHint: "立即重新探测本地服务与通道", actionTheme: "切换明暗主题", actionThemeHint: "在明亮与深色外观之间切换", actionApi: "查看原始状态", actionApiHint: "打开 Hub 返回的原始 JSON 状态", actionAddGroup: "添加 QQ 群", actionAddGroupHint: "前往通道页并定位群白名单输入框", actionAddContact: "添加可信联系人", actionAddContactHint: "前往通道页并定位联系人输入框", actionOverviewHint: "查看核心指标、额度与服务健康", actionChannelsHint: "管理通道、白名单和可信联系人", actionIntelligenceHint: "查看人设、表达学习与主动兴趣状态", actionMemoryHint: "搜索和清理短期上下文记忆", actionKnowledgeHint: "管理长期知识、黑话及其适用范围", actionLogsHint: "查看实时完整日志并追踪运行问题", actionSettingsHint: "调整主题、语言和自动刷新",
     qqChannelHint: "白名单群与私聊入口", groupsAllowed: "{count} 个白名单群", recentEventsCount: "{count} 条最近事件",
     quotaUnavailable: "暂无可用额度快照", fiveHours: "5 小时", sevenDays: "7 天", remaining: "剩余 {value}%", resetsAt: "{time} 重置", recordedAt: "记录于 {time}", noReset: "时间未知",
     oneBot: "OneBot", codexCli: "Codex CLI", webLookup: "联网查询", qqChannel: "QQ 通道", pathReady: "命令路径可用", pathMissing: "命令路径缺失", neverRun: "尚未运行", lastRun: "上次运行 {time}", trustedCount: "{count} 位可信联系人", provider: "提供方 {value}", lastQuery: "查询：{value}", noQuery: "尚无查询", model: "模型 {value}", reasoning: "推理 {value}", queueState: "活动 {active} · 排队 {pending}/{max}", noRecentActivity: "还没有最近活动。",
@@ -30,8 +31,8 @@ const translations = {
     runtimeModel: "当前模型", runtimeReasoning: "推理等级", runtimeStarted: "启动时间", apiTokenPrompt: "此 Hub 已启用 API Token。请输入 Token（只保存在当前标签页）：", authRequired: "需要 API Token 才能连接。", requestFailed: "请求失败", networkError: "无法连接到本地 Hub。", copyFailed: "复制失败，请手动选择内容。", unknown: "未知"
   },
   en: {
-    mainNavigation: "Main navigation", mobileNavigation: "Mobile navigation", brandHome: "Nexus home", runtimeSummary: "Runtime summary", runtimeBrief: "Runtime guidance", skipToContent: "Skip to main content", openQuickActions: "Open quick actions", quickActions: "Quick actions", searchActions: "Search pages or actions", commandCenter: "COMMAND CENTER", commandHint: "↑↓ select · Enter run", navOverview: "Overview", navChannels: "Channels", navIntelligence: "Behavior", navIntelligenceShort: "Behavior", navMemory: "Memory", navActivity: "Logs", navActivityShort: "Logs", navSettings: "Settings",
-    connecting: "Connecting", workspace: "Workspace", overviewTitle: "Runtime Overview", channelsTitle: "Message Channels", intelligenceTitle: "Intelligence", memoryTitle: "Memory Center", activityTitle: "Live Logs", settingsTitle: "Preferences",
+    mainNavigation: "Main navigation", mobileNavigation: "Mobile navigation", brandHome: "Nexus home", runtimeSummary: "Runtime summary", runtimeBrief: "Runtime guidance", skipToContent: "Skip to main content", openQuickActions: "Open quick actions", quickActions: "Quick actions", searchActions: "Search pages or actions", commandCenter: "COMMAND CENTER", commandHint: "↑↓ select · Enter run", navOverview: "Overview", navChannels: "Channels", navIntelligence: "Behavior", navIntelligenceShort: "Behavior", navMemory: "Memory", navKnowledge: "Knowledge", navKnowledgeShort: "Knowledge", navActivity: "Logs", navActivityShort: "Logs", navSettings: "Settings",
+    connecting: "Connecting", workspace: "Workspace", overviewTitle: "Runtime Overview", channelsTitle: "Message Channels", intelligenceTitle: "Intelligence", memoryTitle: "Short-term Memory", knowledgeTitle: "Knowledge Base", activityTitle: "Live Logs", settingsTitle: "Preferences",
     waitingSync: "Waiting to sync", refreshCurrent: "Refresh current view", toggleTheme: "Toggle theme", hubUnavailable: "Hub is unavailable", offlineHint: "Make sure the local service is running.", retry: "Retry",
     heroTitle: "All systems nominal", heroBody: "QQ, OneBot, and Hub are connected. Codex is ready.", manageChannels: "Manage channels", openApi: "View API",
     liveChannels: "LIVE CHANNELS", channelControl: "Channel control", viewAll: "View all", usageWindow: "Codex usage", systemPulse: "SYSTEM PULSE", serviceHealth: "System pulse", checkNow: "Check now", recentFlow: "RECENT FLOW", recentActivity: "Recent activity", openLogs: "Open logs", todayRuntime: "Today", liveNow: "LIVE", last24Hours: "Live samples", stableLatency: "Waiting for first sample", liveSampleCount: "{count} real samples", liveResponse: "Response {latencyMs} ms · {online}/{total} online", now: "Now", quickEntryKicker: "SHORTCUTS", quickEntry: "Quick access",
@@ -41,11 +42,12 @@ const translations = {
     selfPersonaGlobalPolicy: "Global persona: first at {initial} total messages across at least 2 scopes; then after {messages} human messages, {botReplies} Bot replies, or {summaries} summaries with a {hours}h minimum; failures retry after {retry}h",
     qqRecent: "Recent QQ events",
     contextVault: "CONTEXT VAULT", memoryHeading: "Visible, controllable local memory", memoryBody: "Browse unified summaries and QQ group or private-chat context, then remove exactly what you no longer need.", refreshMemory: "Refresh memory", memoryType: "Memory type", unified: "Unified", searchMemory: "Search memory",
+    knowledgeKicker: "LONG-TERM MEMORY", knowledgeHeading: "Long-term knowledge, kept current", knowledgeBody: "Keep slang, group knowledge, and personal interpretations; stale content is updated and low-frequency slang is reviewed by the model.", newKnowledge: "New knowledge", knowledgeTitles: "Titles", knowledgeVariants: "Scoped meanings", knowledgeSlang: "Slang titles", knowledgeReviews: "Review records", knowledgeSearch: "Search titles, meanings, groups, or members", knowledgeAllKinds: "All types", knowledgeAllScopes: "All scopes", knowledgeSortLabel: "Sort order", knowledgeSortUpdated: "Recently updated", knowledgeSortFrequency: "Frequency", knowledgeSortTitle: "Title", knowledgeAll: "All knowledge", knowledgeNotes: "Knowledge notes", knowledgePendingReview: "Pending review", knowledgeGlobal: "Global", knowledgeGroup: "Group", knowledgeMember: "Member", knowledgeGroupMember: "Member in group", knowledgeNoEntries: "No knowledge matches these filters.", knowledgeNoSelection: "Select an item in the middle to inspect its meaning, scope, and occurrences.", knowledgeDefinition: "Meaning and content", knowledgeScope: "Scope", knowledgeStatistics: "Occurrence stats", knowledgeHitCount: "Total hits", knowledgeLastSeen: "Last seen", knowledgeAliases: "Aliases", knowledgeEvidence: "Recent context", knowledgeReviewState: "Model review", knowledgeReviewHealthy: "No deletion review is currently needed", knowledgeNeverSeen: "Not yet matched in chat", editKnowledge: "Edit", deleteKnowledge: "Delete", deleteKnowledgeTitle: "Delete this knowledge", deleteKnowledgeMessage: "Delete the meaning of “{value}” in this scope? Meanings for other groups or members are not affected.", knowledgeDeleted: "Knowledge deleted", knowledgeSaved: "Knowledge saved", knowledgeEditorKicker: "KNOWLEDGE EDITOR", knowledgeEditorTitleNew: "New knowledge", knowledgeEditorTitleEdit: "Edit knowledge", knowledgeKind: "Knowledge type", knowledgeKindNote: "Knowledge", knowledgeKindSlang: "Slang", knowledgeTitleField: "Title / term", knowledgeContent: "Meaning / content", knowledgeAliasesHint: "Separate aliases with commas", knowledgeScopeType: "Scope", knowledgeGroupId: "Group QQ ID", knowledgeGroupName: "Group name", knowledgeUserId: "Member QQ ID", knowledgeUserName: "Member name", saveKnowledge: "Save knowledge", knowledgeVariantCount: "{count} scoped meanings", knowledgeHitValue: "{count} hits", knowledgeOccurrenceMessage: "{sender} · {time}", knowledgeReviewDecision: "{decision} · {time}", knowledgeScopeGlobal: "All conversations", knowledgeScopeGroup: "{name} · group {id}", knowledgeScopeMember: "{name} · QQ {id}", knowledgeScopeGroupMember: "{user} ({userId}) in {group} ({groupId})", knowledgeSourceCount: "{count} sources", knowledgeUpdated: "Updated {time}", knowledgeEmptyHint: "Knowledge is written automatically with summaries, or you can add the first item here.", knowledgeCreateFirst: "Add first knowledge", knowledgeResults: "{count} titles", knowledgeContextBefore: "Before", knowledgeContextAfter: "After", knowledgeUnknownName: "Unnamed",
     observability: "OBSERVABILITY", activityHeading: "See every run clearly", activityBody: "Complete fields arrive live, with distinct colors for levels, modules, traces, latency, and errors.", liveRefresh: "Live refresh", liveConnected: "Live log connected", livePaused: "Live log paused", liveError: "Live log connection error", followLatest: "Follow latest", visibleLogCount: "Rows", liveLogStream: "Live log stream", level: "Level", allLevels: "All levels", category: "Category", allCategories: "All categories", search: "Search", logSearchHint: "Message, trace, group, or sender", slowThreshold: "Slow requests", noLimit: "No limit", applyFilter: "Apply", structuredLogs: "Complete live logs", waitingLogs: "Waiting for logs", resetFilter: "Reset", refresh: "Refresh",
     preferences: "PREFERENCES", settingsHeading: "Make the console fit your rhythm", settingsBody: "Adjust appearance and refresh preferences, and control LAN or temporary public access.", appearance: "Appearance", appearanceHint: "Follow the system or lock light / dark mode.", theme: "Theme", system: "System", light: "Light", dark: "Dark", language: "Language", languageHint: "Switch all console copy and time formatting.", autoRefresh: "Auto refresh", autoRefreshHint: "Automatically pauses while the page is hidden.", refreshInterval: "Refresh interval", hubEndpoint: "Hub endpoint", hubEndpointHint: "The Hub address used by this page.", lanAccess: "LAN access", lanAccessHint: "Proxy and VPN virtual adapters are ignored so only physical LAN addresses reachable by other devices are shown. If a proxy still intercepts the address, set it to DIRECT / bypass.", lanLocalOnly: "Available on this computer only", lanNoAddress: "LAN access is on, but no physical LAN IPv4 address was found; check Wi-Fi / Ethernet or proxy bypass settings", copyLanToken: "Copy access token", lanEnableTitle: "Enable LAN access", lanEnableMessage: "Devices on the same LAN will be able to open the console. Management APIs remain protected by an access token.", lanAccessUpdated: "LAN access setting updated", lanTokenCopied: "Access token copied", lanManagedByEnvironment: "The listening address is managed by an environment variable and cannot be changed here.", publicTunnel: "Temporary public access", publicTunnelHint: "Creates a temporary HTTPS address with Cloudflare Quick Tunnel; remote access still requires a token.", publicTunnelRunningHint: "The public address is ready. Share the address and access token separately with trusted visitors.", publicTunnelStarting: "Creating a temporary public address…", publicTunnelOff: "Public access is off", publicTunnelUnavailable: "cloudflared was not found. Install it and make sure it is on the Hub PATH.", publicTunnelRemoteManaged: "To prevent remote access from expanding itself, only the local page can start, stop, or copy the token.", publicTunnelError: "Tunnel startup failed: {error}", publicTunnelEnableTitle: "Enable temporary public access", publicTunnelEnableMessage: "This temporarily exposes the console to the public internet. Every remote management API still requires the access token; share both only with people you trust.", publicTunnelUpdated: "Temporary public access updated", copyPublicTunnelUrl: "Copy public address", publicTunnelUrlCopied: "Public address copied", copy: "Copy", rawState: "Raw state", aboutBody: "A local-first QQ / OneBot and Codex CLI communication hub.",
     confirmAction: "Confirm action", cancel: "Cancel", confirm: "Confirm", logDetail: "Log detail", close: "Close", copyJson: "Copy JSON", done: "Done",
     hubOnline: "Hub online", hubOffline: "Hub offline", syncedNow: "Synced just now", syncedAt: "Synced at {time}", online: "Online", offline: "Offline", enabled: "Enabled", disabled: "Disabled", running: "Running", idle: "Idle", healthy: "Healthy", attention: "Check", toHandle: "To review", staleData: "Health data is stale: {value}",
-    uptime: "Uptime", serviceOnline: "Services online", activeTasks: "Active tasks", memoryEntries: "Memory entries", active: "Active", pending: "Pending", concurrency: "Concurrency", groups: "Groups", contacts: "Contacts", systemReady: "All systems normal", systemReadyBody: "Critical services are healthy and ready to receive messages.", systemAttention: "A few settings need attention", systemAttentionBody: "{count} services are disabled or not configured; other channels remain available.", systemCritical: "Runtime issue detected", systemCriticalBody: "{count} services need attention. Check service health first.", healthyServices: "{count} services healthy", issuesCount: "{count} to review", inspectHealth: "Inspect health", noMatchingActions: "No matching actions", actionRefresh: "Refresh current view", actionRefreshHint: "Sync the latest data for the current page", actionHealth: "Check service health", actionHealthHint: "Probe local services and channels now", actionTheme: "Toggle color theme", actionThemeHint: "Switch between light and dark appearance", actionApi: "View raw state", actionApiHint: "Open the raw JSON returned by the Hub", actionAddGroup: "Add QQ group", actionAddGroupHint: "Open Channels and focus the group allowlist field", actionAddContact: "Add trusted contact", actionAddContactHint: "Open Channels and focus the contact field", actionOverviewHint: "Review core metrics, usage, and service health", actionChannelsHint: "Manage channels, allowlists, and trusted contacts", actionIntelligenceHint: "Review persona, expression learning, and proactive interest", actionMemoryHint: "Search and clear local contextual memory", actionLogsHint: "Inspect complete live logs and trace runtime issues", actionSettingsHint: "Adjust theme, language, and auto refresh",
+    uptime: "Uptime", serviceOnline: "Services online", activeTasks: "Active tasks", memoryEntries: "Memory entries", active: "Active", pending: "Pending", concurrency: "Concurrency", groups: "Groups", contacts: "Contacts", systemReady: "All systems normal", systemReadyBody: "Critical services are healthy and ready to receive messages.", systemAttention: "A few settings need attention", systemAttentionBody: "{count} services are disabled or not configured; other channels remain available.", systemCritical: "Runtime issue detected", systemCriticalBody: "{count} services need attention. Check service health first.", healthyServices: "{count} services healthy", issuesCount: "{count} to review", inspectHealth: "Inspect health", noMatchingActions: "No matching actions", actionRefresh: "Refresh current view", actionRefreshHint: "Sync the latest data for the current page", actionHealth: "Check service health", actionHealthHint: "Probe local services and channels now", actionTheme: "Toggle color theme", actionThemeHint: "Switch between light and dark appearance", actionApi: "View raw state", actionApiHint: "Open the raw JSON returned by the Hub", actionAddGroup: "Add QQ group", actionAddGroupHint: "Open Channels and focus the group allowlist field", actionAddContact: "Add trusted contact", actionAddContactHint: "Open Channels and focus the contact field", actionOverviewHint: "Review core metrics, usage, and service health", actionChannelsHint: "Manage channels, allowlists, and trusted contacts", actionIntelligenceHint: "Review persona, expression learning, and proactive interest", actionMemoryHint: "Search and clear short-term contextual memory", actionKnowledgeHint: "Manage long-term knowledge, slang, and scopes", actionLogsHint: "Inspect complete live logs and trace runtime issues", actionSettingsHint: "Adjust theme, language, and auto refresh",
     qqChannelHint: "Allowlisted groups and private chats", groupsAllowed: "{count} allowlisted groups", recentEventsCount: "{count} recent events",
     quotaUnavailable: "No usage snapshot available", fiveHours: "5 hours", sevenDays: "7 days", remaining: "{value}% remaining", resetsAt: "Resets {time}", recordedAt: "Recorded {time}", noReset: "Unknown reset",
     oneBot: "OneBot", codexCli: "Codex CLI", webLookup: "Web lookup", qqChannel: "QQ channel", pathReady: "Command path ready", pathMissing: "Command path missing", neverRun: "Not run yet", lastRun: "Last run {time}", trustedCount: "{count} trusted contacts", provider: "Provider {value}", lastQuery: "Query: {value}", noQuery: "No query yet", model: "Model {value}", reasoning: "Reasoning {value}", queueState: "Active {active} · pending {pending}/{max}", noRecentActivity: "No recent activity yet.",
@@ -74,6 +76,12 @@ const app = (() => {
     logs: null,
     activeMemoryTab: restoredUiState.activeMemoryTab === "qq" ? "qq" : "unified",
     memoryQuery: restoredUiState.memoryQuery || "",
+    knowledgeQuery: restoredUiState.knowledgeQuery || "",
+    knowledgeKind: ["all", "slang", "note"].includes(restoredUiState.knowledgeKind) ? restoredUiState.knowledgeKind : "all",
+    knowledgeScope: ["all", "global", "group", "member", "group-member"].includes(restoredUiState.knowledgeScope) ? restoredUiState.knowledgeScope : "all",
+    knowledgeSort: ["updated", "frequency", "title"].includes(restoredUiState.knowledgeSort) ? restoredUiState.knowledgeSort : "updated",
+    selectedKnowledgeEntryId: restoredUiState.selectedKnowledgeEntryId || "",
+    selectedKnowledgeVariantId: restoredUiState.selectedKnowledgeVariantId || "",
     openMemoryGroups: new Set(restoredUiState.openMemoryGroups || []),
     openAdaptiveLearningGroups: new Set(restoredUiState.openAdaptiveLearningGroups || []),
     controllers: new Map(),
@@ -117,6 +125,12 @@ function loadDashboardUiState() {
       logFollow: parsed.logFollow !== false,
       activeMemoryTab: parsed.activeMemoryTab === "qq" ? "qq" : "unified",
       memoryQuery: boundedUiText(parsed.memoryQuery, 200),
+      knowledgeQuery: boundedUiText(parsed.knowledgeQuery, 240),
+      knowledgeKind: ["all", "slang", "note"].includes(parsed.knowledgeKind) ? parsed.knowledgeKind : "all",
+      knowledgeScope: ["all", "global", "group", "member", "group-member"].includes(parsed.knowledgeScope) ? parsed.knowledgeScope : "all",
+      knowledgeSort: ["updated", "frequency", "title"].includes(parsed.knowledgeSort) ? parsed.knowledgeSort : "updated",
+      selectedKnowledgeEntryId: boundedUiText(parsed.selectedKnowledgeEntryId, 120),
+      selectedKnowledgeVariantId: boundedUiText(parsed.selectedKnowledgeVariantId, 120),
       openMemoryGroups: Array.isArray(parsed.openMemoryGroups)
         ? parsed.openMemoryGroups.map((value) => boundedUiText(value, 160)).filter(Boolean).slice(0, 200)
         : [],
@@ -209,6 +223,12 @@ function persistDashboardUiState() {
       logFollow: app.logFollow,
       activeMemoryTab: app.activeMemoryTab,
       memoryQuery: app.memoryQuery,
+      knowledgeQuery: app.knowledgeQuery,
+      knowledgeKind: app.knowledgeKind,
+      knowledgeScope: app.knowledgeScope,
+      knowledgeSort: app.knowledgeSort,
+      selectedKnowledgeEntryId: app.selectedKnowledgeEntryId,
+      selectedKnowledgeVariantId: app.selectedKnowledgeVariantId,
       openMemoryGroups: [...app.openMemoryGroups],
       openAdaptiveLearningGroups: [...app.openAdaptiveLearningGroups],
       groupDraft: app.groupDraft,
@@ -225,6 +245,10 @@ function persistDashboardUiState() {
 function restoreDashboardUiState() {
   $("#groupInput").value = app.groupDraft;
   $("#memorySearch").value = app.memoryQuery;
+  $("#knowledgeSearch").value = app.knowledgeQuery;
+  $("#knowledgeKindFilter").value = app.knowledgeKind;
+  $("#knowledgeScopeFilter").value = app.knowledgeScope;
+  $("#knowledgeSort").value = app.knowledgeSort;
   $("#liveLogsToggle").checked = app.liveLogs;
   $("#logFollowToggle").checked = app.logFollow;
   $("#logLevel").value = app.logFilters.level || "";
@@ -288,7 +312,7 @@ function setTheme(theme) {
 }
 
 function updatePageIdentity() {
-  const titles = { overview: "overviewTitle", channels: "channelsTitle", intelligence: "intelligenceTitle", memory: "memoryTitle", activity: "activityTitle", settings: "settingsTitle" };
+  const titles = { overview: "overviewTitle", channels: "channelsTitle", intelligence: "intelligenceTitle", memory: "memoryTitle", knowledge: "knowledgeTitle", activity: "activityTitle", settings: "settingsTitle" };
   $("#pageTitle").textContent = t(titles[app.view]);
 }
 
@@ -411,11 +435,13 @@ async function refreshMemory({ quiet = false } = {}) {
     app.memory = await api("/api/memory", {}, { key: "memory" });
     app.lastFetch.memory = Date.now();
     renderMemory();
+    renderKnowledge();
     if (!quiet) setSync("ok");
     return app.memory;
   } catch (error) {
     if (error.name !== "AbortError") {
       $("#memoryView").innerHTML = emptyState(error.message);
+      $("#knowledgeWorkspace").innerHTML = emptyState(error.message);
       if (!quiet) showToast(error.message, "error");
     }
     return null;
@@ -457,7 +483,7 @@ async function refreshView({ quiet = false } = {}) {
   const tasks = [];
   tasks.push(refreshState({ quiet }));
   if (["overview", "channels", "intelligence", "settings"].includes(app.view)) tasks.push(refreshMaintenance({ quiet }));
-  if (app.view === "memory") tasks.push(refreshMemory({ quiet }));
+  if (["memory", "knowledge"].includes(app.view)) tasks.push(refreshMemory({ quiet }));
   if (app.view === "activity") tasks.push(refreshLogs({ quiet }));
   await Promise.allSettled(tasks);
 }
@@ -494,6 +520,7 @@ function renderAll() {
   renderState();
   renderMaintenance();
   renderMemory();
+  renderKnowledge();
   renderLogs();
   renderSettings();
 }
@@ -1255,6 +1282,195 @@ function formatUnifiedType(type) {
   return { handoff: t("handoffs"), idea: t("ideas"), projectNote: t("projects"), openLoop: t("todos"), dailyState: t("recentState"), note: t("notes") }[type] || type || t("notes");
 }
 
+function getKnowledgeStore() {
+  return app.memory?.qq?.knowledgeBase || { entries: [], reviewHistory: [], groups: {}, people: {} };
+}
+
+function knowledgeScopeLabel(scope = {}) {
+  const unknown = t("knowledgeUnknownName");
+  if (scope.type === "global") return t("knowledgeScopeGlobal");
+  if (scope.type === "group") return t("knowledgeScopeGroup", { name: scope.groupName || unknown, id: scope.groupId || "—" });
+  if (scope.type === "member") return t("knowledgeScopeMember", { name: scope.userName || unknown, id: scope.userId || "—" });
+  if (scope.type === "group-member") return t("knowledgeScopeGroupMember", {
+    group: scope.groupName || unknown,
+    groupId: scope.groupId || "—",
+    user: scope.userName || unknown,
+    userId: scope.userId || "—"
+  });
+  return unknown;
+}
+
+function knowledgeScopeName(type) {
+  return {
+    global: t("knowledgeGlobal"),
+    group: t("knowledgeGroup"),
+    member: t("knowledgeMember"),
+    "group-member": t("knowledgeGroupMember")
+  }[type] || t("knowledgeScope");
+}
+
+function knowledgeVariantMatches(entry, variant, query) {
+  if (app.knowledgeScope !== "all" && variant.scope?.type !== app.knowledgeScope) return false;
+  if (!query) return true;
+  const scope = variant.scope || {};
+  return [entry.title, ...(entry.aliases || []), variant.content, scope.type, scope.groupId, scope.groupName, scope.userId, scope.userName]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase()
+    .includes(query);
+}
+
+function visibleKnowledgeEntries() {
+  const query = app.knowledgeQuery.trim().toLocaleLowerCase();
+  const entries = getKnowledgeStore().entries || [];
+  const visible = entries
+    .filter((entry) => app.knowledgeKind === "all" || entry.kind === app.knowledgeKind)
+    .map((entry) => ({ ...entry, visibleVariants: (entry.variants || []).filter((variant) => knowledgeVariantMatches(entry, variant, query)) }))
+    .filter((entry) => entry.visibleVariants.length > 0);
+  visible.sort((left, right) => {
+    if (app.knowledgeSort === "title") return left.title.localeCompare(right.title, app.language === "en" ? "en" : "zh-CN");
+    if (app.knowledgeSort === "frequency") {
+      return knowledgeEntryHits(right) - knowledgeEntryHits(left) || Date.parse(right.updatedAt || "") - Date.parse(left.updatedAt || "");
+    }
+    return Date.parse(right.updatedAt || "") - Date.parse(left.updatedAt || "");
+  });
+  return visible;
+}
+
+function knowledgeEntryHits(entry) {
+  return (entry.visibleVariants || entry.variants || []).reduce((total, variant) => total + Number(variant.usage?.hitCount || 0), 0);
+}
+
+function knowledgeNeedsReview(variant) {
+  const requested = Date.parse(variant.usage?.review?.lastRequestedAt || "");
+  const reviewed = Date.parse(variant.usage?.review?.lastReviewedAt || "");
+  return Number.isFinite(requested) && (!Number.isFinite(reviewed) || requested > reviewed);
+}
+
+function resolveKnowledgeSelection(entries) {
+  let entry = entries.find((item) => item.id === app.selectedKnowledgeEntryId) || entries[0] || null;
+  let variant = entry?.visibleVariants.find((item) => item.id === app.selectedKnowledgeVariantId)
+    || entry?.visibleVariants[0]
+    || null;
+  app.selectedKnowledgeEntryId = entry?.id || "";
+  app.selectedKnowledgeVariantId = variant?.id || "";
+  return { entry, variant };
+}
+
+function renderKnowledge() {
+  if (!app.memory) return;
+  const store = getKnowledgeStore();
+  const allEntries = store.entries || [];
+  const variants = allEntries.flatMap((entry) => entry.variants || []);
+  const reviews = store.reviewHistory || [];
+  $("#knowledgeMetrics").innerHTML = [
+    [allEntries.length, t("knowledgeTitles")],
+    [variants.length, t("knowledgeVariants")],
+    [allEntries.filter((entry) => entry.kind === "slang").length, t("knowledgeSlang")],
+    [reviews.length, t("knowledgeReviews")]
+  ].map(([value, label], index) => `<article class="knowledge-metric"><span>0${index + 1}</span><strong>${escapeHtml(formatNumber(value))}</strong><p>${escapeHtml(label)}</p></article>`).join("");
+
+  const entries = visibleKnowledgeEntries();
+  const selected = resolveKnowledgeSelection(entries);
+  renderKnowledgeIndex(allEntries, variants);
+  renderKnowledgeList(entries, selected);
+  renderKnowledgeInspector(selected.entry, selected.variant, reviews);
+}
+
+function renderKnowledgeIndex(entries, variants) {
+  const kindCounts = {
+    all: entries.length,
+    slang: entries.filter((entry) => entry.kind === "slang").length,
+    note: entries.filter((entry) => entry.kind === "note").length
+  };
+  const scopeCounts = Object.fromEntries(["global", "group", "member", "group-member"].map((type) => [type, variants.filter((variant) => variant.scope?.type === type).length]));
+  const indexButton = (value, label, count, selected, attribute) => `<button class="knowledge-index-item ${selected ? "active" : ""}" type="button" ${attribute}="${escapeHtml(value)}"><span>${escapeHtml(label)}</span><em>${escapeHtml(formatNumber(count))}</em></button>`;
+  $("#knowledgeIndex").innerHTML = `
+    <div class="knowledge-pane-heading"><span class="section-kicker">INDEX</span><h3>${escapeHtml(t("knowledgeAll"))}</h3></div>
+    <div class="knowledge-index-section">
+      ${indexButton("all", t("knowledgeAll"), kindCounts.all, app.knowledgeKind === "all", "data-knowledge-kind")}
+      ${indexButton("slang", t("knowledgeKindSlang"), kindCounts.slang, app.knowledgeKind === "slang", "data-knowledge-kind")}
+      ${indexButton("note", t("knowledgeNotes"), kindCounts.note, app.knowledgeKind === "note", "data-knowledge-kind")}
+    </div>
+    <div class="knowledge-index-section"><span class="knowledge-index-label">${escapeHtml(t("knowledgeScope"))}</span>
+      ${indexButton("all", t("knowledgeAllScopes"), variants.length, app.knowledgeScope === "all", "data-knowledge-scope")}
+      ${["global", "group", "member", "group-member"].map((type) => indexButton(type, knowledgeScopeName(type), scopeCounts[type], app.knowledgeScope === type, "data-knowledge-scope")).join("")}
+    </div>
+    <div class="knowledge-maintenance-note"><span>${escapeHtml(t("knowledgeReviewState"))}</span><strong>${escapeHtml(formatNumber(variants.filter(knowledgeNeedsReview).length))}</strong><p>${escapeHtml(t("knowledgeReviewHealthy"))}</p></div>`;
+}
+
+function renderKnowledgeList(entries, selected) {
+  const root = $("#knowledgeList");
+  if (!entries.length) {
+    root.innerHTML = `<div class="knowledge-list-head"><span class="section-kicker">KNOWLEDGE</span><strong>${escapeHtml(t("knowledgeResults", { count: 0 }))}</strong></div><div class="knowledge-empty"><h3>${escapeHtml(t("knowledgeNoEntries"))}</h3><p>${escapeHtml(t("knowledgeEmptyHint"))}</p><button class="button primary" type="button" data-new-knowledge>${escapeHtml(t("knowledgeCreateFirst"))}</button></div>`;
+    return;
+  }
+  root.innerHTML = `<div class="knowledge-list-head"><span class="section-kicker">KNOWLEDGE</span><strong>${escapeHtml(t("knowledgeResults", { count: entries.length }))}</strong></div><div class="knowledge-entry-list">${entries.map((entry) => {
+    const variants = entry.visibleVariants;
+    const active = entry.id === selected.entry?.id;
+    const scopes = [...new Set(variants.map((variant) => knowledgeScopeName(variant.scope?.type)))];
+    return `<button class="knowledge-entry-card ${active ? "active" : ""}" type="button" data-knowledge-entry="${escapeHtml(entry.id)}" data-knowledge-variant="${escapeHtml(variants[0]?.id || "")}">
+      <span class="knowledge-entry-top"><i class="knowledge-kind ${entry.kind}">${escapeHtml(entry.kind === "slang" ? t("knowledgeKindSlang") : t("knowledgeKindNote"))}</i><time>${escapeHtml(formatRelative(entry.updatedAt))}</time></span>
+      <strong>${escapeHtml(entry.title)}</strong>
+      <p>${escapeHtml(variants[0]?.content || "")}</p>
+      <span class="knowledge-entry-foot"><span>${scopes.map((scope) => `<i>${escapeHtml(scope)}</i>`).join("")}</span><em>${escapeHtml(t("knowledgeHitValue", { count: knowledgeEntryHits(entry) }))}</em></span>
+    </button>`;
+  }).join("")}</div>`;
+}
+
+function renderKnowledgeInspector(entry, variant, reviewHistory) {
+  const root = $("#knowledgeInspector");
+  if (!entry || !variant) {
+    root.innerHTML = `<div class="knowledge-inspector-empty"><span class="knowledge-empty-mark">K</span><p>${escapeHtml(t("knowledgeNoSelection"))}</p></div>`;
+    return;
+  }
+  const usage = variant.usage || {};
+  const occurrences = usage.occurrences || [];
+  const latest = occurrences.at(-1);
+  const review = reviewHistory.filter((item) => item.entryId === entry.id && item.variantId === variant.id).at(-1);
+  root.innerHTML = `<article class="knowledge-inspector-card">
+    <header class="knowledge-inspector-head">
+      <div><span class="knowledge-kind ${entry.kind}">${escapeHtml(entry.kind === "slang" ? t("knowledgeKindSlang") : t("knowledgeKindNote"))}</span><h3>${escapeHtml(entry.title)}</h3></div>
+      <div class="knowledge-inspector-actions"><button type="button" data-edit-knowledge="${escapeHtml(entry.id)}" data-knowledge-variant="${escapeHtml(variant.id)}">${escapeHtml(t("editKnowledge"))}</button><button class="danger-text" type="button" data-delete-knowledge="${escapeHtml(entry.id)}" data-knowledge-variant="${escapeHtml(variant.id)}">${escapeHtml(t("deleteKnowledge"))}</button></div>
+    </header>
+    ${(entry.variants || []).length > 1 ? `<div class="knowledge-variant-tabs" aria-label="${escapeHtml(t("knowledgeVariants"))}">${entry.variants.map((item) => `<button class="${item.id === variant.id ? "active" : ""}" type="button" data-knowledge-entry="${escapeHtml(entry.id)}" data-knowledge-variant="${escapeHtml(item.id)}">${escapeHtml(knowledgeScopeName(item.scope?.type))}</button>`).join("")}</div>` : ""}
+    <section class="knowledge-detail-section"><span class="section-kicker">DEFINITION</span><h4>${escapeHtml(t("knowledgeDefinition"))}</h4><p class="knowledge-definition">${escapeHtml(variant.content)}</p></section>
+    <section class="knowledge-detail-section"><span class="section-kicker">SCOPE</span><h4>${escapeHtml(t("knowledgeScope"))}</h4><p class="knowledge-scope-value">${escapeHtml(knowledgeScopeLabel(variant.scope))}</p></section>
+    <section class="knowledge-detail-section"><span class="section-kicker">FREQUENCY</span><h4>${escapeHtml(t("knowledgeStatistics"))}</h4>
+      <div class="knowledge-stat-row"><div><strong>${escapeHtml(formatNumber(usage.hitCount || 0))}</strong><span>${escapeHtml(t("knowledgeHitCount"))}</span></div><div><strong>${escapeHtml(usage.lastSeenAt ? formatRelative(usage.lastSeenAt) : "—")}</strong><span>${escapeHtml(t("knowledgeLastSeen"))}</span></div></div>
+      ${renderKnowledgeFrequency(occurrences)}
+    </section>
+    ${entry.aliases?.length ? `<section class="knowledge-detail-section"><span class="section-kicker">ALIASES</span><h4>${escapeHtml(t("knowledgeAliases"))}</h4><div class="knowledge-aliases">${entry.aliases.map((alias) => `<span>${escapeHtml(alias)}</span>`).join("")}</div></section>` : ""}
+    ${renderKnowledgeEvidence(latest)}
+    <section class="knowledge-detail-section knowledge-review"><span class="section-kicker">REVIEW</span><h4>${escapeHtml(t("knowledgeReviewState"))}</h4>${review ? `<strong>${escapeHtml(t("knowledgeReviewDecision", { decision: review.decision, time: formatTime(review.reviewedAt) }))}</strong><p>${escapeHtml(review.reason || t("knowledgeReviewHealthy"))}</p>` : `<p>${escapeHtml(t("knowledgeReviewHealthy"))}</p>`}</section>
+    <footer>${escapeHtml(t("knowledgeUpdated", { time: formatTime(variant.updatedAt) }))} · ${escapeHtml(t("knowledgeSourceCount", { count: variant.sources?.length || 0 }))}</footer>
+  </article>`;
+}
+
+function renderKnowledgeFrequency(occurrences) {
+  const bucketCount = 12;
+  const weekMs = 7 * 24 * 60 * 60 * 1_000;
+  const now = Date.now();
+  const buckets = Array.from({ length: bucketCount }, () => 0);
+  for (const occurrence of occurrences || []) {
+    const age = now - Date.parse(occurrence.at || "");
+    const offset = Math.floor(age / weekMs);
+    if (offset >= 0 && offset < bucketCount) buckets[bucketCount - 1 - offset] += 1;
+  }
+  const max = Math.max(1, ...buckets);
+  return `<div class="knowledge-frequency" aria-hidden="true">${buckets.map((value) => `<i style="--bar:${Math.max(8, Math.round(value / max * 100))}%"></i>`).join("")}</div>`;
+}
+
+function renderKnowledgeEvidence(occurrence) {
+  if (!occurrence) return `<section class="knowledge-detail-section"><span class="section-kicker">EVIDENCE</span><h4>${escapeHtml(t("knowledgeEvidence"))}</h4><p>${escapeHtml(t("knowledgeNeverSeen"))}</p></section>`;
+  const contextRow = (label, items) => items?.length ? `<div class="knowledge-context-row"><span>${escapeHtml(label)}</span><div>${items.map((item) => `<p><b>${escapeHtml(item.senderName || item.senderId || "")}</b>${escapeHtml(item.text)}</p>`).join("")}</div></div>` : "";
+  return `<section class="knowledge-detail-section knowledge-evidence"><span class="section-kicker">EVIDENCE</span><h4>${escapeHtml(t("knowledgeEvidence"))}</h4>
+    ${contextRow(t("knowledgeContextBefore"), occurrence.before)}
+    <blockquote><span>${escapeHtml(t("knowledgeOccurrenceMessage", { sender: occurrence.senderName || occurrence.senderId || t("unknown"), time: formatTime(occurrence.at) }))}</span><p>${escapeHtml(occurrence.text)}</p></blockquote>
+    ${contextRow(t("knowledgeContextAfter"), occurrence.after)}
+  </section>`;
+}
+
 function renderLogs({ preserveFocus = false } = {}) {
   if (!app.logs) return;
   const summary = app.logs.summary || {};
@@ -1293,13 +1509,14 @@ function renderLogEntry(entry, index) {
 }
 
 function renderLogDetails(entry) {
-  const excluded = new Set(["ts", "level", "category", "message", "messageZh", "errorZh", "details", "traceId"]);
+  const excluded = new Set(["ts", "level", "category", "message", "messageZh", "errorZh", "details", "detailsZh", "traceId"]);
   const fields = [];
   if (entry.traceId) fields.push(["traceId", entry.traceId]);
   for (const [key, value] of Object.entries(entry)) {
     if (!excluded.has(key) && value != null && value !== "") fields.push([key, value]);
   }
-  for (const [key, value] of Object.entries(entry.details || {})) {
+  const localizedDetails = app.language === "en" ? entry.details : (entry.detailsZh || entry.details);
+  for (const [key, value] of Object.entries(localizedDetails || {})) {
     if (value != null && value !== "") fields.push([key, value]);
   }
   if (!fields.length) return "";
@@ -1489,6 +1706,62 @@ async function saveGroups(groups, control) {
   await refreshState({ quiet: true });
 }
 
+function findKnowledgeVariant(entryId, variantId) {
+  const entry = getKnowledgeStore().entries?.find((item) => item.id === entryId);
+  const variant = entry?.variants?.find((item) => item.id === variantId);
+  return entry && variant ? { entry, variant } : null;
+}
+
+function syncKnowledgeEditorScope() {
+  const type = $("#knowledgeScopeType").value;
+  $$(".knowledge-group-field").forEach((field) => { field.hidden = !["group", "group-member"].includes(type); });
+  $$(".knowledge-member-field").forEach((field) => { field.hidden = !["member", "group-member"].includes(type); });
+  $("#knowledgeGroupId").required = ["group", "group-member"].includes(type);
+  $("#knowledgeUserId").required = ["member", "group-member"].includes(type);
+}
+
+function openKnowledgeEditor(entryId = "", variantId = "") {
+  const found = entryId && variantId ? findKnowledgeVariant(entryId, variantId) : null;
+  const form = $("#knowledgeEditorForm");
+  form.reset();
+  $("#knowledgeEntryId").value = found?.entry.id || "";
+  $("#knowledgeVariantId").value = found?.variant.id || "";
+  $("#knowledgeKind").value = found?.entry.kind || "slang";
+  $("#knowledgeTitleField").value = found?.entry.title || "";
+  $("#knowledgeContent").value = found?.variant.content || "";
+  $("#knowledgeAliases").value = (found?.entry.aliases || []).join("，");
+  $("#knowledgeScopeType").value = found?.variant.scope?.type || "global";
+  $("#knowledgeGroupId").value = found?.variant.scope?.groupId || "";
+  $("#knowledgeGroupName").value = found?.variant.scope?.groupName || "";
+  $("#knowledgeUserId").value = found?.variant.scope?.userId || "";
+  $("#knowledgeUserName").value = found?.variant.scope?.userName || "";
+  $("#knowledgeKind").disabled = Boolean(found);
+  $("#knowledgeScopeType").disabled = Boolean(found);
+  $("#knowledgeGroupId").readOnly = Boolean(found);
+  $("#knowledgeUserId").readOnly = Boolean(found);
+  $("#knowledgeEditorTitle").textContent = t(found ? "knowledgeEditorTitleEdit" : "knowledgeEditorTitleNew");
+  syncKnowledgeEditorScope();
+  const dialog = $("#knowledgeEditorDialog");
+  dialog.showModal();
+  requestAnimationFrame(() => $("#knowledgeTitleField").focus());
+}
+
+async function deleteKnowledge(entryId, variantId, control) {
+  const found = findKnowledgeVariant(entryId, variantId);
+  if (!found) return;
+  if (!await confirmAction(t("deleteKnowledgeTitle"), t("deleteKnowledgeMessage", { value: found.entry.title }))) return;
+  const response = await mutate(() => api("/api/qq/knowledge", {
+    method: "POST",
+    body: JSON.stringify({ action: "delete", entryId, variantId })
+  }), { control, success: t("knowledgeDeleted"), busyKey: "knowledge" }).catch(() => null);
+  if (!response) return;
+  app.memory = response;
+  app.selectedKnowledgeEntryId = "";
+  app.selectedKnowledgeVariantId = "";
+  persistDashboardUiState();
+  renderKnowledge();
+}
+
 function confirmAction(title, message) {
   const dialog = $("#confirmDialog");
   $("#confirmTitle").textContent = title;
@@ -1537,6 +1810,7 @@ const icons = {
   pulse: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 13h4l2-6 4 11 2-6h6"/></svg>',
   activity: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18V9m5 9V5m5 13v-7m5 7V3"/></svg>',
   memory: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7c0-2 3-3 7-3s7 1 7 3-3 3-7 3-7-1-7-3Zm0 0v5c0 2 3 3 7 3s7-1 7-3V7m-14 5v5c0 2 3 3 7 3s7-1 7-3v-5"/></svg>',
+  knowledge: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A3.5 3.5 0 0 1 7.5 2H20v17H7.5A3.5 3.5 0 0 0 4 22V5.5Zm0 0A3.5 3.5 0 0 1 7.5 9H20M9 5.5h7"/></svg>',
   logs: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14M5 10h14M5 15h9M5 20h6"/></svg>',
   trace: '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="6" r="2"/><circle cx="18" cy="18" r="2"/><path d="M8 6h4a3 3 0 0 1 3 3v6m-6 3h7"/></svg>',
   shieldCheck: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 20 6v5c0 4.8-3.1 8.3-8 10-4.9-1.7-8-5.2-8-10V6l8-3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>',
@@ -1560,6 +1834,7 @@ function getCommands() {
     { id: "view-channels", label: t("navChannels"), hint: t("actionChannelsHint"), icon: icons.channels, keywords: "qq onebot group 通道 群 白名单" },
     { id: "view-intelligence", label: t("navIntelligence"), hint: t("actionIntelligenceHint"), icon: icons.activity, keywords: "bot behavior proactive learning enhancer 行为 主动 学习 增强" },
     { id: "view-memory", label: t("navMemory"), hint: t("actionMemoryHint"), icon: icons.memory, keywords: "context recall search 记忆 上下文 搜索" },
+    { id: "view-knowledge", label: t("navKnowledge"), hint: t("actionKnowledgeHint"), icon: icons.knowledge, keywords: "knowledge slang long-term memory 知识 黑话 长期记忆" },
     { id: "view-activity", label: t("navActivity"), hint: t("actionLogsHint"), icon: icons.logs, keywords: "logs trace debug 日志 追踪 调试" },
     { id: "view-settings", label: t("navSettings"), hint: t("actionSettingsHint"), icon: icons.settings, keywords: "preferences language refresh 设置 主题 语言" },
     { id: "refresh", label: t("actionRefresh"), hint: t("actionRefreshHint"), icon: icons.refresh, keywords: "reload sync 刷新 同步" },
@@ -1682,6 +1957,42 @@ document.addEventListener("click", async (event) => {
     }
     return;
   }
+  const newKnowledge = event.target.closest("[data-new-knowledge]");
+  if (newKnowledge) { openKnowledgeEditor(); return; }
+  const knowledgeKind = event.target.closest("[data-knowledge-kind]");
+  if (knowledgeKind) {
+    app.knowledgeKind = knowledgeKind.dataset.knowledgeKind;
+    $("#knowledgeKindFilter").value = app.knowledgeKind;
+    persistDashboardUiState();
+    renderKnowledge();
+    return;
+  }
+  const knowledgeScope = event.target.closest("[data-knowledge-scope]");
+  if (knowledgeScope) {
+    app.knowledgeScope = knowledgeScope.dataset.knowledgeScope;
+    $("#knowledgeScopeFilter").value = app.knowledgeScope;
+    persistDashboardUiState();
+    renderKnowledge();
+    return;
+  }
+  const editKnowledge = event.target.closest("[data-edit-knowledge]");
+  if (editKnowledge) {
+    openKnowledgeEditor(editKnowledge.dataset.editKnowledge, editKnowledge.dataset.knowledgeVariant);
+    return;
+  }
+  const removeKnowledge = event.target.closest("[data-delete-knowledge]");
+  if (removeKnowledge) {
+    await deleteKnowledge(removeKnowledge.dataset.deleteKnowledge, removeKnowledge.dataset.knowledgeVariant, removeKnowledge);
+    return;
+  }
+  const knowledgeEntry = event.target.closest("[data-knowledge-entry][data-knowledge-variant]");
+  if (knowledgeEntry) {
+    app.selectedKnowledgeEntryId = knowledgeEntry.dataset.knowledgeEntry;
+    app.selectedKnowledgeVariantId = knowledgeEntry.dataset.knowledgeVariant;
+    persistDashboardUiState();
+    renderKnowledge();
+    return;
+  }
   const logButton = event.target.closest("[data-log-index]");
   if (logButton && app.logs) {
     const entries = app.logs.entries || [];
@@ -1781,6 +2092,62 @@ $("#memorySearch").addEventListener("input", (event) => {
   persistDashboardUiState();
   clearTimeout(memorySearchTimer);
   memorySearchTimer = setTimeout(renderMemory, 100);
+});
+let knowledgeSearchTimer = null;
+$("#knowledgeSearch").addEventListener("input", (event) => {
+  app.knowledgeQuery = event.target.value;
+  persistDashboardUiState();
+  clearTimeout(knowledgeSearchTimer);
+  knowledgeSearchTimer = setTimeout(renderKnowledge, 100);
+});
+$("#knowledgeKindFilter").addEventListener("change", (event) => {
+  app.knowledgeKind = event.target.value;
+  persistDashboardUiState();
+  renderKnowledge();
+});
+$("#knowledgeScopeFilter").addEventListener("change", (event) => {
+  app.knowledgeScope = event.target.value;
+  persistDashboardUiState();
+  renderKnowledge();
+});
+$("#knowledgeSort").addEventListener("change", (event) => {
+  app.knowledgeSort = event.target.value;
+  persistDashboardUiState();
+  renderKnowledge();
+});
+$("#knowledgeScopeType").addEventListener("change", syncKnowledgeEditorScope);
+$("#knowledgeEditorDialog").addEventListener("click", (event) => { if (event.target === event.currentTarget) event.currentTarget.close(); });
+$$("[data-close-knowledge-editor]").forEach((button) => button.addEventListener("click", () => $("#knowledgeEditorDialog").close()));
+$("#knowledgeEditorForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const entryId = $("#knowledgeEntryId").value;
+  const variantId = $("#knowledgeVariantId").value;
+  const body = {
+    action: "upsert",
+    entryId: entryId || undefined,
+    variantId: variantId || undefined,
+    kind: $("#knowledgeKind").value,
+    title: $("#knowledgeTitleField").value,
+    content: $("#knowledgeContent").value,
+    aliases: $("#knowledgeAliases").value,
+    scopeType: $("#knowledgeScopeType").value,
+    groupId: $("#knowledgeGroupId").value,
+    groupName: $("#knowledgeGroupName").value,
+    userId: $("#knowledgeUserId").value,
+    userName: $("#knowledgeUserName").value
+  };
+  const response = await mutate(() => api("/api/qq/knowledge", { method: "POST", body: JSON.stringify(body) }), {
+    control: event.submitter,
+    success: t("knowledgeSaved"),
+    busyKey: "knowledge"
+  }).catch(() => null);
+  if (!response) return;
+  app.memory = response;
+  app.selectedKnowledgeEntryId = response.mutation?.entryId || entryId;
+  app.selectedKnowledgeVariantId = response.mutation?.variantId || variantId;
+  persistDashboardUiState();
+  $("#knowledgeEditorDialog").close();
+  renderKnowledge();
 });
 $("#memoryView").addEventListener("change", async (event) => {
   const input = event.target.closest("[data-unified-setting]");
@@ -1921,7 +2288,7 @@ setInterval(() => {
   if (!app.autoRefresh) return;
   if (!app.controllers.has("state") && now - app.lastFetch.state >= base) void refreshState({ quiet: true }).catch(() => undefined);
   if (["overview", "channels", "intelligence", "settings"].includes(app.view) && !app.controllers.has("maintenance") && now - app.lastFetch.maintenance >= base) void refreshMaintenance({ quiet: true }).catch(() => undefined);
-  if (app.view === "memory" && !app.controllers.has("memory") && now - app.lastFetch.memory >= base) void refreshMemory({ quiet: true }).catch(() => undefined);
+  if (["memory", "knowledge"].includes(app.view) && !app.controllers.has("memory") && now - app.lastFetch.memory >= base) void refreshMemory({ quiet: true }).catch(() => undefined);
 }, 1_000);
 
 restoreDashboardUiState();

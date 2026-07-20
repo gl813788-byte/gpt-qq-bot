@@ -3,9 +3,11 @@ import { open, readdir, stat } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
   compactLogDisplayText,
+  formatLogDetailValue as localizeLogDetailValue,
   formatLogDetailText,
   formatLogError,
-  formatLogMessage
+  formatLogMessage,
+  getLogDetailLabel
 } from "../src/log-presentation.js";
 import { summarizeProcessDiagnostics } from "../src/process-diagnostics.js";
 
@@ -450,7 +452,19 @@ function formatInterestDetails(details, options) {
 }
 
 function formatGenericDetails(details, options) {
-  const compactKeys = new Set(["durationMs", "totalDurationMs", "resultCount", "status", "outcome", "code", "error", "reason", "url"]);
+  const compactKeys = new Set([
+    "durationMs", "totalDurationMs", "modelDurationMs", "modelTemperature", "resultCount", "status", "outcome", "code", "error", "reason", "url",
+    "source", "action", "operation", "scopeType", "scopeId", "entryId", "variantId", "title", "titles", "matchedTerms",
+    "appliedCount", "rejectedCount", "removedCount", "entryCount", "scopeCount", "titleCount", "slangCount", "variantCount",
+    "matchedTitleCount", "recordedHitCount", "contextExtendedCount", "hitCount", "totalHits", "recentHits", "retainedOccurrenceCount",
+    "deleted", "modelDecision", "modelOutput", "outputChars", "outputTruncated",
+    "reviewPipeline", "reviewStage", "interestRecommendation", "interestComplexity", "interestEvidenceConcerns", "interestModelOutput",
+    "mainModel", "mainModelDurationMs", "mainModelDecision", "mainModelOutput",
+    "contentMode", "researchRounds", "researchToolCalls", "researchToolKinds", "researchQueries", "failedToolCalls",
+    "proactiveKind", "interestGateRequired", "interestGateApproved", "interestGateProvider", "interestGateModel", "interestGateTask", "mainContentRequired",
+    "topicStartShouldStart", "topicStartMode", "topicStartInterest", "topicStartReason", "topicStartJudgeProvider", "topicStartJudgeModel", "topicStartJudgeDurationMs",
+    "privateStartShouldStart", "privateStartInterest", "privateStartReason", "privateStartJudgeProvider", "privateStartJudgeModel", "privateStartJudgeDurationMs", "spontaneityRoll"
+  ]);
   const parts = [];
   for (const [key, value] of Object.entries(details)) {
     if (value == null || value === "") continue;
@@ -523,87 +537,7 @@ function compactText(value, maxLength) {
 }
 
 function detailLabel(key) {
-  return {
-    query: "查询",
-    provider: "厂商",
-    providers: "厂商顺序",
-    preset: "预设",
-    durationMs: "用时",
-    totalDurationMs: "总用时",
-    rememberDurationMs: "记忆用时",
-    decisionDurationMs: "路由用时",
-    generationDurationMs: "生成用时",
-    sendDurationMs: "发送用时",
-    memoryDurationMs: "落盘用时",
-    timeoutMs: "总超时",
-    attemptTimeoutMs: "单次超时",
-    resultCount: "结果数",
-    shouldReply: "是否回复",
-    ruleScore: "规则分",
-    directness: "直呼",
-    likedTopicScore: "偏好分",
-    contextScore: "上下文分",
-    penalty: "惩罚分",
-    labels: "命中标签",
-    blockers: "阻断原因",
-    judgeEnabled: "模型判定",
-    judgeProvider: "判定厂商",
-    judgeModel: "判定模型",
-    judgeApiKeyConfigured: "模型 Key",
-    modelShouldReply: "模型是否回复",
-    modelInterest: "模型兴趣",
-    modelSemanticIntent: "模型语义判断",
-    modelReason: "模型理由",
-    modelReplyStyle: "回复风格",
-    modelDurationMs: "模型用时",
-    modelStatus: "模型状态",
-    modelFinishReason: "模型结束原因",
-    modelStreamedTokenChunks: "模型流式片段",
-    modelReasoningLength: "模型推理字符",
-    modelAttemptCount: "模型请求次数",
-    modelFormatRetryCount: "模型格式重试",
-    modelStructuredOutput: "模型结构化输出",
-    modelError: "模型错误",
-    triggerMode: "触发方式",
-    messageCount: "待检查消息",
-    judgeEveryMessages: "消息间隔",
-    judgeEveryMinutes: "分钟间隔",
-    messageCountRemaining: "下轮剩余",
-    results: "结果详情",
-    title: "标题",
-    url: "链接",
-    snippet: "摘要",
-    reason: "触发原因",
-    status: "状态",
-    rawProvider: "厂商代码",
-    text: "消息内容",
-    textLength: "消息长度",
-    messageType: "消息类型",
-    source: "来源",
-    senderName: "发送者昵称",
-    imageCount: "图片数",
-    image: "图片",
-    hasReply: "是否引用",
-    isAt: "是否@机器人",
-    atTargets: "@目标",
-    error: "错误",
-    diagnostic: "诊断摘要",
-    diagnosticLines: "诊断明细",
-    diagnosticOmittedLines: "已省略行数",
-    providerErrors: "厂商错误",
-    groupId: "群",
-    senderId: "发送者",
-    messageId: "消息",
-    channel: "通道",
-    enabled: "是否开启",
-    selfId: "机器人 QQ",
-    nickname: "机器人昵称",
-    postType: "事件类型",
-    noticeType: "通知类型",
-    logFile: "日志文件",
-    url: "地址",
-    dedupeKey: "去重标识"
-  }[key] || key;
+  return getLogDetailLabel(key, "zh");
 }
 
 function formatSearchResult(result, index) {
@@ -664,6 +598,8 @@ function formatDetailValue(value, key = "") {
 
 function humanDetailValue(key, value) {
   const text = humanError(value);
+  const localized = localizeLogDetailValue(text, key, "zh");
+  if (localized !== text) return localized;
   if (key === "messageType") {
     return {
       group: "群消息",

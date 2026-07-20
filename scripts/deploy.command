@@ -3,6 +3,7 @@ set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 NCC_SOURCE="$PROJECT_DIR/scripts/ncc.command"
+BOOTSTRAP_SCRIPT="$PROJECT_DIR/scripts/bootstrap-environment.sh"
 LOCAL_BIN="$HOME/.local/bin"
 NCC_TARGET_USER="$LOCAL_BIN/ncc"
 NCC_TARGET_SYSTEM="/usr/local/bin/ncc"
@@ -231,9 +232,10 @@ main() {
   log "开始部署 Codex QQ Bot。"
   log "项目目录：$PROJECT_DIR"
   mark_fresh_setup_pending
-  ensure_basic_tools
-  ensure_node
-  ensure_codex
+  [ -f "$BOOTSTRAP_SCRIPT" ] || die "找不到环境自举器：$BOOTSTRAP_SCRIPT"
+  log "自动补齐基础工具、Node.js 20+、Codex CLI，以及受支持平台上的 NapCat/OneBot 运行环境。"
+  bash "$BOOTSTRAP_SCRIPT" --all
+  export PATH="$HOME/.local/share/codex-qq-bot/node/bin:$HOME/.local/bin:$PATH"
   ensure_project_files
   write_local_env_defaults
   ensure_npm_ready

@@ -99,6 +99,20 @@ Minimal configuration:
 
 The dashboard Intelligence view can persist the enhancer, web lookup, proactive-interest and judge switches plus message/minute cadence, judge model, idle timeout and recent-context size. Explicit @Bot replies do not depend on proactive interest. Switch models only to entries currently advertised by the active Codex login.
 
+## One-click deployment environment
+
+These variables control installation only; they are not Hub runtime configuration:
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `CODEX_QQ_BOT_INSTALL_NAPCAT` | `auto` | `auto` installs on apt-get/dnf Linux, `required` rejects unsupported hosts, and `skip` reuses an external OneBot |
+| `CODEX_QQ_BOT_NODE_MAJOR` | `22` | Official Node.js major installed automatically; the result must satisfy Node 20+ |
+| `CODEX_QQ_BOT_BOOTSTRAP_CACHE_DIR` | `~/.cache/codex-qq-bot/bootstrap` | Node/NapCat bootstrap download cache |
+| `CODEX_QQ_BOT_MANAGED_NODE_HOME` | `~/.local/share/codex-qq-bot/node` | Project-managed Node.js directory |
+| `CODEX_QQ_BOT_NAPCAT_HOME` | `~/Napcat` | NapCat official rootless Shell directory |
+
+Use `--dry-run` to inspect the fresh-host plan without mutations and `--check` to report the current environment. Test-only `CODEX_QQ_BOT_BOOTSTRAP_FORCE_*` variables are not a user configuration interface.
+
 ## Core environment
 
 ### Hub and security

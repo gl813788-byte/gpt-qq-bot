@@ -1,5 +1,5 @@
 import { readLogEntries, summarizeLogEntries } from "./logger.js";
-import { formatLogError, formatLogMessage } from "./log-presentation.js";
+import { formatLogError, formatLogMessage, localizeLogDetails } from "./log-presentation.js";
 
 export async function buildLogsResponse(logFilePath, searchParams) {
   const limit = Number(searchParams.get("limit") || 100);
@@ -68,7 +68,17 @@ function compactEntry(entry) {
   const allowedKeys = new Set([
     "durationMs", "totalDurationMs", "rememberDurationMs", "decisionDurationMs", "generationDurationMs", "sendDurationMs", "memoryDurationMs", "timeoutMs",
     "resultCount", "status", "outcome", "code", "error", "reason", "decisionReason", "url", "diagnostic", "diagnosticOmittedLines",
-    "groupId", "senderId", "messageId", "messageType", "proactive", "triggerMode", "taskType", "queuedCount", "bubbleCount", "replyChars", "sendStatus"
+    "groupId", "senderId", "messageId", "messageType", "proactive", "triggerMode", "taskType", "queuedCount", "bubbleCount", "replyChars", "sendStatus",
+    "source", "action", "operation", "scopeType", "scopeId", "entryId", "variantId", "title", "titles", "matchedTerms",
+    "appliedCount", "rejectedCount", "removedCount", "entryCount", "scopeCount", "titleCount", "slangCount", "variantCount",
+    "matchedTitleCount", "recordedHitCount", "contextExtendedCount", "hitCount", "totalHits", "recentHits", "retainedOccurrenceCount",
+    "deleted", "modelDecision", "modelDurationMs", "modelTemperature", "modelOutput", "outputChars", "outputTruncated",
+    "reviewPipeline", "reviewStage", "interestRecommendation", "interestComplexity", "interestEvidenceConcerns", "interestModelOutput",
+    "mainModel", "mainModelDurationMs", "mainModelDecision", "mainModelOutput",
+    "contentMode", "researchRounds", "researchToolCalls", "researchToolKinds", "researchQueries", "failedToolCalls",
+    "proactiveKind", "interestGateRequired", "interestGateApproved", "interestGateProvider", "interestGateModel", "interestGateTask", "mainContentRequired",
+    "topicStartShouldStart", "topicStartMode", "topicStartInterest", "topicStartReason", "topicStartJudgeProvider", "topicStartJudgeModel", "topicStartJudgeDurationMs",
+    "privateStartShouldStart", "privateStartInterest", "privateStartReason", "privateStartJudgeProvider", "privateStartJudgeModel", "privateStartJudgeDurationMs", "spontaneityRoll"
   ]);
   for (const [key, value] of Object.entries(entry.details || {})) {
     if (!allowedKeys.has(key)) continue;
@@ -90,7 +100,8 @@ function presentEntry(entry) {
   return {
     ...entry,
     messageZh: formatLogMessage(entry.message, "zh"),
-    errorZh: error == null ? null : formatLogError(error, "zh")
+    errorZh: error == null ? null : formatLogError(error, "zh"),
+    detailsZh: localizeLogDetails(entry.details || {}, "zh")
   };
 }
 
