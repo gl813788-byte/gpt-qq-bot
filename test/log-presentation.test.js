@@ -112,3 +112,76 @@ test("private proactive gate details expose the model decision and human-like va
     拟人波动值: 0.08
   });
 });
+
+test("follow-up fusion logs use the existing Chinese detail style", () => {
+  assert.equal(formatLogMessage("QQ follow-up trigger entered fusion buffer"), "QQ 追问触发已进入融合缓冲");
+  assert.equal(formatLogMessage("Queued QQ messages steered into active turn"), "QQ 融合追问已一次性补充进当前回复");
+  assert.deepEqual(localizeLogDetails({
+    outcome: "steered",
+    action: "fuse-and-steer",
+    source: "qq-follow-up",
+    triggerMessageCount: 4,
+    compactedTriggerCount: 2,
+    contextMessageCount: 3,
+    inputBatchCount: 1,
+    triggerKinds: ["mention", "interest"],
+    fusionPreview: "消息一：继续说"
+  }), {
+    结果: "已融合补充",
+    操作: "融合后补充当前回答",
+    来源: "QQ 融合追问",
+    触发消息数: 4,
+    压缩后触发数: 2,
+    补充语境数: 3,
+    模型输入批次数: 1,
+    融合触发来源: ["@ 机器人", "兴趣模型选中"],
+    融合内容预览: "消息一：继续说"
+  });
+});
+
+test("QQ Codex session mode logs localize their field and values", () => {
+  assert.deepEqual(localizeLogDetails({
+    sessionMode: "auto",
+    persistent: "persistent",
+    temporary: "temporary",
+    inherit: "inherit"
+  }), {
+    会话模式: "自动",
+    persistent: "persistent",
+    temporary: "temporary",
+    inherit: "inherit"
+  });
+  assert.deepEqual(
+    ["persistent", "temporary", "inherit"].map((sessionMode) => (
+      localizeLogDetails({ sessionMode }).会话模式
+    )),
+    ["长期", "临时", "继承默认"]
+  );
+});
+
+test("stop-preservation and outgoing mention logs use Chinese detail fields", () => {
+  assert.equal(
+    formatLogMessage("QQ reply paused without resetting conversation"),
+    "QQ 当前回复已暂停，会话保持不变"
+  );
+  assert.equal(formatLogMessage("QQ outgoing mentions processed"), "QQ 回复 @ 目标已解析");
+  assert.deepEqual(localizeLogDetails({
+    outcome: "stopped",
+    action: "pause",
+    pendingReplyRemovedCount: 2,
+    contextPreserved: true,
+    codexSessionPreserved: true,
+    mentionCount: 1,
+    mentionTargets: ["10001"],
+    unresolvedMentions: []
+  }), {
+    结果: "已暂停",
+    操作: "暂停当前回复",
+    已取消待融合追问数: 2,
+    是否保留上下文: true,
+    "是否保留 Codex 会话": true,
+    "真实 @ 数": 1,
+    "真实 @ 目标": ["10001"],
+    "未解析 @ 文本": []
+  });
+});

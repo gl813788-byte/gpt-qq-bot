@@ -288,6 +288,99 @@ groups_menu() {
   pause
 }
 
+normalize_session_mode() {
+  case "${1:-}" in
+    auto|automatic|自动) printf 'auto\n' ;;
+    persistent|long|长期) printf 'persistent\n' ;;
+    temporary|temp|ephemeral|临时|一次性) printf 'temporary\n' ;;
+    inherit|default|继承|默认) printf 'inherit\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+show_session_modes() {
+  ensure_settings
+  if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 2 "${HUB_URL%/}/api/state" >/tmp/codex-qq-session-state.json 2>/dev/null; then
+    node - /tmp/codex-qq-session-state.json <<'NODE'
+const fs = require("fs");
+const state = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const session = state.qq?.codexSession || {};
+console.log(`默认模式：${session.defaultMode || "auto"}`);
+console.log(`长期线程：${session.activeThreads || 0}`);
+const scopes = Object.entries(session.scopes || {});
+console.log(scopes.length ? "范围覆盖：" : "范围覆盖：<无>");
+for (const [scopeId, mode] of scopes) console.log(`  ${scopeId}: ${mode}`);
+NODE
+    rm -f /tmp/codex-qq-session-state.json
+    return
+  fi
+  node - "$SETTINGS_FILE" <<'NODE'
+const fs = require("fs");
+const settings = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
+const session = settings.qq?.codexSession || {};
+console.log(`默认模式：${session.defaultMode || "auto"}`);
+const scopes = Object.entries(session.scopes || {});
+console.log(scopes.length ? "范围覆盖：" : "范围覆盖：<无>");
+for (const [scopeId, mode] of scopes) console.log(`  ${scopeId}: ${mode}`);
+NODE
+}
+
+set_session_mode() {
+  ensure_settings
+  local mode scope_id payload
+  mode="$(normalize_session_mode "${1:-}")" || die "会话模式只能是 auto、persistent、temporary 或 inherit。"
+  scope_id="${2:-}"
+  if [ "$mode" = "inherit" ] && [ -z "$scope_id" ]; then
+    die "inherit 必须指定群号或 private:QQ号。"
+  fi
+  if [ -n "$scope_id" ] && [[ ! "$scope_id" =~ ^[1-9][0-9]{4,12}$ && ! "$scope_id" =~ ^private:[1-9][0-9]{4,12}$ ]]; then
+    die "范围必须是 QQ 群号或 private:QQ号。"
+  fi
+  payload="$(MODE="$mode" SCOPE_ID="$scope_id" node - <<'NODE'
+const mode = process.env.MODE;
+const scopeId = process.env.SCOPE_ID;
+process.stdout.write(JSON.stringify(scopeId ? { mode, scopeId } : { mode }));
+NODE
+)"
+  if command -v curl >/dev/null 2>&1 && curl -fsS --max-time 2 "${HUB_URL%/}/api/state" >/dev/null 2>&1; then
+    curl -fsS --max-time 8 -X POST "${HUB_URL%/}/api/qq/session-mode" \
+      -H 'content-type: application/json' \
+      -d "$payload" >/dev/null
+  else
+    MODE="$mode" SCOPE_ID="$scope_id" node - "$SETTINGS_FILE" <<'NODE'
+const fs = require("fs");
+const file = process.argv[2];
+const data = JSON.parse(fs.readFileSync(file, "utf8"));
+const mode = process.env.MODE;
+const scopeId = process.env.SCOPE_ID;
+data.qq ||= {};
+data.qq.codexSession ||= { defaultMode: "auto", scopes: {} };
+data.qq.codexSession.scopes ||= {};
+if (!scopeId) data.qq.codexSession.defaultMode = mode;
+else if (mode === "inherit") delete data.qq.codexSession.scopes[scopeId];
+else data.qq.codexSession.scopes[scopeId] = mode;
+data.updatedAt = new Date().toISOString();
+fs.writeFileSync(file, `${JSON.stringify(data, null, 2)}\n`);
+NODE
+  fi
+  log "会话模式已保存：${scope_id:-默认} -> $mode"
+  show_session_modes
+}
+
+session_menu() {
+  show_session_modes
+  printf '\n模式 auto/persistent/temporary（直接回车只查看）：'
+  read -r mode || true
+  [ -n "${mode:-}" ] || {
+    pause
+    return
+  }
+  printf '群号或 private:QQ号（留空修改默认模式）：'
+  read -r scope_id || true
+  set_session_mode "$mode" "${scope_id:-}"
+  pause
+}
+
 branding_menu() {
   local should_pause="${1:-1}"
   ensure_settings
@@ -419,12 +512,13 @@ Codex QQ Bot 控制中心（ncc）
 2) QQ / OneBot 配置
 3) 设置主人 QQ 号
 4) 设置 QQ 群白名单
-5) 设置助手名称和 @ 别名
-6) 初始化/刷新联网搜索配置
-7) 启动 Hub
-8) 状态检查
-9) 打开 Hub API 状态
-10) 查看日志
+5) QQ 会话模式（自动/长期/临时）
+6) 设置助手名称和 @ 别名
+7) 初始化/刷新联网搜索配置
+8) 启动 Hub
+9) 状态检查
+10) 打开 Hub API 状态
+11) 查看日志
 0) 退出
 MENU
     printf '\n请选择：'
@@ -434,12 +528,13 @@ MENU
       2) qq_menu ;;
       3) owner_menu ;;
       4) groups_menu ;;
-      5) branding_menu ;;
-      6) search_config; pause ;;
-      7) start_hub; pause ;;
-      8) show_status; pause ;;
-      9) open_hub_api; pause ;;
-      10) print_logs; pause ;;
+      5) session_menu ;;
+      6) branding_menu ;;
+      7) search_config; pause ;;
+      8) start_hub; pause ;;
+      9) show_status; pause ;;
+      10) open_hub_api; pause ;;
+      11) print_logs; pause ;;
       0|q|quit|exit) break ;;
       *) log "未知选项。"; pause ;;
     esac
@@ -454,6 +549,8 @@ case "${1:-menu}" in
   qq) qq_menu ;;
   owner) owner_menu ;;
   groups) groups_menu ;;
+  session) show_session_modes ;;
+  session-mode) set_session_mode "${2:-}" "${3:-}" ;;
   branding) branding_menu ;;
   search-config) search_config ;;
   start) start_hub ;;
@@ -461,7 +558,7 @@ case "${1:-menu}" in
   logs) shift; print_logs "$@" ;;
   help|-h|--help)
     cat <<EOF
-用法：ncc [menu|first-run|status|codex-login|qq|owner|groups|branding|search-config|start|open|logs]
+用法：ncc [menu|first-run|status|codex-login|qq|owner|groups|session|session-mode MODE [SCOPE]|branding|search-config|start|open|logs]
 首次直接运行 ncc：自动检测环境、安装依赖、验证并填写配置；完成后再运行为常规功能菜单。
 日志：ncc logs [--tail N] [-f] [--level LEVELS|--errors] [--category NAMES] [--trace ID] [--group ID] [--sender ID] [--search TEXT] [--since 30m|ISO] [--until ISO] [--slow [MS]] [--summary] [--json] [--all] [--verbose|--compact] [--plain|--color]
 项目目录：$PROJECT_DIR
@@ -469,7 +566,7 @@ EOF
     ;;
   *)
     cat <<EOF
-用法：ncc [menu|first-run|status|codex-login|qq|owner|groups|branding|search-config|start|open|logs]
+用法：ncc [menu|first-run|status|codex-login|qq|owner|groups|session|session-mode MODE [SCOPE]|branding|search-config|start|open|logs]
 日志：ncc logs [--tail N] [-f] [--level LEVELS|--errors] [--category NAMES] [--trace ID] [--group ID] [--sender ID] [--search TEXT] [--since 30m|ISO] [--until ISO] [--slow [MS]] [--summary] [--json] [--all] [--verbose|--compact] [--plain|--color]
 项目目录：$PROJECT_DIR
 EOF

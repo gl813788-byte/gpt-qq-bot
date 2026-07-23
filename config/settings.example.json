@@ -65,6 +65,10 @@
           "123456789"
         ]
       }
+    },
+    "codexSession": {
+      "defaultMode": "auto",
+      "scopes": {}
     }
   },
   "ai": {

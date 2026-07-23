@@ -55,6 +55,14 @@ const messageTranslationsZh = Object.freeze({
   "QQ reply lifecycle completed": "QQ 回复流程完成",
   "QQ reply post-processing failed": "QQ 回复后处理失败",
   "Unable to process queued QQ replies": "处理排队中的 QQ 回复失败",
+  "QQ follow-up trigger entered fusion buffer": "QQ 追问触发已进入融合缓冲",
+  "Queued QQ messages steered into active turn": "QQ 融合追问已一次性补充进当前回复",
+  "Queued QQ messages kept for follow-up after steering was unavailable": "当前回复无法接收融合补充，追问已保留到发送前合并",
+  "QQ pending follow-ups fused before send": "QQ 待处理追问已在发送前融合",
+  "QQ pending follow-ups kept after send-time fusion failed": "发送前融合失败，QQ 追问已保留",
+  "QQ Codex session mode updated": "QQ Codex 会话模式已更新",
+  "QQ reply paused without resetting conversation": "QQ 当前回复已暂停，会话保持不变",
+  "QQ outgoing mentions processed": "QQ 回复 @ 目标已解析",
   "Unable to prepare QQ image": "准备 QQ 图片失败",
   "Unable to prepare QQ image for vision": "准备 QQ 视觉图片失败",
   "Unable to inspect QQ sticker animation": "检查 QQ 动图表情失败",
@@ -98,6 +106,8 @@ const messageTranslationsZh = Object.freeze({
   "Codex CLI timed out": "Codex CLI 执行超时",
   "Codex CLI failed to start": "Codex CLI 启动失败",
   "Codex CLI exited with non-zero status": "Codex CLI 异常退出",
+  "Codex app-server turn finished": "Codex 可引导回复轮次完成",
+  "Codex app-server turn failed": "Codex 可引导回复轮次失败",
   "QQ Codex generation stopped": "QQ Codex 生成已停止",
   "Codex quota background refresh failed": "Codex 用量后台刷新失败",
   "Unable to load Codex model catalog": "加载 Codex 模型列表失败",
@@ -134,6 +144,10 @@ const detailLabelsZh = Object.freeze({
   schemaVersion: "结构版本",
   traceId: "链路",
   spanId: "片段",
+  generationId: "生成任务",
+  threadId: "Codex 会话",
+  turnId: "Codex 轮次",
+  sessionMode: "会话模式",
   parentSpanId: "父片段",
   action: "操作",
   operation: "操作",
@@ -151,6 +165,27 @@ const detailLabelsZh = Object.freeze({
   groupName: "群名",
   senderId: "发送者",
   senderName: "发送者昵称",
+  queuedCount: "合并消息数",
+  consumedCount: "已引导消息数",
+  triggerMessageCount: "触发消息数",
+  compactedTriggerCount: "压缩后触发数",
+  contextMessageCount: "补充语境数",
+  pendingReplyRemovedCount: "已取消待融合追问数",
+  contextPreserved: "是否保留上下文",
+  codexSessionPreserved: "是否保留 Codex 会话",
+  inputBatchCount: "模型输入批次数",
+  inputImageCount: "随批图片数",
+  triggerKind: "本次触发来源",
+  triggerKinds: "融合触发来源",
+  mentionCount: "真实 @ 数",
+  mentionTargets: "真实 @ 目标",
+  mentionLabels: "模型填写的 @ 名称",
+  unresolvedMentions: "未解析 @ 文本",
+  memberLookupError: "群成员查询错误",
+  fusionPreview: "融合内容预览",
+  fusionDelayMs: "融合静默窗口",
+  fusionMaxDelayMs: "融合最长等待",
+  fusionRound: "发送前融合轮次",
   userId: "QQ 用户",
   userName: "QQ 昵称",
   scopeId: "记忆范围",
@@ -400,7 +435,9 @@ const detailLabelsZh = Object.freeze({
 const detailValuesZh = Object.freeze({
   action: {
     list: "列出", search: "搜索", view: "查看", status: "查看状态", add: "添加", added: "添加",
-    edit: "修改", updated: "更新", confirmed: "确认", delete: "删除", deleted: "删除", clear: "清空"
+    edit: "修改", updated: "更新", confirmed: "确认", delete: "删除", deleted: "删除", clear: "清空", pause: "暂停当前回复",
+    "fusion-buffer": "进入追问融合缓冲", "fuse-and-steer": "融合后补充当前回答",
+    "fuse-before-send": "发送前统一融合"
   },
   operation: {
     list: "列出", search: "搜索", view: "查看", status: "查看状态", add: "添加", edit: "修改", delete: "删除", clear: "清空"
@@ -409,7 +446,8 @@ const detailValuesZh = Object.freeze({
     loaded: "已加载", created: "已新建", updated: "已更新", rejected: "已拒绝", unchanged: "无变化", recorded: "已记录",
     duplicate: "重复记录", "no-match": "没有命中", completed: "已完成", kept: "已保留", deleted: "已删除",
     failed: "失败", blocked: "已进入只读保护", persisted: "已保存", cleared: "已清除", submitted: "已提交",
-    approved: "已批准启动", declined: "继续保持沉默",
+    approved: "已批准启动", declined: "继续保持沉默", queued: "等待融合", steered: "已融合补充",
+    started: "已开始", stopped: "已暂停",
     superseded: "候选已变化", "kept_due_to_activity": "因新活动而保留", "candidate-selected": "已选出候选", "no-candidate": "没有候选"
   },
   source: {
@@ -417,7 +455,7 @@ const detailValuesZh = Object.freeze({
     "chat-summary": "手动聊天总结", "periodic-scope-summary": "周期范围总结",
     "conversation-impression": "对话印象总结", "legacy-public-memory": "旧公共记忆",
     "qq-message": "QQ 消息", dashboard: "仪表盘", "new-dialog": "新对话", stop: "停止回复",
-    "frequency-review": "低频删除审核", persistence: "持久化"
+    "frequency-review": "低频删除审核", persistence: "持久化", "qq-follow-up": "QQ 融合追问"
   },
   kind: { slang: "黑话", note: "普通知识", unknown: "未知" },
   type: {
@@ -449,6 +487,26 @@ const detailValuesZh = Object.freeze({
     "qq-self-persona": "QQ 自我人格总结", "qq-file-task": "QQ 文件任务", "qq-image-generation": "QQ 图片生成"
   },
   triggerMode: { message: "消息数", time: "分钟", explicit: "@ 或回复", message_count: "消息数", minute_interval: "分钟" },
+  triggerKind: {
+    mention: "@ 机器人",
+    reply: "回复机器人",
+    interest: "兴趣模型选中",
+    private: "私聊触发",
+    other: "其他响应规则"
+  },
+  triggerKinds: {
+    mention: "@ 机器人",
+    reply: "回复机器人",
+    interest: "兴趣模型选中",
+    private: "私聊触发",
+    other: "其他响应规则"
+  },
+  sessionMode: {
+    auto: "自动",
+    persistent: "长期",
+    temporary: "临时",
+    inherit: "继承默认"
+  },
   contentMode: {
     interest_research: "兴趣联网探索后开话题",
     interest_chatter: "兴趣模型批准轻量水群",

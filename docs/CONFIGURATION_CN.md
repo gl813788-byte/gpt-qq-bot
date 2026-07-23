@@ -67,6 +67,13 @@ npm run ncc -- setup
         "summary": true
       },
       "userCommands": {}
+    },
+    "codexSession": {
+      "defaultMode": "auto",
+      "scopes": {
+        "QQ群号": "persistent",
+        "private:QQ号": "temporary"
+      }
     }
   },
   "ai": {
@@ -92,6 +99,8 @@ npm run ncc -- setup
 | `qq.webLookup.enabled` | QQ 联网查询运行时开关；可由网页端持久化修改 |
 | `qq.proactive.*` | 普通消息/分钟兴趣触发与 judge 配置 |
 | `qq.commandPermissions` | 非主人可见且可执行的公共/用户级指令 |
+| `qq.codexSession.defaultMode` | 未单独覆盖 scope 的 `auto` / `persistent` / `temporary` 默认模式 |
+| `qq.codexSession.scopes` | 按群号或 `private:QQ号` 覆盖会话模式；线程 ID 不写入设置文件 |
 | `ai.*` | QQ 使用的模型和思考强度 |
 | `unifiedMemory.*` | 自动写入与手动交接策略 |
 | `branding.*` | 助手名称、主人称呼和 @ 别名 |
@@ -100,6 +109,8 @@ npm run ncc -- setup
 | `network.apiToken` | 自动生成的远程管理 token；真实值只能保留在未跟踪本机设置或环境中 |
 
 网页端“智能行为”页可持久化修改 `qq.enhancer.enabled`、`qq.webLookup.enabled`、主动兴趣开关、判定开关、消息/分钟间隔、判定模型、静默超时和最近上下文数量。显式 @ Bot 的正常回复不依赖主动兴趣开关。模型切换应使用当前 Codex 登录实际提供的模型列表；不要把历史模型名当成永久可用值。
+
+主人可在 QQ 使用 `/会话模式` 和 `/会话模式 自动|长期|临时` 修改当前群/私聊。管理 API 为 `POST /api/qq/session-mode`，请求体为 `{"mode":"auto|persistent|temporary","scopeId":"可选群号或 private:QQ号"}`；scope 使用 `inherit` 可删除覆盖。仓库控制器使用 `npm run ncc -- session` 与 `npm run ncc -- session-mode MODE [SCOPE]`，支持该能力的全局控制器使用相同命令名。实际线程映射单独保存在 `data/qq-codex-sessions.json`，`/新对话` 只停止复用当前映射，不删除 Codex CLI 自身的历史文件。
 
 ## 一键部署环境变量
 

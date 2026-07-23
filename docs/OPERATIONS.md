@@ -14,8 +14,8 @@ The public installer refreshes the latest commit on the repository's default bra
 
 | Entry | Purpose | Common commands |
 | --- | --- | --- |
-| `npm run ncc -- <command>` | Public repository setup/status helper | `setup`, `status`, `codex-login`, `qq`, `owner`, `groups`, `branding`, `search-config`, `start`, `open`, `logs` |
-| Global `ncc` | A machine-specific NapCat + Hub lifecycle controller | Run `ncc help` first; this machine may offer `all`, `napcat`, `hub`, `connect`, `stop-hub` |
+| `npm run ncc -- <command>` | Public repository setup/status helper | `setup`, `status`, `qq`, `groups`, `session`, `session-mode`, `start`, `logs`, and others |
+| Global `ncc` | A machine-specific NapCat + Hub lifecycle controller | Run `ncc help` first; this machine may offer `all`, `connect`, `session`, `session-mode`, and `stop-hub` |
 
 Public instructions use `npm run ncc -- ...` so deployment does not overwrite an existing global controller with the same name.
 
@@ -64,6 +64,18 @@ ncc connect
 ```
 
 `ncc all` starts NapCat and Hub. After the user scans QQ, Codex runs `ncc connect`. Do not mix arguments between the global and repository controllers.
+
+Session mode can be managed from the QQ menu or `ncc`:
+
+```bash
+npm run ncc -- session
+npm run ncc -- session-mode auto
+npm run ncc -- session-mode persistent GROUP_ID
+npm run ncc -- session-mode temporary private:QQ_ID
+npm run ncc -- session-mode inherit GROUP_ID
+```
+
+On supporting machine-specific controllers, use `ncc session` and `ncc session-mode ...`. Omitting scope changes the default; a group ID or `private:QQ_ID` changes an override. A running Hub persists through `/api/qq/session-mode`; offline control safely updates `data/settings.json` for the next start.
 
 ## Restart catch-up for recurring behavior
 
@@ -125,7 +137,7 @@ curl -fsS 'http://127.0.0.1:3789/api/logs?limit=100&level=error,warn' | jq .
 curl -fsS 'http://127.0.0.1:3789/api/logs?category=interest&group=GROUP_ID' | jq .
 ```
 
-Useful categories include `system`, `web`, `onebot`, `qq`, `codex`, `search`, `interest`, `learning`, `memory` and `lifecycle`. Start with a trace to follow one reply through routing, judging, search, Codex and delivery.
+Useful categories include `system`, `web`, `onebot`, `qq`, `codex`, `search`, `interest`, `learning`, `memory` and `lifecycle`. Start with a trace to follow one reply through routing, judging, search, Codex and delivery. Follow-up fusion uses the `qq` category and the same colored localized presentation for buffer entry, one-shot active-turn steering, send-time fallback, and retained failures. Verbose details show trigger sources, raw and compacted counts, selected context, image count, and a bounded preview; locate them with `--group`, `--trace`, or `--search fusion`.
 
 The dashboard separates Overview, Channels, Intelligence, Memory, Live Logs and Settings instead of stacking every feature on one page. Channels only manages connections, allowlists and contacts. Intelligence displays and persistently controls the Bot enhancer, web lookup, proactive interest, model provider and judge tuning, with safe diagnostics for the selected provider key, search provider, safe-download mode, active generations and pending replies. Behavior state uses independent desktop columns so a tall persona card does not leave a large hole in the other column, then returns to a natural single-column order on narrow screens.
 

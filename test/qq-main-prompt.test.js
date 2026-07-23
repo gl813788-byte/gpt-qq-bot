@@ -24,6 +24,7 @@ test("main-model core prompt presents one execution path and one dynamic style a
   assert.match(prompt, /任何进入主模型的聊天轮.*都不强制你发言/);
   assert.match(prompt, /重复骚扰.*已经觉得烦/);
   assert.match(prompt, /\[\[qq_silent\]\]/);
+  assert.match(prompt, /@准确昵称.*@QQ号.*真实 at 消息段/);
   assert.match(prompt, /qq_memory 格式/);
   assert.match(prompt, /当前日期.*2026-07-21/);
   assert.match(prompt, /长期群聊归纳本群实际的主要话题/);
@@ -41,6 +42,7 @@ test("main-model core prompt presents one execution path and one dynamic style a
   assert.match(noTools, /本轮没有内部工具循环/);
   assert.match(noTools, /不要输出 qq_command 标记/);
   assert.match(noTools, /不能仅凭旧知识或聊天说法标成已核验/);
+  assert.doesNotMatch(noTools, /真实 at 消息段/);
 });
 
 test("approved proactive prompts leave only wording to the main model", () => {

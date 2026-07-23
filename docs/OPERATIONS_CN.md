@@ -16,8 +16,8 @@
 
 | 入口 | 用途 | 通用命令 |
 | --- | --- | --- |
-| `npm run ncc -- <command>` | 公共仓库自带的配置/状态辅助脚本 | `setup`、`status`、`codex-login`、`qq`、`owner`、`groups`、`branding`、`search-config`、`start`、`open`、`logs` |
-| 全局 `ncc` | 当前机器可能安装的 NapCat + Hub 生命周期控制器 | 先运行 `ncc help`；本机版本可能有 `all`、`napcat`、`hub`、`connect`、`stop-hub` |
+| `npm run ncc -- <command>` | 公共仓库自带的配置/状态辅助脚本 | `setup`、`status`、`qq`、`groups`、`session`、`session-mode`、`start`、`logs` 等 |
+| 全局 `ncc` | 当前机器可能安装的 NapCat + Hub 生命周期控制器 | 先运行 `ncc help`；本机版本可能有 `all`、`connect`、`session`、`session-mode`、`stop-hub` |
 
 公共文档中的命令优先写成 `npm run ncc -- ...`，防止部署脚本覆盖已有全局控制器。
 
@@ -68,6 +68,18 @@ ncc connect
 ```
 
 `ncc all` 启动 NapCat 与 Hub；QQ 扫码完成后由 Codex执行 `ncc connect`。不要把仓库辅助脚本的参数传给这个全局控制器，反之亦然。
+
+会话模式可从 QQ 菜单或 `ncc` 调整：
+
+```bash
+npm run ncc -- session
+npm run ncc -- session-mode auto
+npm run ncc -- session-mode persistent 群号
+npm run ncc -- session-mode temporary private:QQ号
+npm run ncc -- session-mode inherit 群号
+```
+
+支持该功能的全局控制器使用 `ncc session` / `ncc session-mode ...`。省略 scope 修改默认模式；指定群号或 `private:QQ号` 修改覆盖。运行中的 Hub 通过 `/api/qq/session-mode` 立即持久化，Hub 停止时则安全修改 `data/settings.json`，下次启动生效。
 
 ## 周期行为的重启补做
 
@@ -129,7 +141,7 @@ curl -fsS 'http://127.0.0.1:3789/api/logs?limit=100&level=error,warn' | jq .
 curl -fsS 'http://127.0.0.1:3789/api/logs?category=interest&group=群号' | jq .
 ```
 
-常用分类：`system`、`web`、`onebot`、`qq`、`codex`、`search`、`interest`、`learning`、`memory` 和 `lifecycle`。优先按 trace 追踪一条完整回复，再看各阶段耗时和上游错误。
+常用分类：`system`、`web`、`onebot`、`qq`、`codex`、`search`、`interest`、`learning`、`memory` 和 `lifecycle`。优先按 trace 追踪一条完整回复，再看各阶段耗时和上游错误。融合追问使用 `qq` 分类，中文彩色标题依次显示进入缓冲、一次性补充活动轮次、发送前兜底或失败保留；详细字段包含触发来源、原始/压缩条数、补充语境数、图片数和限长预览，可用 `--group`、`--trace` 或 `--search 融合` 定位。
 
 仪表盘不再把所有功能堆在同一页，而是分成总览、通道、智能行为、记忆、实时日志和设置六个视图。通道页只处理连接、白名单和联系人；智能行为页显示并持久化 Bot 增强、联网、主动兴趣、模型厂商与判定参数，同时提供当前厂商 key、搜索 provider、安全下载模式、活动生成和待回复数量等安全诊断信息。行为状态采用独立双列流，较长的人设卡不会在另一列制造大片空白；窄屏恢复为自然单列顺序。
 

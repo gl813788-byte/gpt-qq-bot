@@ -30,6 +30,14 @@ export const qqCommandCatalog = [
   { key: "status", defaultPublic: false, configurable: true, menuLine: "/状态", aliases: ["状态", "status", "查看状态"] },
   { key: "config", defaultPublic: false, configurable: true, menuLine: "/详细配置", aliases: ["详细配置", "配置", "config", "settings", "详细状态"] },
   {
+    key: "session",
+    defaultPublic: false,
+    configurable: true,
+    menuLine: "/会话模式",
+    menuLines: ["/会话模式", "/会话模式 自动|长期|临时"],
+    aliases: ["会话模式", "长期会话", "临时会话", "自动会话", "session", "session-mode"]
+  },
+  {
     key: "interest",
     defaultPublic: false,
     configurable: true,

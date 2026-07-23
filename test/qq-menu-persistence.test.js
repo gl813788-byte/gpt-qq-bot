@@ -19,3 +19,25 @@ test("QQ menu settings are persisted before a reply send begins", async () => {
   assert.notEqual(sendIndex, -1);
   assert.ok(persistIndex < sendIndex);
 });
+
+test("/stop pauses only the active reply while /newdialog still clears conversation state", async () => {
+  const source = await readFile(new URL("../src/server.js", import.meta.url), "utf8");
+  const stopStart = source.indexOf("function stopQqGenerationForEvent(event)");
+  const stopEnd = source.indexOf("function preserveStoppedQqCodexSession", stopStart);
+  const stopBody = source.slice(stopStart, stopEnd);
+  assert.notEqual(stopStart, -1);
+  assert.notEqual(stopEnd, -1);
+  assert.match(stopBody, /qqReplySteering\.cancel\(scopeId\)/);
+  assert.match(stopBody, /delete state\.qq\.pendingReplies\[scopeId\]/);
+  assert.match(stopBody, /会话和上下文已保留/);
+  assert.doesNotMatch(stopBody, /clearQqContextForEvent/);
+
+  const commandStart = source.indexOf('if (isQqCommandAllowedForEvent("stop"');
+  const commandEnd = source.indexOf('if (isQqCommandAllowedForEvent("newDialog"', commandStart);
+  const stopCommand = source.slice(commandStart, commandEnd);
+  assert.doesNotMatch(stopCommand, /clearQqContextForEvent/);
+
+  const newDialogStart = commandEnd;
+  const newDialogEnd = source.indexOf('if (isQqCommandAllowedForEvent("summary"', newDialogStart);
+  assert.match(source.slice(newDialogStart, newDialogEnd), /clearQqContextForEvent/);
+});

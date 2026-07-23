@@ -2,6 +2,10 @@ import { createEmptyQqConversationMemory } from "../qq-conversation-memory.js";
 import { createEmptyQqKnowledgeBase } from "../qq-knowledge-base.js";
 import { createEmptyQqPeriodicRuntime } from "../qq-periodic-runtime.js";
 import { createEmptyQqSelfPersona } from "../qq-self-persona.js";
+import {
+  createEmptyQqCodexSessionStore,
+  normalizeQqCodexSessionSettings
+} from "../qq-codex-session.js";
 import { resolveInterestModelRuntimeConfig } from "../interest-model-provider.js";
 
 export function createInitialState({
@@ -60,6 +64,10 @@ export function createInitialState({
       commandPermissions: {
         publicCommands: createRecord(),
         userCommands: createRecord()
+      },
+      codexSession: {
+        settings: normalizeQqCodexSessionSettings(),
+        store: createEmptyQqCodexSessionStore()
       },
       activeGeneration: null,
       activeGenerations: createRecord(),

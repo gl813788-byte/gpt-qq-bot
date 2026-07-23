@@ -109,8 +109,9 @@ QQ / NapCat / OneBot
 
 Core capabilities:
 
-- QQ group and private chat with mentions, replies, pokes, images, files, forwarded messages, cards, and multi-bubble output.
+- QQ group and private chat with incoming mentions, real outgoing `@exact-name ` / `@QQ-number ` segments, replies, pokes, images, files, forwarded messages, cards, and multi-bubble output.
 - Agent-style Codex replies that can use bounded chat-history, search, memory, and management tools over multiple rounds.
+- Fused follow-ups and session modes: mentions, replies, interest approvals, and other triggers arriving during generation are compacted with selected in-between context and added to the active answer once; each group/private scope can use temporary, persistent, or automatic Codex threads, with persistent turns receiving only incremental context.
 - Adaptive social behavior for message length, group rhythm, stickers, and voluntary replies; a higher-temperature interest model owns ordinary, cold-group and private proactive gates, while the approved main model focuses on chat, topic selection and multi-round research. The interest model is limited to bounded lightweight decisions, classification and triage. Conversation, impression and persona summaries, knowledge extraction, and other long-context or complex work remain main-model tasks; complex background review uses interest triage followed by main-model final review.
 - Layered memory: `/记忆` is current-scope short-term memory cleared by `/新对话`; the titled long-term knowledge base updates older facts and supports scoped slang, frequency tracking and model-approved deletion, alongside social impressions and unified cross-channel memory.
 - QQ administration for model/reasoning choice, allowlists, permissions, bans, moderation, resilient friend/group requests, and text, image-only, or mixed QQ Space moods.
@@ -128,6 +129,8 @@ Invoke the repository helper through npm to avoid collisions with an existing sy
 npm run ncc -- status
 npm run ncc -- setup
 npm run ncc -- start
+npm run ncc -- session
+npm run ncc -- session-mode persistent GROUP_ID
 npm run ncc -- logs --errors --since 30m --summary
 ```
 

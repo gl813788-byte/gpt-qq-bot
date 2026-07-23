@@ -67,6 +67,13 @@ Minimal configuration:
         "summary": true
       },
       "userCommands": {}
+    },
+    "codexSession": {
+      "defaultMode": "auto",
+      "scopes": {
+        "QQ-group-id": "persistent",
+        "private:QQ-id": "temporary"
+      }
     }
   },
   "ai": {
@@ -90,6 +97,8 @@ Minimal configuration:
 | `qq.webLookup.enabled` | Runtime QQ web-lookup switch, persistently editable from the dashboard |
 | `qq.proactive.*` | Ordinary message/minute interest triggers and judge policy |
 | `qq.commandPermissions` | Public and user-specific non-owner command access |
+| `qq.codexSession.defaultMode` | Default `auto`, `persistent`, or `temporary` mode for scopes without an override |
+| `qq.codexSession.scopes` | Per-group or `private:QQ-id` mode overrides; thread IDs are not stored in settings |
 | `ai.*` | QQ model and reasoning effort |
 | `unifiedMemory.*` | Automatic writes and manual handoff behavior |
 | `branding.*` | Assistant name, owner label and mention aliases |
@@ -98,6 +107,8 @@ Minimal configuration:
 | `network.apiToken` | Generated remote-management token; keep the real value only in untracked local settings or the environment |
 
 The dashboard Intelligence view can persist the enhancer, web lookup, proactive-interest and judge switches plus message/minute cadence, judge model, idle timeout and recent-context size. Explicit @Bot replies do not depend on proactive interest. Switch models only to entries currently advertised by the active Codex login.
+
+Owners can use `/会话模式` and `/会话模式 自动|长期|临时` in QQ for the current scope. The management endpoint is `POST /api/qq/session-mode` with `{"mode":"auto|persistent|temporary","scopeId":"optional group-id or private:QQ-id"}`; use `inherit` with a scope to remove its override. Repository control uses `npm run ncc -- session` and `npm run ncc -- session-mode MODE [SCOPE]`; a machine-specific global controller may expose the same commands. Actual mappings live separately in `data/qq-codex-sessions.json`. `/新对话` stops reuse of the current mapping without deleting Codex CLI's historical files.
 
 ## One-click deployment environment
 

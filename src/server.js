@@ -177,6 +177,17 @@ import {
 } from "./qq-relationship-interest.js";
 import { createRuntimePaths } from "./runtime-paths.js";
 import { createScopedReplyScheduler } from "./scoped-reply-scheduler.js";
+import { createQqReplySteeringCoordinator } from "./qq-reply-steering.js";
+import { createQqOutgoingMentionResolver } from "./qq-outgoing-mentions.js";
+import { runCodexAppServerTurn } from "./codex-app-server-turn.js";
+import {
+  normalizeQqCodexSessionMode,
+  normalizeQqCodexSessionSettings,
+  normalizeQqCodexSessionStore,
+  removeQqCodexSessionThread,
+  resolveQqCodexSessionPlan,
+  upsertQqCodexSessionThread
+} from "./qq-codex-session.js";
 import { createWallClockScheduler } from "./wall-clock-scheduler.js";
 import {
   clearQqOrdinaryInterestCycle,
@@ -252,6 +263,7 @@ const {
   qqPersonasPath,
   qqSelfPersonaPath,
   qqConversationMemoryPath,
+  qqCodexSessionsPath,
   qqStickerLabelsPath,
   qqStickerInventoryPath,
   unifiedMemoryPath,
@@ -622,9 +634,30 @@ const activeCodexChildren = new Set();
 const backgroundTasks = new Set();
 const shutdownController = new AbortController();
 const qqReplyScheduler = createScopedReplyScheduler();
+const qqReplySteering = createQqReplySteeringCoordinator({
+  delayMs: 900,
+  maxDelayMs: 2500,
+  getActiveGeneration: getSteerableQqGeneration,
+  getPendingEntries: getQqPendingReplyEvents,
+  buildSteeringInput: buildQqPendingSteeringInput,
+  consumeEntries: consumeQqPendingReplyEvents,
+  onResult: logQqReplySteeringResult
+});
+const qqOutgoingMentionResolver = createQqOutgoingMentionResolver({
+  loadGroupMembers: async (groupId) => {
+    const result = await callOneBotAction("get_group_member_list", {
+      group_id: Number(groupId),
+      no_cache: false
+    });
+    if (!result.ok || !Array.isArray(result.body?.data)) {
+      throw new Error(result.body?.message || result.body?.wording || "Unable to load QQ group members");
+    }
+    return result.body.data;
+  }
+});
 const codexRunLimiter = createConcurrencyLimiter(codexMaxConcurrency, { maxPending: codexMaxPending });
 const oneBotWebhookLimiter = createConcurrencyLimiter(oneBotMaxConcurrency, { maxPending: oneBotMaxPending });
-const qqPendingReplyLimit = 8;
+  const qqPendingReplyLimit = 16;
 const qqPendingReplyMaxTextLength = 1200;
 const qqStateScopeLimit = Math.max(50, Math.min(5_000, Number(process.env.CODEX_REMOTE_CONTACT_QQ_SCOPE_LIMIT || 500) || 500));
 const qqPersonaMemberLimit = Math.max(50, Math.min(2_000, Number(process.env.CODEX_REMOTE_CONTACT_QQ_PERSONA_MEMBER_LIMIT || 500) || 500));
@@ -851,6 +884,19 @@ async function loadQqConversationMemory() {
   }
 }
 
+async function loadQqCodexSessions() {
+  await mkdir(dataDir, { recursive: true });
+  try {
+    state.qq.codexSession.store = normalizeQqCodexSessionStore(
+      JSON.parse(await readFile(qqCodexSessionsPath, "utf8"))
+    );
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      logger.warn("Unable to load QQ Codex sessions", { error }, "memory");
+    }
+  }
+}
+
 async function loadSettings() {
   await mkdir(dataDir, { recursive: true });
   try {
@@ -924,6 +970,9 @@ async function loadSettings() {
     if (body.qq?.commandPermissions && typeof body.qq.commandPermissions === "object") {
       state.qq.commandPermissions.publicCommands = normalizeQqPublicCommandPermissions(body.qq.commandPermissions.publicCommands);
       state.qq.commandPermissions.userCommands = normalizeQqUserCommandPermissions(body.qq.commandPermissions.userCommands);
+    }
+    if (body.qq?.codexSession && typeof body.qq.codexSession === "object") {
+      state.qq.codexSession.settings = normalizeQqCodexSessionSettings(body.qq.codexSession);
     }
     if (body.ai && typeof body.ai === "object") {
       if (typeof body.ai.model === "string" && body.ai.model.trim()) {
@@ -1002,7 +1051,8 @@ async function saveSettings() {
         commandPermissions: {
           publicCommands: state.qq.commandPermissions.publicCommands,
           userCommands: state.qq.commandPermissions.userCommands
-        }
+        },
+        codexSession: state.qq.codexSession.settings
       },
       unifiedMemory: {
         autoWriteOnSkillRecall: state.unifiedMemory.autoWriteOnSkillRecall,
@@ -1359,13 +1409,39 @@ function queueQqPendingReplyEvent(event, source, decision) {
   pending.source = source || pending.source;
   pending.updatedAt = new Date().toISOString();
   pending.events.push({
+    id: crypto.randomUUID(),
     event: cloneQqEventForPendingReply(event),
     decision,
     receivedAt: new Date().toISOString()
   });
   pending.events = pending.events.slice(-qqPendingReplyLimit);
   state.qq.pendingReplies[scopeId] = pending;
+  logger.info("QQ follow-up trigger entered fusion buffer", {
+    outcome: "queued",
+    action: "fusion-buffer",
+    source: "qq-follow-up",
+    scopeId,
+    groupId: event.groupId || null,
+    senderId: event.senderId || null,
+    messageId: event.raw?.message_id == null ? null : String(event.raw.message_id),
+    triggerKind: getQqFusionTriggerKind({ event, decision }),
+    decisionReason: decision?.reason || null,
+    triggerMessageCount: pending.events.length,
+    fusionDelayMs: 900,
+    fusionMaxDelayMs: 2500
+  }, "qq", qqLogContext(event));
+  trackBackgroundTask(qqReplySteering.schedule(scopeId), () => null);
   return pending;
+}
+
+function getQqFusionTriggerKind(entry) {
+  const event = entry?.event || entry || {};
+  const decision = entry?.decision || {};
+  if (decision.proactive) return "interest";
+  if (event.isReplyToSelf || event.replyContext?.isSelf) return "reply";
+  if (isExplicitQqAtEvent(event)) return "mention";
+  if (isQqPrivateEvent(event)) return "private";
+  return String(decision.triggerMode || "other");
 }
 
 function cloneQqEventForPendingReply(event) {
@@ -1395,6 +1471,167 @@ function takeQqPendingReplyEvents(scopeId) {
   const pending = state.qq.pendingReplies[scopeId];
   delete state.qq.pendingReplies[scopeId];
   return Array.isArray(pending?.events) ? pending.events : [];
+}
+
+function restoreQqPendingReplyEvents(scopeId, entries, source = "queued") {
+  const key = String(scopeId || "");
+  const restored = Array.isArray(entries) ? entries.filter(Boolean) : [];
+  if (!key || restored.length === 0) return 0;
+  const current = state.qq.pendingReplies[key];
+  const currentEntries = Array.isArray(current?.events) ? current.events : [];
+  const ids = new Set();
+  const events = [...restored, ...currentEntries].filter((entry) => {
+    const id = String(entry?.id || "");
+    if (!id || ids.has(id)) return false;
+    ids.add(id);
+    return true;
+  }).slice(-qqPendingReplyLimit);
+  state.qq.pendingReplies[key] = {
+    scopeId: key,
+    source: current?.source || source,
+    queuedAt: current?.queuedAt || restored[0]?.receivedAt || new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    events
+  };
+  return events.length;
+}
+
+function getQqPendingReplyEvents(scopeId) {
+  const pending = state.qq.pendingReplies[String(scopeId || "")];
+  return Array.isArray(pending?.events) ? pending.events : [];
+}
+
+function consumeQqPendingReplyEvents(scopeId, entries, generation) {
+  const key = String(scopeId || "");
+  const pending = state.qq.pendingReplies[key];
+  if (!Array.isArray(pending?.events) || !Array.isArray(entries) || entries.length === 0) return 0;
+  const ids = new Set(entries.map((entry) => entry?.id).filter(Boolean));
+  if (ids.size === 0) return 0;
+  const before = pending.events.length;
+  pending.events = pending.events.filter((entry) => !ids.has(entry?.id));
+  const consumed = before - pending.events.length;
+  if (pending.events.length === 0) delete state.qq.pendingReplies[key];
+  else pending.updatedAt = new Date().toISOString();
+  const candidate = generation?.qqSteeringContextCandidate;
+  if (consumed > 0 && candidate && generation?.qqEvent) {
+    generation.qqEvent.qqCodexContextAt = candidate.latestAt || generation.qqEvent.qqCodexContextAt;
+    generation.qqEvent.qqCodexInjectedMessageIds = [
+      ...(generation.qqEvent.qqCodexInjectedMessageIds || []),
+      ...(candidate.messageIds || [])
+    ];
+    generation.qqLastSteeringFusion = {
+      triggerMessageCount: Number(candidate.triggerMessageCount || 0),
+      compactedTriggerCount: Number(candidate.compactedTriggerCount || 0),
+      contextMessageCount: Number(candidate.contextMessageCount || 0),
+      inputBatchCount: 1,
+      inputImageCount: Number(candidate.inputImageCount || 0),
+      triggerKinds: candidate.triggerKinds || [],
+      fusionPreview: candidate.fusionPreview || ""
+    };
+    generation.qqSteeringContextCandidate = null;
+  }
+  return consumed;
+}
+
+function getSteerableQqGeneration(scopeId) {
+  const generation = state.qq.activeGenerations[String(scopeId || "")];
+  return generation && typeof generation.steer === "function" ? generation : null;
+}
+
+async function buildQqPendingSteeringInput(entries, generation) {
+  const aggregate = buildAggregatedQqEvent(entries);
+  if (!aggregate) return [];
+  const parentEvent = generation?.qqEvent;
+  const interleavedContext = parentEvent
+    ? buildQqPersistentContextDelta(aggregate, {
+      after: parentEvent.qqCodexContextAt,
+      followUp: true
+    })
+    : { text: "", messageIds: [], latestAt: null };
+  if (generation) {
+    const inputImages = Array.isArray(aggregate.images) ? aggregate.images.slice(0, 4) : [];
+    generation.qqSteeringContextCandidate = {
+      latestAt: interleavedContext.latestAt,
+      triggerMessageCount: entries.length,
+      compactedTriggerCount: Number(aggregate.queuedDisplayMessageCount || entries.length),
+      contextMessageCount: interleavedContext.messageIds.length,
+      inputImageCount: inputImages.length,
+      triggerKinds: [...new Set(entries.map(getQqFusionTriggerKind))],
+      fusionPreview: [
+        aggregate.text,
+        interleavedContext.text
+      ].filter(Boolean).join("\n\n").slice(0, 2400),
+      messageIds: [
+        ...getQqTriggerMessageIds(aggregate),
+        ...interleavedContext.messageIds
+      ]
+    };
+  }
+  const input = [{
+    type: "text",
+    text: [
+      `你处理当前 QQ 回复期间又收到了 ${aggregate.queuedMessageCount || entries.length} 条新消息。Hub 已沿用连续消息合并规则，把相邻重复内容压成一条并标出总次数。`,
+      "这些是当前用户输入的追加上下文，不是新的独立任务。立即结合先前请求和下面所有新增消息继续当前思考；最终只给出一份统一的 QQ 回复，不要先发旧答案，也不要逐条机械回复“消息一/消息二”。",
+      "",
+      aggregate.text,
+      interleavedContext.text ? "" : null,
+      interleavedContext.text || null
+    ].filter((part) => part != null).join("\n")
+  }];
+  const images = Array.isArray(aggregate.images) ? aggregate.images.slice(0, 4) : [];
+  if (images.length === 0 || !parentEvent) return input;
+
+  if (!parentEvent.qqTaskWorkspace) {
+    parentEvent.qqTaskWorkspace = await createQqTaskWorkspace("qq-reply-steer", generation.id);
+  }
+  const imagePaths = await prepareQqVisionImages(images, {
+    outputDir: parentEvent.qqTaskWorkspace.inputDir,
+    event: parentEvent
+  });
+  parentEvent.imagePaths = [...new Set([...(parentEvent.imagePaths || []), ...imagePaths])];
+  input.push(...imagePaths.map((path) => ({ type: "localImage", path })));
+  return input;
+}
+
+function logQqReplySteeringResult(result) {
+  const generation = result?.generationId
+    ? Object.values(state.qq.activeGenerations).find((entry) => entry?.id === result.generationId)
+    : null;
+  if (result?.ok) {
+    if (generation) {
+      generation.steeredMessageCount = Number(generation.steeredMessageCount || 0) + Number(result.consumedCount || 0);
+      generation.lastSteeredAt = new Date().toISOString();
+    }
+    logger.info("Queued QQ messages steered into active turn", {
+      outcome: "steered",
+      action: "fuse-and-steer",
+      source: "qq-follow-up",
+      scopeId: result.scopeId,
+      generationId: result.generationId,
+      threadId: result.threadId,
+      turnId: result.turnId,
+      queuedCount: result.queuedCount,
+      consumedCount: result.consumedCount,
+      triggerMessageCount: generation?.qqLastSteeringFusion?.triggerMessageCount || result.queuedCount,
+      compactedTriggerCount: generation?.qqLastSteeringFusion?.compactedTriggerCount || result.queuedCount,
+      contextMessageCount: generation?.qqLastSteeringFusion?.contextMessageCount || 0,
+      inputBatchCount: generation?.qqLastSteeringFusion?.inputBatchCount || 1,
+      inputImageCount: generation?.qqLastSteeringFusion?.inputImageCount || 0,
+      triggerKinds: generation?.qqLastSteeringFusion?.triggerKinds || [],
+      fusionPreview: generation?.qqLastSteeringFusion?.fusionPreview || null
+    }, "qq", generation?.qqEvent ? qqLogContext(generation.qqEvent, { spanId: result.generationId }) : {});
+    return;
+  }
+  if (["no_steerable_generation", "no_pending_entries", "closed"].includes(result?.reason)) return;
+  logger.debug("Queued QQ messages kept for follow-up after steering was unavailable", {
+    outcome: "kept",
+    action: "fuse-and-steer",
+    source: "qq-follow-up",
+    scopeId: result?.scopeId || null,
+    generationId: result?.generationId || null,
+    reason: result?.reason || "unknown",
+    error: result?.error || null
+  }, "qq", generation?.qqEvent ? qqLogContext(generation.qqEvent, { spanId: result.generationId }) : {});
 }
 
 function formatQqPendingMessageLabel(index) {
@@ -1838,6 +2075,52 @@ async function saveQqConversationMemory() {
   return qqConversationMemoryWriter.schedule();
 }
 
+const qqCodexSessionsWriter = createCoalescingWriter(async () => {
+  await serializeFileOperation(qqCodexSessionsPath, async () => {
+    await writeJsonAtomically(qqCodexSessionsPath, {
+      ...state.qq.codexSession.store,
+      version: 1,
+      updatedAt: new Date().toISOString()
+    });
+  });
+}, { delayMs: 100 });
+
+async function saveQqCodexSessions() {
+  return qqCodexSessionsWriter.schedule();
+}
+
+async function commitQqCodexSessionForEvent(event) {
+  const scopeId = getQqMemoryScopeId(event);
+  const threadId = String(event?.qqCodexSessionThreadId || "").trim();
+  if (!scopeId || !threadId) return false;
+  const plan = resolveQqCodexSessionPlan({
+    settings: state.qq.codexSession.settings,
+    store: state.qq.codexSession.store,
+    scopeId,
+    recentReplyEntries: state.qq.memory.entries[scopeId] || []
+  });
+  if (!plan.persistent) return false;
+  state.qq.codexSession.store = upsertQqCodexSessionThread(state.qq.codexSession.store, {
+    scopeId,
+    threadId,
+    model: state.ai.model,
+    reasoningEffort: state.ai.reasoningEffort,
+    lastContextAt: event.qqCodexContextAt
+  });
+  await saveQqCodexSessions();
+  return true;
+}
+
+async function discardQqCodexSessionForEvent(event) {
+  const scopeId = getQqMemoryScopeId(event);
+  const threadId = String(event?.qqCodexSessionThreadId || "").trim();
+  const current = scopeId ? state.qq.codexSession.store.threads?.[scopeId] : null;
+  if (!scopeId || !current || (threadId && current.threadId !== threadId)) return false;
+  state.qq.codexSession.store = removeQqCodexSessionThread(state.qq.codexSession.store, scopeId);
+  await saveQqCodexSessions();
+  return true;
+}
+
 function ensureNetworkAccessToken() {
   if (managementApiToken) return managementApiToken;
   persistedNetworkApiToken = crypto.randomBytes(32).toString("base64url");
@@ -1987,6 +2270,20 @@ function buildPublicState() {
       enhancer: { enabled: state.qq.enhancer.enabled },
       webLookup: { enabled: state.qq.webLookup.enabled },
       botSettings: readDashboardBotSettings(state),
+      codexSession: {
+        defaultMode: state.qq.codexSession.settings.defaultMode,
+        scopes: { ...state.qq.codexSession.settings.scopes },
+        activeThreads: Object.keys(state.qq.codexSession.store.threads || {}).length,
+        threads: Object.fromEntries(
+          Object.entries(state.qq.codexSession.store.threads || {}).map(([scopeId, thread]) => [scopeId, {
+            createdAt: thread.createdAt || null,
+            updatedAt: thread.updatedAt || null,
+            lastContextAt: thread.lastContextAt || null,
+            model: thread.model || null,
+            reasoningEffort: thread.reasoningEffort || null
+          }])
+        )
+      },
       proactive: {
         enabled: state.qq.proactive.enabled,
         judgeEveryMessages: state.qq.proactive.judgeEveryMessages,
@@ -2083,7 +2380,17 @@ function sanitizeActiveGeneration(generation) {
     groupId: normalizeQqIdentifier(generation.groupId) || null,
     senderId: normalizeQqIdentifier(generation.senderId) || null,
     startedAt: generation.startedAt || null,
-    mode: String(generation.mode || "").slice(0, 80)
+    mode: String(generation.mode || "").slice(0, 80),
+    steerable: typeof generation.steer === "function",
+    steeredMessageCount: Number(generation.steeredMessageCount || 0),
+    lastSteeredAt: generation.lastSteeredAt || null,
+    lastFusion: generation.qqLastSteeringFusion ? {
+      triggerMessageCount: Number(generation.qqLastSteeringFusion.triggerMessageCount || 0),
+      compactedTriggerCount: Number(generation.qqLastSteeringFusion.compactedTriggerCount || 0),
+      contextMessageCount: Number(generation.qqLastSteeringFusion.contextMessageCount || 0),
+      inputImageCount: Number(generation.qqLastSteeringFusion.inputImageCount || 0),
+      triggerKinds: generation.qqLastSteeringFusion.triggerKinds || []
+    } : null
   };
 }
 
@@ -2265,11 +2572,20 @@ async function buildMaintenanceStatus({ force = false } = {}) {
           startedAt: state.qq.activeGeneration.startedAt,
           mode: state.qq.activeGeneration.mode,
           taskType: state.qq.activeGeneration.taskType,
-          timeoutMs: state.qq.activeGeneration.timeoutMs
+          timeoutMs: state.qq.activeGeneration.timeoutMs,
+          steerable: typeof state.qq.activeGeneration.steer === "function",
+          steeredMessageCount: Number(state.qq.activeGeneration.steeredMessageCount || 0),
+          lastSteeredAt: state.qq.activeGeneration.lastSteeredAt || null
         }
         : null,
       activeGenerations: Object.keys(state.qq.activeGenerations).length,
-      pendingReplies: Object.values(state.qq.pendingReplies).reduce((sum, pending) => sum + (Array.isArray(pending?.events) ? pending.events.length : 0), 0)
+      pendingReplies: Object.values(state.qq.pendingReplies).reduce((sum, pending) => sum + (Array.isArray(pending?.events) ? pending.events.length : 0), 0),
+      codexSessions: {
+        defaultMode: state.qq.codexSession.settings.defaultMode,
+        configuredScopes: Object.keys(state.qq.codexSession.settings.scopes || {}).length,
+        activeThreads: Object.keys(state.qq.codexSession.store.threads || {}).length
+      },
+      replySteering: qqReplySteering.snapshot()
     }
   };
 }
@@ -4208,6 +4524,62 @@ function buildAssistantReply(event) {
   return text ? "嗯，我在看" : "在";
 }
 
+function formatQqCodexSessionMode(mode) {
+  return {
+    temporary: "临时",
+    persistent: "长期",
+    auto: "自动"
+  }[normalizeQqCodexSessionMode(mode)] || "自动";
+}
+
+function buildQqCodexSessionModeAction(normalized, event) {
+  const compact = String(normalized || "").trim();
+  let requested = "";
+  const standard = compact.match(/^(?:会话模式|session(?:-mode)?)(?:\s+(自动|长期|临时|auto|automatic|persistent|long|temporary|temp|ephemeral))?$/i);
+  if (standard) requested = standard[1] || "";
+  else if (/^长期会话$/i.test(compact)) requested = "长期";
+  else if (/^临时会话$/i.test(compact)) requested = "临时";
+  else if (/^自动会话$/i.test(compact)) requested = "自动";
+  else return null;
+
+  const scopeId = getQqMemoryScopeId(event);
+  if (!scopeId) return { reply: "当前消息无法确定会话范围。" };
+  if (requested) {
+    const mode = normalizeQqCodexSessionMode(requested, "");
+    if (!mode) {
+      return { reply: "会话模式只能设为：自动、长期、临时。" };
+    }
+    state.qq.codexSession.settings.scopes[scopeId] = mode;
+    if (mode === "temporary") {
+      state.qq.codexSession.store = removeQqCodexSessionThread(state.qq.codexSession.store, scopeId);
+    }
+  }
+
+  const plan = resolveQqCodexSessionPlan({
+    settings: state.qq.codexSession.settings,
+    store: state.qq.codexSession.store,
+    scopeId,
+    recentReplyEntries: state.qq.memory.entries[scopeId] || []
+  });
+  const lines = [
+    `${event.groupId ? `群 ${event.groupId}` : `私聊 ${event.senderId}`}会话模式：${formatQqCodexSessionMode(plan.configuredMode)}`,
+    `当前实际：${formatQqCodexSessionMode(plan.effectiveMode)}`,
+    plan.configuredMode === "auto"
+      ? `自动判断依据：6 小时 ${plan.recentReplies6h} 次回复、24 小时 ${plan.recentReplies24h} 次回复${plan.existingThread ? "，已有可续用线程" : ""}。`
+      : null,
+    plan.persistent
+      ? "长期模式会续用 Codex 线程，只补未见过的增量语境；同一轮追问仍与临时模式一样合并后注入当前回答。"
+      : "临时模式每轮使用独立 Codex 线程；同一轮追问仍会合并后注入当前回答。",
+    requested ? "设置已保存，从下一次模型回复开始生效。" : "设置方法：/会话模式 自动、/会话模式 长期、/会话模式 临时"
+  ].filter(Boolean);
+  return {
+    reply: lines.join("\n"),
+    beforeSend: requested
+      ? async () => Promise.all([saveSettings(), saveQqCodexSessions()])
+      : undefined
+  };
+}
+
 async function buildQqCommandAction(event) {
   const command = stripMentionText(event.text).trim();
   if (!command.startsWith("/")) return null;
@@ -4217,11 +4589,7 @@ async function buildQqCommandAction(event) {
   if (isQqCommandAllowedForEvent("stop", event) && isPublicQqStopCommand(normalized, compact)) {
     return {
       reply: stopQqGenerationForEvent(event),
-      skipMemory: true,
-      afterSend: async () => {
-        clearQqContextForEvent(event, { silent: true, source: "stop", log: false });
-        await saveQqMemory();
-      }
+      skipMemory: true
     };
   }
 
@@ -4264,6 +4632,11 @@ async function buildQqCommandAction(event) {
 
   if (isQqCommandAllowedForEvent("config", event) && /^(详细配置|配置|config|settings|详细状态)$/i.test(compact)) {
     return { reply: buildQqOwnerConfigDetail() };
+  }
+
+  if (isQqCommandAllowedForEvent("session", event)) {
+    const sessionAction = buildQqCodexSessionModeAction(normalized, event);
+    if (sessionAction) return sessionAction;
   }
 
   if (isQqCommandAllowedForEvent("interest", event) && isQqInterestConfigCommand(normalized, compact)) {
@@ -4740,10 +5113,15 @@ function clearQqContextForEvent(event, { silent = false, source = "new-dialog", 
     }, "memory", event ? qqLogContext(event) : {});
   };
   if (scopeId) {
+    qqReplySteering.cancel(scopeId);
     delete state.qq.pendingReplies[scopeId];
     delete state.qq.memory.entries[scopeId];
     delete state.qq.memory.recentMessages[scopeId];
     delete state.qq.memory.shortTermNotes[scopeId];
+    if (state.qq.codexSession.store.threads?.[scopeId]) {
+      state.qq.codexSession.store = removeQqCodexSessionThread(state.qq.codexSession.store, scopeId);
+      trackBackgroundTask(saveQqCodexSessions(), () => null);
+    }
   }
   if (event.groupId) {
     delete state.qq.proactive.pendingImageRequests[event.groupId];
@@ -4763,6 +5141,8 @@ function clearQqContextForEvent(event, { silent = false, source = "new-dialog", 
   state.qq.memory.recentMessages = createSafeRecord();
   state.qq.memory.shortTermNotes = createSafeRecord();
   state.qq.pendingReplies = createSafeRecord();
+  state.qq.codexSession.store = normalizeQqCodexSessionStore(null);
+  trackBackgroundTask(saveQqCodexSessions(), () => null);
   state.qq.proactive.pendingImageRequests = createSafeRecord();
   state.qq.proactive.messageCountByGroupId = createSafeRecord();
   state.qq.proactive.lastJudgeAtByGroupId = createSafeRecord();
@@ -4774,13 +5154,56 @@ function clearQqContextForEvent(event, { silent = false, source = "new-dialog", 
 }
 
 function stopQqGenerationForEvent(event) {
-  const cancelledScope = cancelQqReplyScopeForEvent(event);
+  const scopeId = getQqMemoryScopeId(event);
   const active = getActiveQqGenerationForEvent(event);
+  const sessionPreserved = preserveStoppedQqCodexSession(active);
+  const cancelledScope = cancelQqReplyScopeForEvent(event);
   const stopped = active ? stopActiveQqGeneration(active.id) : false;
-  clearQqContextForEvent(event, { silent: true, source: "stop" });
+  const pendingReplyRemovedCount = getQqPendingReplyEvents(scopeId).length;
+  qqReplySteering.cancel(scopeId);
+  if (scopeId) delete state.qq.pendingReplies[scopeId];
+  logger.info("QQ reply paused without resetting conversation", {
+    outcome: stopped || cancelledScope ? "stopped" : "unchanged",
+    action: "pause",
+    source: "stop",
+    scopeId: scopeId || null,
+    groupId: event?.groupId || null,
+    senderId: event?.senderId || null,
+    pendingReplyRemovedCount,
+    contextPreserved: true,
+    codexSessionPreserved: sessionPreserved
+  }, "qq", qqLogContext(event));
   return stopped || cancelledScope
-    ? "已停止当前回复，并开启新对话。"
-    : "当前没有正在生成的回复，已开启新对话。";
+    ? "已暂停当前回复，会话和上下文已保留。"
+    : "当前没有正在生成的回复，会话和上下文保持不变。";
+}
+
+function preserveStoppedQqCodexSession(active) {
+  const scopeId = String(active?.scopeId || "");
+  const threadId = String(active?.threadId || "");
+  const event = active?.qqEvent;
+  if (!scopeId) return false;
+  const plan = resolveQqCodexSessionPlan({
+    settings: state.qq.codexSession.settings,
+    store: state.qq.codexSession.store,
+    scopeId,
+    recentReplyEntries: state.qq.memory.entries[scopeId] || []
+  });
+  if (!plan.persistent) return false;
+  if (event) event.qqCodexSessionPreservedOnStop = true;
+  if (!threadId) return Boolean(plan.existingThread);
+  state.qq.codexSession.store = upsertQqCodexSessionThread(state.qq.codexSession.store, {
+    scopeId,
+    threadId,
+    model: state.ai.model,
+    reasoningEffort: state.ai.reasoningEffort,
+    lastContextAt: event?.qqCodexContextAt
+  });
+  if (event) {
+    event.qqCodexSessionThreadId = threadId;
+  }
+  trackBackgroundTask(saveQqCodexSessions(), () => null);
+  return true;
 }
 
 function isProtectedQqOwnerTarget(targetId) {
@@ -4788,7 +5211,7 @@ function isProtectedQqOwnerTarget(targetId) {
 }
 
 function isOwnerOnlyQqCommand(normalized, compact) {
-  return /^(菜单权限|权限菜单|公开指令|指令权限|允许指令|开放指令|启用指令|禁用指令|关闭指令|禁止指令|状态|status|查看状态|详细配置|配置|config|settings|详细状态|兴趣|主动|兴趣配置|主动配置|主动响应配置|兴趣状态|主动状态|兴趣开关|主动开关|兴趣间隔|主动间隔|兴趣分钟|主动分钟|兴趣时间|主动时间|兴趣模型|主动模型|兴趣超时|主动超时|兴趣最近|主动最近|兴趣重置|主动重置|interest|proactive|群管理|禁言|解禁言|解除禁言|踢人|移出群|全员禁言|群禁言列表|禁言列表|ban|unban|封禁|拉黑|解禁|解除封禁|取消拉黑|banlist|封禁列表|ban列表|白名单|群白名单|白名单列表|加群|添加群|加入群|群添加|群加入|白名单添加|添加白名单群|加入白名单群|删群|删除群|移除群|群删除|群移除|白名单删除|删除白名单群|移除白名单群|模型|qq模型|切模型|切换模型|智能等级|智能|思考强度|qq智能等级|qq智能|qq思考强度)/i.test(normalized)
+  return /^(菜单权限|权限菜单|公开指令|指令权限|允许指令|开放指令|启用指令|禁用指令|关闭指令|禁止指令|状态|status|查看状态|详细配置|配置|config|settings|详细状态|会话模式|长期会话|临时会话|自动会话|session|session-mode|兴趣|主动|兴趣配置|主动配置|主动响应配置|兴趣状态|主动状态|兴趣开关|主动开关|兴趣间隔|主动间隔|兴趣分钟|主动分钟|兴趣时间|主动时间|兴趣模型|主动模型|兴趣超时|主动超时|兴趣最近|主动最近|兴趣重置|主动重置|interest|proactive|群管理|禁言|解禁言|解除禁言|踢人|移出群|全员禁言|群禁言列表|禁言列表|ban|unban|封禁|拉黑|解禁|解除封禁|取消拉黑|banlist|封禁列表|ban列表|白名单|群白名单|白名单列表|加群|添加群|加入群|群添加|群加入|白名单添加|添加白名单群|加入白名单群|删群|删除群|移除群|群删除|群移除|白名单删除|删除白名单群|移除白名单群|模型|qq模型|切模型|切换模型|智能等级|智能|思考强度|qq智能等级|qq智能|qq思考强度)/i.test(normalized)
     || /^(5|5\.5|5\.4|5\.4mini|5\.4-mini|mini|5\.3|5\.3codex|5\.3-codex|codex)$/i.test(compact);
 }
 
@@ -4907,6 +5330,7 @@ function buildQqOwnerStatus() {
     `主人 QQ：${state.qq.ownerUserIds.length ? state.qq.ownerUserIds.join(", ") : "未设置"}`,
     `ban 用户：${state.qq.bannedUserIds.length}`,
     `短期记忆范围：${Object.keys(state.qq.memory.shortTermNotes).length}`,
+    `Codex 会话：默认${formatQqCodexSessionMode(state.qq.codexSession.settings.defaultMode)}，长期线程 ${Object.keys(state.qq.codexSession.store.threads || {}).length}`,
     `长期知识标题：${state.qq.knowledgeBase.entries.length}`,
     `联网查询：${state.qq.webLookup.enabled ? "开启" : "关闭"}`
   ].join("\n");
@@ -4920,6 +5344,7 @@ function buildQqOwnerConfigDetail() {
     `群模式：${state.qq.groupMode}`,
     `模型：${state.ai.model}`,
     `智能等级：${state.ai.reasoningEffort}`,
+    `Codex 会话：默认${formatQqCodexSessionMode(state.qq.codexSession.settings.defaultMode)}，范围覆盖 ${Object.keys(state.qq.codexSession.settings.scopes || {}).length} 个，长期线程 ${Object.keys(state.qq.codexSession.store.threads || {}).length} 个`,
     `主人 QQ：${state.qq.ownerUserIds.length ? state.qq.ownerUserIds.join(", ") : "未设置"}`,
     `白名单群：${state.qq.allowedGroups.length ? state.qq.allowedGroups.join(", ") : "无"}`,
     `ban 用户：${state.qq.bannedUserIds.length ? state.qq.bannedUserIds.map((id) => formatQqBanListEntry(id)).join(", ") : "无"}`,
@@ -5010,7 +5435,7 @@ function formatQqBotInternalToolContext(event) {
   });
 }
 
-async function runQqBotToolLoop({ initialReply, event, memoryContext, buildReplyPrompt, runReplyPrompt, replyScope = null }) {
+async function runQqBotToolLoop({ initialReply, event, memoryContext, runBuiltReplyPrompt, replyScope = null }) {
   let reply = String(initialReply || "");
   const transcript = [];
   const commandCounts = new Map();
@@ -5033,7 +5458,7 @@ async function runQqBotToolLoop({ initialReply, event, memoryContext, buildReply
           visibleText: resolution.visibleText,
           results: [pokeResult]
         });
-        const prompt = await buildReplyPrompt(
+        reply = await runBuiltReplyPrompt(
           memoryContext,
           1,
           true,
@@ -5041,7 +5466,6 @@ async function runQqBotToolLoop({ initialReply, event, memoryContext, buildReply
           resolution.visibleText,
           round
         );
-        reply = await runReplyPrompt(prompt);
         continue;
       }
       const pendingStickers = getPendingQqStickerLabels(event);
@@ -5055,7 +5479,7 @@ async function runQqBotToolLoop({ initialReply, event, memoryContext, buildReply
             reply: `你刚查看了尚未标注的表情：${pendingStickers.map((item) => item.name).join("、")}。必须先调用 /表情标签 表情名 | 标签1,标签2 | 画面和适用语境，完成后才能给出最终回复。`
           }]
         });
-        const prompt = await buildReplyPrompt(
+        reply = await runBuiltReplyPrompt(
           memoryContext,
           1,
           true,
@@ -5063,7 +5487,6 @@ async function runQqBotToolLoop({ initialReply, event, memoryContext, buildReply
           resolution.visibleText,
           round
         );
-        reply = await runReplyPrompt(prompt);
         continue;
       }
       return stripQqBotDoneMarker(resolution.visibleText || reply);
@@ -5073,7 +5496,7 @@ async function runQqBotToolLoop({ initialReply, event, memoryContext, buildReply
       visibleText: resolution.visibleText,
       results: resolution.results
     });
-    const prompt = await buildReplyPrompt(
+    reply = await runBuiltReplyPrompt(
       memoryContext,
       1,
       true,
@@ -5081,7 +5504,6 @@ async function runQqBotToolLoop({ initialReply, event, memoryContext, buildReply
       resolution.visibleText,
       round
     );
-    reply = await runReplyPrompt(prompt);
     assertQqReplyScopeActive(replyScope);
     if (hasQqBotDoneMarker(reply) && extractQqBotCommandMarkers(reply).length === 0) {
       return stripQqBotDoneMarker(stripQqBotCommandMarkers(reply));
@@ -6818,15 +7240,38 @@ async function buildModelReply(event, { replyScope = null } = {}) {
 
   const text = stripMentionText(event.text);
   const scopeId = getQqMemoryScopeId(event);
+  const qqCodexSessionPlan = resolveQqCodexSessionPlan({
+    settings: state.qq.codexSession.settings,
+    store: state.qq.codexSession.store,
+    scopeId,
+    recentReplyEntries: scopeId ? state.qq.memory.entries[scopeId] || [] : []
+  });
+  let qqCodexThreadId = qqCodexSessionPlan.persistent
+    ? qqCodexSessionPlan.existingThread?.threadId || null
+    : null;
+  let qqCodexSessionContextDelivered = false;
+  event.qqCodexSession = {
+    configuredMode: qqCodexSessionPlan.configuredMode,
+    effectiveMode: qqCodexSessionPlan.effectiveMode,
+    reason: qqCodexSessionPlan.reason,
+    resumed: false
+  };
   const currentMessageId = event.raw?.message_id == null ? "" : String(event.raw.message_id);
   const currentMessageRepeatCount = event.queuedAggregate || !scopeId
     ? 1
     : getQqMessageConsecutiveRepeatCount(state.qq.memory.recentMessages[scopeId] || [], currentMessageId);
   const currentMessageText = appendQqConsecutiveRepeatSuffix(text, currentMessageRepeatCount);
   const id = crypto.randomUUID();
-  const outputPath = join(codexTmpDir, `${id}.txt`);
   const quotedContext = formatQuotedContext(event);
   let memoryContext = formatMemoryContext(event, { expandLevel: 0 });
+  const persistentContextDelta = buildQqPersistentContextDelta(event, {
+    after: qqCodexSessionPlan.existingThread?.lastContextAt || null
+  });
+  event.qqCodexInjectedMessageIds = [
+    ...getQqTriggerMessageIds(event),
+    ...persistentContextDelta.messageIds
+  ];
+  event.qqCodexContextAt = persistentContextDelta.latestAt || new Date().toISOString();
   const conversationIntent = analyzeQqConversationIntent(event);
   const intentContext = formatQqConversationIntent(conversationIntent);
   const baseHumanChatStyle = analyzeQqHumanChatStyle(
@@ -6896,78 +7341,82 @@ async function buildModelReply(event, { replyScope = null } = {}) {
       : event.proactiveDecision?.proactive
         ? formatQqApprovedProactivePrompt({ kind: "ordinary" })
         : "";
-  const runReplyPrompt = async (prompt) => {
+  const runReplyPrompt = async (prompt, resumePrompt = prompt) => {
     assertQqReplyScopeActive(replyScope);
-    const currentImagePaths = [...new Set([...imagePaths, ...(event.qqToolImagePaths || [])])];
-    const args = [
-      "exec",
-      "--ephemeral",
-      "--skip-git-repo-check",
-      "--ignore-rules",
-      "-s",
-      "read-only",
-      "-m",
-      state.ai.model,
-      "-c",
-      `model_reasoning_effort="${state.ai.reasoningEffort}"`,
-      "-C",
-      codexWorkspaceDir,
-      "-o",
-      outputPath,
-      ...currentImagePaths.flatMap((imagePath) => ["--image", imagePath]),
-      "-"
-    ];
+    const currentImagePaths = [...new Set([
+      ...imagePaths,
+      ...(event.imagePaths || []),
+      ...(event.qqToolImagePaths || [])
+    ])];
     const taskType = currentImagePaths.length > 0
       ? CODEX_TASK_TYPES.QQ_VISION_REPLY
       : CODEX_TASK_TYPES.QQ_REPLY;
-    await runCodexCli(args, prompt, {
+    const result = await runSteerableQqCodexTurn(prompt, {
       cwd: codexWorkspaceDir,
       taskType,
       timeout: getCodexTaskTimeoutMs(codexTaskTimeouts, taskType),
+      imagePaths: currentImagePaths,
       env: {
         ...process.env,
         CODEX_REMOTE_CONTACT_QQ_MODE: "1"
       },
-      qqEvent: event
+      qqEvent: event,
+      threadId: qqCodexThreadId,
+      ephemeral: !qqCodexSessionPlan.persistent,
+      resumePrompt
     });
     assertQqReplyScopeActive(replyScope);
-    return cleanCodexReply(await readCodexOutputAndRemove(outputPath, {
-      event,
-      taskType,
-      label: currentImagePaths.length > 0 ? "qq-vision-reply" : "qq-reply"
-    }));
+    if (qqCodexSessionPlan.persistent) {
+      qqCodexThreadId = result.threadId || qqCodexThreadId;
+      event.qqCodexSessionThreadId = qqCodexThreadId;
+      event.qqCodexSession.resumed = Boolean(event.qqCodexSession.resumed || result.resumed);
+    }
+    return cleanCodexReply(result.finalResponse);
   };
-  const buildReplyPrompt = async (memoryBlock, expandLevel = 0, forceLocalReply = false, botToolResults = "", priorDraft = "", toolRound = 0) => {
+  const buildReplyPrompt = async (
+    memoryBlock,
+    expandLevel = 0,
+    forceLocalReply = false,
+    botToolResults = "",
+    priorDraft = "",
+    toolRound = 0,
+    { persistentResume = false, includeCurrentBatch = true } = {}
+  ) => {
     const publicMemoryContext = formatQqPublicMemoryContext(event);
     return [
-      await buildAssistantInstructions(event),
+      persistentResume
+        ? "你正在继续同一个 QQ 长期会话。沿用线程中已经建立的身份、关系、稳定规则和前文，不要要求重新介绍背景。"
+        : await buildAssistantInstructions(event),
+      persistentResume
+        ? "本轮仍使用与临时会话完全相同的融合式追问规则：所有触发 Bot 回复的新消息作为一个批次处理，最终只输出一份统一回复。"
+        : null,
       "",
       intentContext,
       intentContext ? "" : null,
-      humanBehaviorContext,
-      humanBehaviorContext ? "" : null,
+      !persistentResume ? humanBehaviorContext : null,
+      !persistentResume && humanBehaviorContext ? "" : null,
       proactiveExecutionContext,
       proactiveExecutionContext ? "" : null,
-      botToolContext,
-      botToolContext ? "" : null,
-      selfPersonaContext,
-      selfPersonaContext ? "" : null,
-      scopeTopicContext,
-      scopeTopicContext ? "" : null,
-      conversationMemoryContext,
-      conversationMemoryContext ? "" : null,
-      shortTermMemoryContext,
-      shortTermMemoryContext ? "" : null,
+      !persistentResume ? botToolContext : null,
+      !persistentResume && botToolContext ? "" : null,
+      !persistentResume ? selfPersonaContext : null,
+      !persistentResume && selfPersonaContext ? "" : null,
+      !persistentResume ? scopeTopicContext : null,
+      !persistentResume && scopeTopicContext ? "" : null,
+      !persistentResume ? conversationMemoryContext : null,
+      !persistentResume && conversationMemoryContext ? "" : null,
+      !persistentResume ? shortTermMemoryContext : null,
+      !persistentResume && shortTermMemoryContext ? "" : null,
       knowledgeMatchContext,
       knowledgeMatchContext ? "" : null,
-      publicMemoryContext,
-      publicMemoryContext ? "" : null,
-      unifiedMemoryContext,
-      unifiedMemoryContext ? "" : null,
-      personaContext,
-      personaContext ? "" : null,
-      memoryBlock,
-      memoryBlock ? "" : null,
+      !persistentResume ? publicMemoryContext : null,
+      !persistentResume && publicMemoryContext ? "" : null,
+      !persistentResume ? unifiedMemoryContext : null,
+      !persistentResume && unifiedMemoryContext ? "" : null,
+      !persistentResume ? personaContext : null,
+      !persistentResume && personaContext ? "" : null,
+      !persistentResume || includeCurrentBatch || (!forceLocalReply && expandLevel > 0) ? memoryBlock : null,
+      (!persistentResume || includeCurrentBatch || (!forceLocalReply && expandLevel > 0)) && memoryBlock ? "" : null,
       repetitionGuard,
       repetitionGuard ? "" : null,
       quotedContext,
@@ -7009,8 +7458,10 @@ async function buildModelReply(event, { replyScope = null } = {}) {
         ? "兴趣回复冷群时间检查："
         : event.qqPrivateProactive ? "兴趣回复私聊主动联系检查："
         : isQqPrivateEvent(event) ? "收到的 QQ 私聊：" : "收到的群消息：",
-      event.queuedAggregate ? `下面是你上一轮生成期间继续收到的 ${event.queuedMessageCount || "多"} 条消息，Hub 已按“消息一/消息二/...”标注；连续相同消息已只保留一条并在末尾标注总条数。请把它们当作连续上下文一起回应，不要逐条机械复读标签，除非需要澄清。` : null,
-      event.qqColdProactive
+      includeCurrentBatch && event.queuedAggregate ? `下面是你上一轮生成期间继续收到的 ${event.queuedMessageCount || "多"} 条触发消息，来源可以是直接 @、回复 Bot、兴趣模型选中或其他响应规则。Hub 已按“消息一/消息二/...”标注；连续相同消息已只保留一条并在末尾标注总条数。请融合成一次追问并统一回应，不要逐条机械复读标签，除非需要澄清。` : null,
+      !includeCurrentBatch
+        ? "当前触发批次已经在这个长期线程的上一轮输入中提供过，本轮只处理新增的工具结果或扩展上下文，不要重复回答旧批次。"
+        : event.qqColdProactive
         ? "当前没有新消息；执行上面的已批准模式。"
         : event.qqPrivateProactive
         ? "当前没有新消息；执行上面的已批准私聊联系任务。"
@@ -7027,32 +7478,190 @@ async function buildModelReply(event, { replyScope = null } = {}) {
         : "请直接给出要发送到 QQ 群里的最终回复。不要追加服务式追问或“我还能继续帮你”的结尾。"
     ].filter((part) => part != null).join("\n");
   };
+  const runBuiltReplyPrompt = async (
+    memoryBlock,
+    expandLevel = 0,
+    forceLocalReply = false,
+    botToolResults = "",
+    priorDraft = "",
+    toolRound = 0
+  ) => {
+    const fullPrompt = await buildReplyPrompt(
+      memoryBlock,
+      expandLevel,
+      forceLocalReply,
+      botToolResults,
+      priorDraft,
+      toolRound
+    );
+    const shouldResume = qqCodexSessionPlan.persistent && Boolean(qqCodexThreadId);
+    let resumeMemoryBlock = "";
+    if (!qqCodexSessionContextDelivered) {
+      resumeMemoryBlock = persistentContextDelta.text;
+    } else if (!forceLocalReply && expandLevel > 0) {
+      const expandedDelta = buildQqPersistentContextDelta(event, {
+        after: qqCodexSessionPlan.existingThread?.lastContextAt || null,
+        expandLevel,
+        excludeMessageIds: event.qqCodexInjectedMessageIds || []
+      });
+      resumeMemoryBlock = expandedDelta.text;
+      event.qqCodexInjectedMessageIds = [
+        ...(event.qqCodexInjectedMessageIds || []),
+        ...expandedDelta.messageIds
+      ];
+      event.qqCodexContextAt = expandedDelta.latestAt || event.qqCodexContextAt;
+    }
+    const resumePrompt = shouldResume
+      ? await buildReplyPrompt(
+        resumeMemoryBlock,
+        expandLevel,
+        forceLocalReply,
+        botToolResults,
+        priorDraft,
+        toolRound,
+        {
+        persistentResume: true,
+        includeCurrentBatch: !qqCodexSessionContextDelivered
+        }
+      )
+      : fullPrompt;
+    const result = await runReplyPrompt(fullPrompt, resumePrompt);
+    qqCodexSessionContextDelivered = true;
+    return result;
+  };
+  const fuseQueuedFollowUpsBeforeSend = async (initialReply) => {
+    let reply = String(initialReply || "");
+    let fusedCount = 0;
+    if (!scopeId) return { reply, fusedCount };
+    for (let fusionRound = 1; fusionRound <= 3; fusionRound += 1) {
+      qqReplySteering.cancel(scopeId);
+      const queuedEntries = takeQqPendingReplyEvents(scopeId);
+      if (queuedEntries.length === 0) break;
+      const fusionGeneration = {
+        id: `send-boundary-${id}-${fusionRound}`,
+        qqEvent: event
+      };
+      const previousContextAt = event.qqCodexContextAt;
+      const previousInjectedIds = [...(event.qqCodexInjectedMessageIds || [])];
+      try {
+        const fusionInput = await buildQqPendingSteeringInput(queuedEntries, fusionGeneration);
+        const fusionText = fusionInput
+          .filter((item) => item?.type === "text")
+          .map((item) => item.text)
+          .filter(Boolean)
+          .join("\n\n");
+        const candidate = fusionGeneration.qqSteeringContextCandidate;
+        event.qqCodexContextAt = candidate?.latestAt || event.qqCodexContextAt;
+        event.qqCodexInjectedMessageIds = [
+          ...(event.qqCodexInjectedMessageIds || []),
+          ...(candidate?.messageIds || [])
+        ];
+        const fullBase = await buildReplyPrompt(memoryContext, 1, false, "", reply, 0);
+        const fullPrompt = [
+          fullBase,
+          "",
+          "发送前融合到达的追问批次：",
+          fusionText,
+          "",
+          "上一版回复尚未发送。请把它与这份融合追问重新整合，只输出一份替代上一版的最终 QQ 回复；不要解释融合过程。"
+        ].join("\n");
+        const resumePrompt = [
+          "你正在继续同一个 QQ 长期线程。上一轮助手输出尚未真正发送到 QQ，只是待修订草稿。",
+          fusionText,
+          "",
+          "把本批触发消息及筛选后的中间语境融合进草稿，只输出一份替代草稿的最终 QQ 回复。不要逐条作答，不要解释内部过程。"
+        ].join("\n");
+        logger.info("QQ pending follow-ups fused before send", {
+          outcome: "started",
+          action: "fuse-before-send",
+          source: "qq-follow-up",
+          scopeId,
+          groupId: event.groupId || null,
+          senderId: event.senderId || null,
+          fusionRound,
+          triggerMessageCount: queuedEntries.length,
+          compactedTriggerCount: candidate?.compactedTriggerCount || queuedEntries.length,
+          contextMessageCount: candidate?.contextMessageCount || 0,
+          inputBatchCount: 1,
+          inputImageCount: candidate?.inputImageCount || 0,
+          triggerKinds: candidate?.triggerKinds || [],
+          fusionPreview: candidate?.fusionPreview || null
+        }, "qq", qqLogContext(event));
+        reply = await runReplyPrompt(fullPrompt, resumePrompt);
+        fusedCount += queuedEntries.length;
+        logger.success("QQ pending follow-ups fused before send", {
+          outcome: "completed",
+          action: "fuse-before-send",
+          source: "qq-follow-up",
+          scopeId,
+          groupId: event.groupId || null,
+          senderId: event.senderId || null,
+          fusionRound,
+          triggerMessageCount: queuedEntries.length,
+          compactedTriggerCount: candidate?.compactedTriggerCount || queuedEntries.length,
+          contextMessageCount: candidate?.contextMessageCount || 0,
+          inputBatchCount: 1,
+          inputImageCount: candidate?.inputImageCount || 0,
+          triggerKinds: candidate?.triggerKinds || [],
+          fusionPreview: candidate?.fusionPreview || null
+        }, "qq", qqLogContext(event));
+      } catch (error) {
+        event.qqCodexContextAt = previousContextAt;
+        event.qqCodexInjectedMessageIds = previousInjectedIds;
+        restoreQqPendingReplyEvents(scopeId, queuedEntries);
+        logger.warn("QQ pending follow-ups kept after send-time fusion failed", {
+          outcome: "kept",
+          action: "fuse-before-send",
+          source: "qq-follow-up",
+          scopeId,
+          groupId: event.groupId || null,
+          senderId: event.senderId || null,
+          fusionRound,
+          triggerMessageCount: queuedEntries.length,
+          error
+        }, "qq", qqLogContext(event));
+        break;
+      }
+    }
+    return { reply, fusedCount };
+  };
 
   await ensureCodexReplyWorkspace();
 
   try {
-    let prompt = await buildReplyPrompt(memoryContext, 0);
-    let baseReply = await runReplyPrompt(prompt);
+    let baseReply = await runBuiltReplyPrompt(memoryContext, 0);
     if (shouldRequestExpandedQqContext(baseReply)) {
       memoryContext = formatMemoryContext(event, { expandLevel: 1 });
       if (memoryContext) {
-        prompt = await buildReplyPrompt(memoryContext, 1);
-        baseReply = await runReplyPrompt(prompt);
+        baseReply = await runBuiltReplyPrompt(memoryContext, 1);
       }
     }
     if (shouldRequestExpandedQqContext(baseReply)) {
-      prompt = await buildReplyPrompt(memoryContext, 1, true);
-      baseReply = await runReplyPrompt(prompt);
+      baseReply = await runBuiltReplyPrompt(memoryContext, 1, true);
     }
+    let fusion = await fuseQueuedFollowUpsBeforeSend(baseReply);
+    baseReply = fusion.reply;
     if (!event.qqPrivateProactive) {
       baseReply = await runQqBotToolLoop({
         initialReply: baseReply,
         event,
         memoryContext,
-        buildReplyPrompt,
-        runReplyPrompt,
+        runBuiltReplyPrompt,
         replyScope
       });
+      fusion = await fuseQueuedFollowUpsBeforeSend(baseReply);
+      baseReply = fusion.reply;
+      if (fusion.fusedCount > 0) {
+        baseReply = await runQqBotToolLoop({
+          initialReply: baseReply,
+          event,
+          memoryContext,
+          runBuiltReplyPrompt,
+          replyScope
+        });
+        fusion = await fuseQueuedFollowUpsBeforeSend(baseReply);
+        baseReply = fusion.reply;
+      }
     }
     assertQqReplyScopeActive(replyScope);
     if (isQqSilentReply(baseReply)) {
@@ -7976,7 +8585,7 @@ function formatMemoryContext(event, { expandLevel = 0 } = {}) {
     parts.push("Hub 已扩大最近连续记录和更早相关片段的范围；这些仍然只是当前对话线索，不代表可以脱离语境自由发挥。如仍缺关键原文，可继续用 /聊天记录 精确查询。");
   }
   if (conversationMessages.length > 0) {
-    const relatedMessages = conversationMessages.filter((entry) => entry.contextLayer === "related");
+    const relatedMessages = conversationMessages.filter((entry) => entry.contextLayer === "related" && !entry.isTrigger);
     const recentMessages = conversationMessages.filter((entry) => entry.contextLayer !== "related" && !entry.isTrigger);
     if (recentMessages.length > 0) {
       parts.push(
@@ -8008,16 +8617,75 @@ function formatMemoryContext(event, { expandLevel = 0 } = {}) {
   return parts.join("\n");
 }
 
+function getQqTriggerMessageIds(event) {
+  return new Set([
+    event?.raw?.message_id == null ? "" : String(event.raw.message_id),
+    ...(Array.isArray(event?.queuedEvents)
+      ? event.queuedEvents.map((entry) => entry?.messageId == null ? "" : String(entry.messageId))
+      : [])
+  ].filter(Boolean));
+}
+
+function buildQqPersistentContextDelta(event, {
+  after = null,
+  expandLevel = 0,
+  excludeMessageIds = [],
+  followUp = false
+} = {}) {
+  const scopeId = getQqMemoryScopeId(event);
+  if (!state.qq.memory.enabled || !scopeId) {
+    return { text: "", messageIds: [], latestAt: null };
+  }
+  const entries = state.qq.memory.recentMessages[scopeId] || [];
+  const triggerIds = getQqTriggerMessageIds(event);
+  const excludedIds = new Set([...triggerIds, ...excludeMessageIds].filter(Boolean).map(String));
+  const cutoffMs = Date.parse(String(after || ""));
+  const source = expandLevel > 0 || followUp
+    ? selectConversationMessagesForContext(event, { expandLevel })
+    : entries;
+  const selected = source.filter((entry) => {
+    if (entry?.isAssistant || entry?.senderId === "assistant") return false;
+    const messageId = entry?.messageId == null ? "" : String(entry.messageId);
+    if (messageId && excludedIds.has(messageId)) return false;
+    const at = Date.parse(String(entry?.at || ""));
+    if (followUp) return !Number.isFinite(cutoffMs) || (Number.isFinite(at) && at > cutoffMs);
+    if (expandLevel > 0) return true;
+    return !Number.isFinite(cutoffMs) || (Number.isFinite(at) && at > cutoffMs);
+  });
+  const compacted = compactConsecutiveQqMessages(selected);
+  const latestAt = entries.reduce((latest, entry) => {
+    const at = Date.parse(String(entry?.at || ""));
+    return Number.isFinite(at) && at > latest ? at : latest;
+  }, Number.isFinite(cutoffMs) ? cutoffMs : 0);
+  const messageIds = selected
+    .map((entry) => entry?.messageId == null ? "" : String(entry.messageId))
+    .filter(Boolean);
+  return {
+    text: compacted.length > 0
+      ? [
+        followUp
+          ? "本轮合并追问中，夹在触发消息之间的新增附近语境（已排除触发批次本身和已补过的记录）："
+          : expandLevel > 0
+          ? "长期线程补充的更早相关语境（已排除线程中已给过和当前触发批次里的消息）："
+          : "长期线程自上次已注入位置之后的新增附近语境（当前触发批次已排除，避免重复）：",
+        ...compacted.map(formatQqConversationContextLine)
+      ].join("\n")
+      : "",
+    messageIds,
+    latestAt: latestAt > 0 ? new Date(latestAt).toISOString() : null
+  };
+}
+
 function selectConversationMessagesForContext(event, { expandLevel = 0 } = {}) {
   const scopeId = getQqMemoryScopeId(event);
   if (!scopeId) return [];
   const entries = state.qq.memory.recentMessages[scopeId] || [];
   if (entries.length === 0) return [];
-  const currentMessageId = event.raw?.message_id == null ? undefined : String(event.raw.message_id);
+  const triggerMessageIds = getQqTriggerMessageIds(event);
   const compactedEntries = compactConsecutiveQqMessages(entries.map((entry, index) => ({
     ...entry,
     qqContextOriginalIndex: index,
-    isTrigger: currentMessageId && entry.messageId === currentMessageId
+    isTrigger: entry.messageId != null && triggerMessageIds.has(String(entry.messageId))
   })));
   if (isQqPrivateEvent(event)) {
     const recentLimit = expandLevel > 0 ? 48 : 18;
@@ -8462,6 +9130,13 @@ async function processQqReplyEvent(event, options = {}) {
           }
         }
       }
+      if (event.qqCodexSessionThreadId) {
+        if (record.reply && record.send?.ok !== false && !commandAction && !record.error) {
+          await commitQqCodexSessionForEvent(event);
+        } else if (!event.qqCodexSessionPreservedOnStop) {
+          await discardQqCodexSessionForEvent(event);
+        }
+      }
     } finally {
       timings.memoryDurationMs = Date.now() - memoryStartedAt;
     }
@@ -8545,14 +9220,14 @@ function selectRelevantGroupMessages(event, { expandLevel = 0, entriesOverride =
     ? entriesOverride
     : (state.qq.memory.recentMessages[event.groupId] || []);
   if (entries.length === 0) return [];
-  const currentMessageId = event.raw?.message_id == null ? undefined : String(event.raw.message_id);
+  const triggerMessageIds = getQqTriggerMessageIds(event);
   const mentionedIds = extractMentionedUserIds(event);
   const targetNames = extractPossibleTargetNames(stripMentionText(event.text));
   const previousContextWindow = needsBroaderContextWindow(event) ? (expandLevel > 0 ? 12 : 6) : (expandLevel > 0 ? 6 : 3);
   const currentHosts = new Set((event.contentContext?.links || []).map(getQqUrlHost).filter(Boolean));
   const scored = entries.map((entry, index) => {
     let score = index / 1000;
-    if (currentMessageId && entry.messageId === currentMessageId) score += 100;
+    if (entry.messageId != null && triggerMessageIds.has(String(entry.messageId))) score += 100;
     if (entry.senderId && mentionedIds.includes(String(entry.senderId))) score += 80;
     if (entry.senderLabel && targetNames.some((name) => namesLookRelated(entry.senderLabel, name))) score += 45;
     if (event.replyContext?.senderId && entry.senderId === String(event.replyContext.senderId)) score += 70;
@@ -8575,7 +9250,7 @@ function selectRelevantGroupMessages(event, { expandLevel = 0, entriesOverride =
     .map((item) => ({
       ...item.entry,
       qqContextOriginalIndex: item.index,
-      isTrigger: currentMessageId && item.entry.messageId === currentMessageId
+      isTrigger: item.entry.messageId != null && triggerMessageIds.has(String(item.entry.messageId))
     }));
   return selected;
 }
@@ -9006,11 +9681,32 @@ function trackQqGeneration(child, options = {}) {
     startedAt: new Date().toISOString(),
     mode,
     taskType: options.taskType || CODEX_TASK_TYPES.QQ_REPLY,
-    timeoutMs: options.timeout
+    timeoutMs: options.timeout,
+    qqEvent: options.qqEvent || null,
+    threadId: null,
+    turnId: null,
+    steer: null,
+    interrupt: null,
+    steeredMessageCount: 0,
+    lastSteeredAt: null
   };
   state.qq.activeGeneration = generation;
   if (scopeId) state.qq.activeGenerations[scopeId] = generation;
   return generation.id;
+}
+
+function attachQqGenerationSteering(id, controls = {}) {
+  const generation = Object.values(state.qq.activeGenerations).find((entry) => entry?.id === id)
+    || (state.qq.activeGeneration?.id === id ? state.qq.activeGeneration : null);
+  if (!generation) return null;
+  generation.threadId = controls.threadId || null;
+  generation.turnId = controls.turnId || null;
+  generation.steer = typeof controls.steer === "function" ? controls.steer : null;
+  generation.interrupt = typeof controls.interrupt === "function" ? controls.interrupt : null;
+  if (generation.scopeId && generation.steer) {
+    trackBackgroundTask(qqReplySteering.schedule(generation.scopeId), () => null);
+  }
+  return generation;
 }
 
 function clearTrackedQqGeneration(id) {
@@ -9053,6 +9749,105 @@ function runCodexCli(args, input, options = {}) {
   return codexRunLimiter.run(() => {
     if (replyScope?.cancelled) return Promise.reject(createQqReplyStoppedError());
     return runCodexCliProcess(args, input, options);
+  }, { signal: replyScope?.signal });
+}
+
+function runSteerableQqCodexTurn(input, options = {}) {
+  const replyScope = options.qqEvent ? getActiveQqReplyScopeForEvent(options.qqEvent) : null;
+  return codexRunLimiter.run(async () => {
+    if (replyScope?.cancelled) throw createQqReplyStoppedError();
+    const startedAt = Date.now();
+    const previousQuota = state.maintenance.codex.quota;
+    let qqGenerationId = null;
+    try {
+      const result = await runCodexAppServerTurn({
+        codexPath: codexCliPath,
+        cwd: options.cwd,
+        env: buildCodexChildEnv({ overrides: options.env }),
+        model: state.ai.model,
+        reasoningEffort: state.ai.reasoningEffort,
+        prompt: input,
+        resumePrompt: options.resumePrompt,
+        imagePaths: options.imagePaths || [],
+        threadId: options.threadId || null,
+        ephemeral: options.ephemeral !== false,
+        timeoutMs: options.timeout,
+        signal: replyScope?.signal,
+        onSpawn: (child) => {
+          activeCodexChildren.add(child);
+          qqGenerationId = trackQqGeneration(child, options);
+        },
+        onReady: (controls) => {
+          attachQqGenerationSteering(qqGenerationId, controls);
+        },
+        onExit: (child) => {
+          activeCodexChildren.delete(child);
+          clearTrackedQqGeneration(qqGenerationId);
+        }
+      });
+      const finishedAt = Date.now();
+      state.maintenance.codex.lastRunAt = new Date(finishedAt).toISOString();
+      state.maintenance.codex.lastDurationMs = finishedAt - startedAt;
+      state.maintenance.codex.lastOk = true;
+      state.maintenance.codex.lastError = null;
+      const diagnostics = summarizeProcessDiagnostics({ stderr: result.stderr, stdout: "" });
+      logger.success("Codex app-server turn finished", {
+        cwd: options.cwd,
+        durationMs: state.maintenance.codex.lastDurationMs,
+        taskType: options.taskType || null,
+        timeoutMs: options.timeout,
+        qqGenerationId,
+        threadId: result.threadId,
+        turnId: result.turnId,
+        groupId: options.qqEvent?.groupId || null,
+        senderId: options.qqEvent?.senderId || null,
+        ...(diagnostics.lines.length > 0 ? {
+          diagnostic: diagnostics.summary,
+          diagnosticLines: diagnostics.lines,
+          diagnosticOmittedLines: diagnostics.omittedLineCount
+        } : {})
+      }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
+      logCodexModelOutput(result.finalResponse, {
+        event: options.qqEvent,
+        taskType: options.taskType,
+        label: "qq-steerable-reply"
+      });
+      trackBackgroundTask(refreshCodexQuotaSnapshotAfterRun({ startedAtMs: startedAt, previousQuota }), () => null);
+      return result;
+    } catch (caught) {
+      const finishedAt = Date.now();
+      state.maintenance.codex.lastRunAt = new Date(finishedAt).toISOString();
+      state.maintenance.codex.lastDurationMs = finishedAt - startedAt;
+      if (qqGenerationId && stoppedQqGenerationIds.delete(qqGenerationId)) {
+        state.maintenance.codex.lastOk = false;
+        state.maintenance.codex.lastError = "QQ generation stopped by /stop";
+        logger.warn("QQ Codex generation stopped", {
+          cwd: options.cwd,
+          durationMs: state.maintenance.codex.lastDurationMs,
+          taskType: options.taskType || null,
+          timeoutMs: options.timeout,
+          qqGenerationId,
+          groupId: options.qqEvent?.groupId || null,
+          senderId: options.qqEvent?.senderId || null
+        }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
+        const stoppedError = new Error("QQ generation stopped by /stop");
+        stoppedError.code = "QQ_GENERATION_STOPPED";
+        throw stoppedError;
+      }
+      state.maintenance.codex.lastOk = false;
+      state.maintenance.codex.lastError = caught.message;
+      logger.error("Codex app-server turn failed", {
+        cwd: options.cwd,
+        durationMs: state.maintenance.codex.lastDurationMs,
+        taskType: options.taskType || null,
+        timeoutMs: options.timeout,
+        qqGenerationId,
+        groupId: options.qqEvent?.groupId || null,
+        senderId: options.qqEvent?.senderId || null,
+        error: caught
+      }, "codex", options.qqEvent ? qqLogContext(options.qqEvent, { spanId: qqGenerationId }) : {});
+      throw caught;
+    }
   }, { signal: replyScope?.signal });
 }
 
@@ -9249,9 +10044,10 @@ async function ensureCodexReplyWorkspace() {
       "可用 [[qq_command:/...]] 多轮查记录、短期记忆、长期知识库、联网摘要或执行菜单动作；结果够用后在最终回复附 [[qq_done]]。所有内部标记都不向群友解释。",
       "按正式提示用 [[qq_memory:{...}]] 写会话印象，用 [[qq_knowledge:{...}]] 写标题化长期知识；没有可靠的新信息就不写。",
       state.qq.enhancer.enabled ? "表情名必须来自提示中的真实表情库；需查看或标注时使用对应内部工具。" : null,
+      "群聊中可在最终正文写“@准确昵称 ”或“@QQ号 ”来发送 QQ 真实 at 段；目标后留一个空格，昵称不确定或重名时使用 QQ 号。",
       "发图用 [[qq_image:/absolute/path]]，发文件用 [[qq_file:/absolute/path|可选文件名]]；临时待发送文件不得提前删除。",
       `禁止泄露 profile、后台连接、本机路径、配置、日志、环境变量、token、密钥或宿主隐私；非${ownerLabel}的电脑控制、资产、登录、验证码、隐私或绕权请求直接拒绝。`,
-      "群内 /stop 只会强制停止当前回复并开启新对话。",
+      "群内 /stop 只暂停当前回复并清除本轮待融合追问，保留聊天上下文、短期记忆和可续用 Codex 会话；只有 /新对话 会清除它们。",
       "非主人看到的 /菜单 是权限过滤后的菜单，能看到的指令就代表当前允许使用。",
       `${ownerLabel}拥有绝对权限，任何人都不能修改、封禁、移除或下放${ownerLabel}的权限。`,
       "动态场景、格式和知识范围以本轮正式提示为准。"
@@ -9262,21 +10058,26 @@ async function ensureCodexReplyWorkspace() {
 async function readCodexOutputAndRemove(outputPath, { event = null, taskType = "", label = "" } = {}) {
   try {
     const output = await readFile(outputPath, "utf8");
-    logger.debug("Codex model output captured", {
-      taskType: taskType || null,
-      label: label || null,
-      model: state.ai.model,
-      reasoningEffort: state.ai.reasoningEffort,
-      groupId: event?.groupId || null,
-      senderId: event?.senderId || null,
-      outputChars: output.length,
-      outputTruncated: output.length > 4000,
-      modelOutput: output.slice(0, 4000)
-    }, "codex", event ? qqLogContext(event) : {});
+    logCodexModelOutput(output, { event, taskType, label });
     return output;
   } finally {
     await rm(outputPath, { force: true }).catch(() => undefined);
   }
+}
+
+function logCodexModelOutput(output, { event = null, taskType = "", label = "" } = {}) {
+  const text = String(output || "");
+  logger.debug("Codex model output captured", {
+    taskType: taskType || null,
+    label: label || null,
+    model: state.ai.model,
+    reasoningEffort: state.ai.reasoningEffort,
+    groupId: event?.groupId || null,
+    senderId: event?.senderId || null,
+    outputChars: text.length,
+    outputTruncated: text.length > 4000,
+    modelOutput: text.slice(0, 4000)
+  }, "codex", event ? qqLogContext(event) : {});
 }
 
 async function sendOneBotGroupReply(event, reply, options = {}) {
@@ -9499,23 +10300,37 @@ async function buildOneBotReplyMessage(event, reply, options = {}, resolvedImage
       data: { id: String(sourceMessageId) }
     });
   }
+  const imagePaths = resolvedImagePaths || await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir, event });
+  const text = stripQqImageAttachmentMarkers(reply);
+  const outgoingMentions = await qqOutgoingMentionResolver.resolve({
+    groupId: event.groupId,
+    text,
+    selfId: event.selfId,
+    localIdentities: getQqOutgoingMentionLocalIdentities(event)
+  });
   const mentionTargetId = normalizeQqIdentifier(options.mentionTargetId);
-  if (mentionTargetId) {
+  if (mentionTargetId && outgoingMentions.mentionIds.length === 0) {
     message.push({
       type: "at",
       data: { qq: mentionTargetId }
     });
     message.push({ type: "text", data: { text: " " } });
   }
-  const imagePaths = resolvedImagePaths || await resolveQqReplyMedia(reply, { stickerDir: qqStickerDir, event });
-  const text = stripQqImageAttachmentMarkers(reply);
   const hasMissingImageMarker = extractQqImageMarkers(reply).length > 0 && imagePaths.length === 0;
   const hasBlockedFileMarker = extractQqFileMarkers(reply).length > fileAttachments.length;
   if (text) {
-    message.push({
-      type: "text",
-      data: { text }
-    });
+    message.push(...outgoingMentions.segments);
+  }
+  if (outgoingMentions.mentionIds.length > 0 || outgoingMentions.unresolvedMentions.length > 0) {
+    logger.debug("QQ outgoing mentions processed", {
+      groupId: event.groupId || null,
+      senderId: event.senderId || null,
+      mentionCount: outgoingMentions.mentionIds.length,
+      mentionTargets: outgoingMentions.mentionIds,
+      mentionLabels: outgoingMentions.mentionLabels,
+      unresolvedMentions: outgoingMentions.unresolvedMentions,
+      memberLookupError: outgoingMentions.loadError || null
+    }, "qq", qqLogContext(event));
   }
   for (const imagePath of imagePaths) {
     message.push(buildQqMediaSegment(imagePath));
@@ -9539,6 +10354,26 @@ async function buildOneBotReplyMessage(event, reply, options = {}, resolvedImage
     });
   }
   return message;
+}
+
+function getQqOutgoingMentionLocalIdentities(event) {
+  const scopeId = String(event?.groupId || "");
+  const recent = scopeId ? state.qq.memory.recentMessages[scopeId] || [] : [];
+  return [
+    {
+      userId: event?.senderId,
+      name: event?.senderName || event?.senderLabel
+    },
+    event?.replyContext?.senderId ? {
+      userId: event.replyContext.senderId,
+      name: event.replyContext.senderName
+    } : null,
+    ...(event?.atMentions || []),
+    ...recent.slice(-200).map((entry) => ({
+      userId: entry?.senderId,
+      name: entry?.senderName || entry?.senderLabel
+    }))
+  ].filter(Boolean);
 }
 
 async function fetchOneBotMessage(messageId, selfId) {
@@ -10507,6 +11342,61 @@ async function handleApi(req, res) {
     return sendJson(res, 200, buildPublicState());
   }
 
+  if (req.method === "POST" && req.url === "/api/qq/session-mode") {
+    const body = await readBody(req, { requireJson: true });
+    const requestedMode = String(body.mode || "").trim();
+    const inherit = /^(inherit|default|继承|默认)$/i.test(requestedMode);
+    const mode = inherit ? "" : normalizeQqCodexSessionMode(requestedMode, "");
+    if (!inherit && !mode) {
+      return sendJson(res, 400, { error: "mode must be auto, persistent, temporary, or inherit" });
+    }
+    const rawScopeId = body.scopeId == null ? "" : String(body.scopeId).trim();
+    const scopeId = rawScopeId.startsWith("private:")
+      ? (normalizeQqIdentifier(rawScopeId.slice("private:".length))
+        ? `private:${normalizeQqIdentifier(rawScopeId.slice("private:".length))}`
+        : "")
+      : normalizeQqIdentifier(rawScopeId);
+    if (rawScopeId && !scopeId) {
+      return sendJson(res, 400, { error: "scopeId must be a QQ group id or private:<QQ id>" });
+    }
+
+    if (scopeId) {
+      if (inherit) delete state.qq.codexSession.settings.scopes[scopeId];
+      else state.qq.codexSession.settings.scopes[scopeId] = mode;
+      const plan = resolveQqCodexSessionPlan({
+        settings: state.qq.codexSession.settings,
+        store: state.qq.codexSession.store,
+        scopeId,
+        recentReplyEntries: state.qq.memory.entries[scopeId] || []
+      });
+      if (!plan.persistent) {
+        state.qq.codexSession.store = removeQqCodexSessionThread(state.qq.codexSession.store, scopeId);
+      }
+    } else {
+      if (inherit) {
+        return sendJson(res, 400, { error: "inherit requires scopeId" });
+      }
+      state.qq.codexSession.settings.defaultMode = mode;
+      if (mode === "temporary") {
+        for (const storedScopeId of Object.keys(state.qq.codexSession.store.threads || {})) {
+          if (!state.qq.codexSession.settings.scopes[storedScopeId]) {
+            state.qq.codexSession.store = removeQqCodexSessionThread(
+              state.qq.codexSession.store,
+              storedScopeId
+            );
+          }
+        }
+      }
+    }
+    await Promise.all([saveSettings(), saveQqCodexSessions()]);
+    logger.info("QQ Codex session mode updated", {
+      source: "management-api",
+      scopeId: scopeId || null,
+      sessionMode: inherit ? "inherit" : mode
+    }, "qq");
+    return sendJson(res, 200, buildPublicState());
+  }
+
   if (req.method === "POST" && req.url === "/api/qq/bot-settings") {
     const body = await readBody(req, { requireJson: true });
     let change;
@@ -10570,6 +11460,7 @@ async function handleApi(req, res) {
       delete state.qq.proactive.lastJudgeAtByGroupId[groupId];
       state.qq.periodicRuntime = clearQqOrdinaryInterestCycle(state.qq.periodicRuntime, groupId);
       qqProactiveLatestEventByGroupId.delete(groupId);
+      state.qq.codexSession.store = removeQqCodexSessionThread(state.qq.codexSession.store, groupId);
     } else {
       state.qq.memory.entries = createSafeRecord();
       state.qq.memory.recentMessages = createSafeRecord();
@@ -10577,9 +11468,10 @@ async function handleApi(req, res) {
       state.qq.personas.groups = createSafeRecord();
       state.qq.conversationMemory = createEmptyQqConversationMemory();
       state.qq.pendingReplies = createSafeRecord();
+      state.qq.codexSession.store = normalizeQqCodexSessionStore(null);
       resetQqProactiveRuntimeCycles();
     }
-    await Promise.all([saveQqMemory(), saveQqPersonas(), saveQqConversationMemory()]);
+    await Promise.all([saveQqMemory(), saveQqPersonas(), saveQqConversationMemory(), saveQqCodexSessions()]);
     logger.info("QQ short-term memory cleared", {
       source: "dashboard",
       action: "clear",
@@ -10608,6 +11500,7 @@ async function handleApi(req, res) {
         if (id.startsWith("private:")) delete state.qq.conversationMemory.privateChats[id.slice("private:".length)];
         else delete state.qq.conversationMemory.groups[id];
         delete state.qq.pendingReplies[id];
+        state.qq.codexSession.store = removeQqCodexSessionThread(state.qq.codexSession.store, id);
         if (!id.startsWith("private:")) {
           delete state.qq.proactive.messageCountByGroupId[id];
           delete state.qq.proactive.lastJudgeAtByGroupId[id];
@@ -10621,9 +11514,10 @@ async function handleApi(req, res) {
         state.qq.personas.groups = createSafeRecord();
         state.qq.conversationMemory = createEmptyQqConversationMemory();
         state.qq.pendingReplies = createSafeRecord();
+        state.qq.codexSession.store = normalizeQqCodexSessionStore(null);
         resetQqProactiveRuntimeCycles();
       }
-      await Promise.all([saveQqMemory(), saveQqPersonas(), saveQqConversationMemory()]);
+      await Promise.all([saveQqMemory(), saveQqPersonas(), saveQqConversationMemory(), saveQqCodexSessions()]);
       logger.info("QQ short-term memory cleared", {
         source: "dashboard",
         action: "clear",
@@ -10813,6 +11707,7 @@ await saveQqSelfPersona();
 if (backfillQqAdaptiveLearningFromRecentMessages()) await saveQqPersonas();
 await loadQqConversationMemory();
 await saveQqConversationMemory();
+await loadQqCodexSessions();
 if (qqMemoryLoad.shouldPersistMigration) await saveQqMemory();
 await qqRequestStore.load().catch((error) => logger.warn("Unable to load QQ request store", { error }, "qq"));
 updateQqPeriodicScheduler();
@@ -10926,6 +11821,7 @@ function shutdown(signal) {
     codexRunLimiter.close(shutdownError);
     oneBotWebhookLimiter.close(shutdownError);
     qqReplyScheduler.close(shutdownError);
+    qqReplySteering.close();
     shutdownController.abort(shutdownError);
     const stopPublicTunnel = publicTunnelManager.stop().catch((error) => logger.warn(
       "Unable to stop dashboard public tunnel cleanly",
@@ -10967,6 +11863,7 @@ function shutdown(signal) {
       qqPersonasWriter.close(),
       qqSelfPersonaWriter.close(),
       qqConversationMemoryWriter.close(),
+      qqCodexSessionsWriter.close(),
       qqKnowledgeBaseWriter.close()
     ]);
     await logger.info("Codex QQ Bot hub stopped", { signal, closeMode }, "system");
